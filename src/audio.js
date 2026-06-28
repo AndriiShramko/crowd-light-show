@@ -1,15 +1,18 @@
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
-import path from 'node:path';
 import { config } from './config.js';
 
 // Decode an audio file to mono Float32 PCM.
 // WAV is parsed natively (no external dependency, so tests run without ffmpeg);
 // everything else is decoded via ffmpeg (present in the production container).
 export async function decodePcm(filePath) {
-  const ext = path.extname(filePath).toLowerCase();
-  if (ext === '.wav') return decodeWav(filePath);
-  return decodeFfmpeg(filePath);
+  // Route by actual content, not filename: WAV (RIFF/WAVE) is parsed natively,
+  // everything else goes through ffmpeg (which is format-agnostic).
+  const fd = fs.openSync(filePath, 'r');
+  const head = Buffer.alloc(12);
+  try { fs.readSync(fd, head, 0, 12, 0); } finally { fs.closeSync(fd); }
+  const isWav = head.toString('ascii', 0, 4) === 'RIFF' && head.toString('ascii', 8, 12) === 'WAVE';
+  return isWav ? decodeWav(filePath) : decodeFfmpeg(filePath);
 }
 
 function decodeWav(filePath) {

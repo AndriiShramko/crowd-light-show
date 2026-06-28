@@ -14,14 +14,21 @@ import { analyze } from './audio.js';
 import { compileFromEnvelope } from './compiler.js';
 import { hub, serverClock } from './show.js';
 
-const ALLOWED_AUDIO = new Set(['.mp3', '.m4a', '.wav', '.ogg', '.aac', '.flac']);
-const MAGIC = [
-  { ext: '.mp3', test: (b) => (b[0] === 0x49 && b[1] === 0x44 && b[2] === 0x33) || (b[0] === 0xff && (b[1] & 0xe0) === 0xe0) },
-  { ext: '.wav', test: (b) => b.toString('ascii', 0, 4) === 'RIFF' },
-  { ext: '.ogg', test: (b) => b.toString('ascii', 0, 4) === 'OggS' },
-  { ext: '.flac', test: (b) => b.toString('ascii', 0, 4) === 'fLaC' },
-  { ext: '.m4a', test: (b) => b.toString('ascii', 4, 8) === 'ftyp' },
-];
+// Detect the actual audio format from magic bytes. The filename/extension is
+// intentionally ignored — users routinely have misnamed files (e.g. an MP4/AAC
+// file named .mp3), and ffmpeg decodes by content anyway. We only need to confirm
+// it is a supported audio container (security), then let ffmpeg do the rest.
+function sniffAudio(b) {
+  if (!b || b.length < 12) return null;
+  if (b[0] === 0x49 && b[1] === 0x44 && b[2] === 0x33) return 'mp3';            // ID3v2-tagged MP3
+  if (b[0] === 0xff && (b[1] & 0xe0) === 0xe0) return 'mp3';                    // raw MPEG frame sync
+  if (b.toString('ascii', 0, 4) === 'RIFF' && b.toString('ascii', 8, 12) === 'WAVE') return 'wav';
+  if (b.toString('ascii', 0, 4) === 'OggS') return 'ogg';
+  if (b.toString('ascii', 0, 4) === 'fLaC') return 'flac';
+  if (b.toString('ascii', 4, 8) === 'ftyp') return 'm4a';                       // ISO-BMFF: MP4/M4A (AAC/ALAC)
+  return null;
+}
+const EXT_FOR = { mp3: '.mp3', wav: '.wav', ogg: '.ogg', flac: '.flac', m4a: '.m4a' };
 
 function freeDiskBytes() {
   try { const s = fs.statfsSync(config.dataDir); return s.bsize * s.bavail; }
@@ -110,16 +117,13 @@ app.post('/api/operator/upload', async (req, reply) => {
 
   const mp = await req.file();
   if (!mp) return reply.code(400).send({ error: 'no file' });
-  const ext = path.extname(mp.filename || '').toLowerCase();
-  if (!ALLOWED_AUDIO.has(ext)) return reply.code(415).send({ error: 'unsupported type' });
   const buf = await mp.toBuffer();
-  if (mp.file.truncated) return reply.code(413).send({ error: 'file too large' });
-  const head = buf.subarray(0, 16);
-  const magic = MAGIC.find((m) => m.ext === ext);
-  if (magic && !magic.test(head)) return reply.code(415).send({ error: 'content does not match extension' });
+  if (mp.file.truncated) return reply.code(413).send({ error: 'file too large (max 50 MB)' });
+  const kind = sniffAudio(buf.subarray(0, 16));
+  if (!kind) return reply.code(415).send({ error: 'not a supported audio file (mp3, m4a/mp4, wav, ogg, flac)' });
 
   const id = crypto.randomBytes(6).toString('hex');
-  const filePath = path.join(config.dataDir, 'uploads', `${id}${ext}`);
+  const filePath = path.join(config.dataDir, 'uploads', `${id}${EXT_FOR[kind]}`);
   fs.writeFileSync(filePath, buf);
 
   const info = db.prepare(`INSERT INTO track (show_id, title, source_type, file_path, bytes, position, analysis_status, created_at)

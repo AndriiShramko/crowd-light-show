@@ -54,24 +54,38 @@
 
   function armTrack(id) {
     ensureAudio();
+    armedId = id; armedBuffer = null;
+    // Arm the LIGHTS immediately (distribute the timeline) — independent of whether
+    // this browser can decode the audio. The show must never depend on local decode.
+    if (ws && ws.readyState === 1) ws.send(JSON.stringify({ t: 'op', cmd: 'arm', trackId: id }));
+    $('armed').textContent = 'track #' + id + ' (lights ready, loading audio…)';
+    // Best-effort: load + decode the audio for console playback (P0-1 alignment).
+    // If the browser can't decode this format, the lights still run — play the music
+    // from another source and use GO + nudge to line it up.
     api('/api/operator/audio/' + id).then(function (r) { return r.arrayBuffer(); })
       .then(function (ab) { return audioCtx.decodeAudioData(ab); })
-      .then(function (buf) { armedBuffer = buf; armedId = id; $('armed').textContent = 'track #' + id; if (ws && ws.readyState === 1) ws.send(JSON.stringify({ t: 'op', cmd: 'arm', trackId: id })); })
-      .catch(function (e) { $('armed').textContent = 'decode failed'; });
+      .then(function (buf) { if (armedId === id) { armedBuffer = buf; $('armed').textContent = 'track #' + id + ' ♪ audio ready'; } })
+      .catch(function () { if (armedId === id) $('armed').textContent = 'track #' + id + ' (lights only — this browser can’t play this audio; play music separately)'; });
   }
 
   $('go').addEventListener('click', function () {
-    if (!armedBuffer) { alert('Arm a track first.'); return; }
+    if (armedId == null) { alert('Arm a track first.'); return; }
     ensureAudio();
-    // P0-1: derive T0 (server clock) from the REAL audio start, so the light and the
-    // audible PA track share one origin. nudge compensates PA/output latency.
-    var leadSec = LEAD_MS / 1000;
-    var ctxStart = audioCtx.currentTime + leadSec;
-    var perfStart = performance.now() + LEAD_MS;       // perf time of audio start
-    var T0 = perfStart + (clock ? clock.offset : 0) + nudge;
-    if (source) { try { source.stop(); } catch (e) {} }
-    source = audioCtx.createBufferSource(); source.buffer = armedBuffer; source.connect(audioCtx.destination);
-    source.start(ctxStart);
+    // P0-1: when the console can play the audio, derive T0 from the REAL audio start
+    // so the light and the audible PA track share one origin (nudge compensates PA
+    // latency). If audio couldn't be decoded here, start the lights at now+lead and
+    // play the music from another source, lining it up with the nudge slider.
+    var T0;
+    if (armedBuffer) {
+      var ctxStart = audioCtx.currentTime + LEAD_MS / 1000;
+      var perfStart = performance.now() + LEAD_MS;
+      T0 = perfStart + (clock ? clock.offset : 0) + nudge;
+      if (source) { try { source.stop(); } catch (e) {} }
+      source = audioCtx.createBufferSource(); source.buffer = armedBuffer; source.connect(audioCtx.destination);
+      source.start(ctxStart);
+    } else {
+      T0 = performance.now() + LEAD_MS + (clock ? clock.offset : 0) + nudge;
+    }
     if (ws && ws.readyState === 1) ws.send(JSON.stringify({ t: 'op', cmd: 'go', T0: T0 }));
   });
   $('pause').addEventListener('click', function () { if (source) { try { source.stop(); } catch (e) {} } if (ws) ws.send(JSON.stringify({ t: 'op', cmd: 'pause' })); });
