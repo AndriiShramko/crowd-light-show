@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-06-28
+
+Landing demo plays the music, audience-form autofill, and an English-first demo.
+
+### Added
+
+- **The "Try it" demo now plays the music** — instead of a generic light loop, the demo
+  uses the first track in the operator's playlist: its real light timeline plus its audio,
+  played locally on the phone, **looped and synced** to a shared demo epoch (a new
+  `AudioSync.startLoop` keeps the loop phase-locked; drift is corrected relative to the
+  initial lock so the constant output-latency lead isn't fought). New public, rate-limited
+  `GET /api/demo/audio`. Falls back to the synthetic light loop if the playlist is empty,
+  and degrades to lights-only if a browser can't decode the track.
+
+### Changed
+
+- **Audience contact form is autofill-friendly** — the contact field is now `type="email"`
+  (with `inputmode="email"`), so the browser recognizes the form as a contact form and
+  offers saved name/email; `novalidate` keeps phone/Telegram entries valid.
+- **The demo defaults to English** (`/join?demo=1`) — the on-stage audience consent stays
+  Polish (a PL event needs the PL epilepsy warning), but the international "try it" flow is EN.
+
+### Fixed
+
+- **AudioContext anchor** — ignore a `getOutputTimestamp()` that returns zeroed values right
+  after `resume()` (which skewed the audio↔show-clock mapping ~100 ms).
+
 ## [0.4.0] - 2026-06-28
 
 Presets that react to the music, tighter per-phone audio, and audience-UX polish.
@@ -154,7 +181,8 @@ Initial MVP release.
   flash-rate / strobe limits and the clock-sync + timeline alignment.
 - **Dockerized deploy** — runs in a single container (Node.js + ffmpeg).
 
-[Unreleased]: https://github.com/AndriiShramko/crowd-light-show/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/AndriiShramko/crowd-light-show/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/AndriiShramko/crowd-light-show/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/AndriiShramko/crowd-light-show/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/AndriiShramko/crowd-light-show/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/AndriiShramko/crowd-light-show/compare/v0.1.0...v0.2.0

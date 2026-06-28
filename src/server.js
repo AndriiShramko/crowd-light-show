@@ -107,7 +107,30 @@ app.get('/api/public/show', () => { const s = getOrCreateDefaultShow(); return {
 const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
 // ---- demo: a zero-setup, always-looping show anyone can join (the "Try it" QR) ----
-app.get('/api/demo', () => ({ timeline: DEMO, T0: DEMO_T0, duration: DEMO.durationMs, loop: true, serverTime: serverClock() }));
+// Prefer a REAL admin-uploaded track (its lights match its music); the demo then plays
+// that track's audio too, looped + synced. Falls back to the synthetic light loop if the
+// playlist is empty or crowd audio is disabled.
+function demoTrack() {
+  if (!config.crowdAudioEnabled) return null;
+  try { return db.prepare("SELECT * FROM track WHERE analysis_status='done' AND timeline_path IS NOT NULL ORDER BY position ASC, id ASC LIMIT 1").get(); } catch { return null; }
+}
+app.get('/api/demo', () => {
+  const t = demoTrack();
+  if (t) {
+    const tl = hub.loadTimeline(t.id);
+    if (tl) return { timeline: tl, T0: DEMO_T0, duration: tl.durationMs, loop: true, hasAudio: !!(t.file_path && fs.existsSync(t.file_path)), serverTime: serverClock() };
+  }
+  return { timeline: DEMO, T0: DEMO_T0, duration: DEMO.durationMs, loop: true, hasAudio: false, serverTime: serverClock() };
+});
+// Public, rate-limited demo audio = the demo track's file (the operator's deliberate
+// showcase choice; landing carries the disclaimers). Decoded + looped on the phone.
+app.get('/api/demo/audio', { config: { rateLimit: { max: 40, timeWindow: '1 minute' } } }, (req, reply) => {
+  if (!config.crowdAudioEnabled) return reply.code(503).send({ error: 'crowd audio disabled' });
+  const t = demoTrack();
+  if (!t || !t.file_path || !fs.existsSync(t.file_path)) return reply.code(404).send({ error: 'no demo audio' });
+  reply.header('Accept-Ranges', 'bytes').header('Cache-Control', 'public, max-age=3600');
+  return reply.type('application/octet-stream').send(fs.createReadStream(t.file_path));
+});
 app.get('/api/demo/qr', async (req, reply) => {
   const png = await QRCode.toBuffer(`${config.publicBaseUrl || ''}/join?demo=1`, { width: 600, margin: 2 });
   return reply.type('image/png').send(png);

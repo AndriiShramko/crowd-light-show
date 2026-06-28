@@ -31,7 +31,9 @@
       audio_btn: '🔊 Play the music on my phone too', audio_on: '🔊 Music on — in sync with the crowd', st_full: 'venue full — retrying…',
     },
   };
-  var lang = 'pl';
+  // The on-stage audience consent defaults to PL (a Polish event needs the PL epilepsy
+  // warning); the marketing DEMO (?demo=1) defaults to EN — it's the international "try it" flow.
+  var lang = (function () { try { return new URLSearchParams(location.search).get('demo') === '1' ? 'en' : 'pl'; } catch (e) { return 'pl'; } })();
   function t(k) { return (DICT[lang] && DICT[lang][k]) || (DICT.pl[k]) || k; }
   function apply() {
     document.documentElement.lang = lang;

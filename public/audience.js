@@ -40,7 +40,7 @@
   var runState = { status: 'idle', T0: null, epoch: 0, pausePos: 0 };
   var wakeLock = null, torchTrack = null, torchOn = false, lastTorchAt = 0, useTorch = false;
   var lastBg = '#000', prevLum = 0, flashArmed = true;
-  var demoMode = false, demoT0 = 0;
+  var demoMode = false, demoT0 = 0, demoLoopMs = 0, demoHasAudio = false; // landing demo (loops the admin track)
   var renderRunning = false; // the rAF loop starts once and survives leave()/rejoin
 
   var isAndroid = /Android/i.test(navigator.userAgent);
@@ -94,6 +94,7 @@
     initWave();
     // Spread the join thundering-herd at a stadium: stagger WS handshakes over a
     // window so thousands don't connect in the same instant (off for tests/demo).
+    if (DEMO) demoAudioInit();    // create+resume the AudioContext IN this tap (autoplay policy)
     setTimeout(connect, Math.random() * JOIN_SPREAD);
     if (AUDIO) enableAudio(); // headless auto opt-in
     if (!renderRunning) { renderRunning = true; requestAnimationFrame(render); } // start once; survives rejoin
@@ -119,7 +120,9 @@
       setInterval(function () { if (ws.readyState === 1) clock.ping(); }, 20000);
       if (DEMO) {
         fetch('/api/demo').then(function (r) { return r.json(); }).then(function (d) {
-          timeline = d.timeline; demoT0 = d.T0; demoMode = true; buildEnvelope(); setStatus('st_play');
+          timeline = d.timeline; demoT0 = d.T0; demoMode = true; demoLoopMs = d.timeline.durationMs; demoHasAudio = !!d.hasAudio;
+          buildEnvelope(); setStatus('st_play');
+          if (audio && demoHasAudio) startDemoAudio(); // play the admin track's music, looped + synced
         }).catch(function () {});
       }
     };
@@ -178,6 +181,31 @@
     audio = new AudioSync(clock || new ClockSync(function () {}));
     audio.tele = function (o) { for (var k in o) window.__cls.audio[k] = o[k]; };
     audio.init().then(function () { cacheAudio(); }).catch(function () {});
+  }
+  // Landing demo music: create+resume the AudioContext inside the Join tap (iOS autoplay),
+  // then (once the track is fetched + clock synced) loop the admin track's audio in sync.
+  function demoAudioInit() {
+    if (audio || !window.AudioSync) return;
+    audio = new AudioSync(null);
+    audio.tele = function (o) { for (var k in o) window.__cls.audio[k] = o[k]; };
+    window.__cls.audio.wanted = true;
+    audio.init().catch(function () {});
+  }
+  function startDemoAudio() {
+    if (!audio || audioCaching || audio.ready()) return;
+    audio.clock = clock;
+    audioCaching = true;
+    fetch('/api/demo/audio').then(function (r) { return r.ok ? r.arrayBuffer() : null; })
+      .then(function (ab) {
+        audioCaching = false; if (!ab) return;
+        return audio.cache(ab).then(function () {
+          var tries = 0, w = setInterval(function () {        // start once the clock is synced
+            if (clock && clock.ready) { clearInterval(w); audio.startLoop(demoT0, demoLoopMs); }
+            else if (++tries > 200) clearInterval(w);
+          }, 50);
+        });
+      })
+      .catch(function () { audioCaching = false; });          // AAC may not decode headless -> lights-only (graceful)
   }
   function cacheAudio() {
     if (!audio || !audioOn || audio.ready() || audioCaching) return;

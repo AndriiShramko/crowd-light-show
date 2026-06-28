@@ -46,8 +46,11 @@
   AudioSync.prototype.ready = function () { return !!(this.ctx && this.buf); };
   AudioSync.prototype._anchorClocks = function () {
     var ts = this.ctx.getOutputTimestamp ? this.ctx.getOutputTimestamp() : null;
-    var perf = ts && ts.performanceTime ? ts.performanceTime : performance.now();
-    var actx = ts && ts.contextTime != null ? ts.contextTime : this.ctx.currentTime;
+    // only trust getOutputTimestamp once it has real values — right after resume() some
+    // browsers return {contextTime:0, performanceTime:0}, which would skew the anchor ~100ms.
+    var valid = ts && ts.contextTime > 0 && ts.performanceTime > 0;
+    var perf = valid ? ts.performanceTime : performance.now();
+    var actx = valid ? ts.contextTime : this.ctx.currentTime;
     this.anchor = { actx: actx, showAtActx: perf + this.clock.offset }; // (audio sec) <-> (show ms)
   };
   // Start (or restart) playback aligned so show-position == clock.serverNow() - T0.
@@ -90,6 +93,50 @@
       if (Math.abs(drift) < 5) { self.src.playbackRate.value = 1; return; }             // tight deadband (was 15) — less audible wander; nudge actively drives drift toward 0
       if (Math.abs(drift) > 90) { self.start(self.T0); return; }                        // reseat on big jump
       try { self.src.playbackRate.value = 1 + (drift > 0 ? 1 : -1) * 0.003; } catch (e) {} // inaudible nudge
+    }, 1000);
+  };
+  // LOOPING playback synced to a fixed epoch (the landing demo): every phone plays the
+  // same position = (serverNow - epochMs) % loopMs at the same wall instant, looping forever.
+  AudioSync.prototype.startLoop = function (epochMs, loopMs) {
+    if (!this.ready()) return;
+    this.stopSource();
+    this._anchorClocks();
+    this.T0 = epochMs; this.loopMs = loopMs; this.looping = true;
+    var L = this._outLatency();
+    var loopSec = Math.min(this.buf.duration, loopMs / 1000); // audio loop period == lights loop period
+    var targetShow = this.clock.serverNow() + 120;            // +0.12s scheduling margin
+    var loopPos = (((targetShow - epochMs) % loopMs) + loopMs) % loopMs; // ms into the loop at target
+    var src = this.ctx.createBufferSource(); src.buffer = this.buf;
+    src.loop = true; src.loopStart = 0; src.loopEnd = loopSec; src.connect(this.gain);
+    var when = this.anchor.actx + (targetShow - this.anchor.showAtActx) / 1000 - L;
+    var safeWhen = Math.max(this.ctx.currentTime + 0.01, when);
+    var clampSec = safeWhen - when;
+    var offsetSec = ((loopPos / 1000) + clampSec) % loopSec;
+    if (offsetSec < 0) offsetSec += loopSec;
+    try { src.start(safeWhen, offsetSec); } catch (e) { return; }
+    this.src = src; this.startOffsetSec = offsetSec; this.startWhenActx = safeWhen; this.loopSec = loopSec;
+    this.tele({ scheduled: true, looping: true, outLatencyMs: Math.round(L * 1000), loopMs: loopMs, driftMs: 0 });
+    this._startLoopDrift();
+  };
+  AudioSync.prototype._startLoopDrift = function () {
+    var self = this; if (this.driftTimer) clearInterval(this.driftTimer);
+    self.loopBase = null; // the constant cursor<->lights offset (intended lead + buffer latency)
+    this.driftTimer = setInterval(function () {
+      if (!self.src || !self.looping) return;
+      var expected = (((self.clock.serverNow() - self.T0) % self.loopMs) + self.loopMs) % self.loopMs; // ms in loop
+      var playedSec = (self.ctx.currentTime - self.startWhenActx) + self.startOffsetSec;
+      var playedPos = (((playedSec % self.loopSec) + self.loopSec) % self.loopSec) * 1000;               // ms in loop
+      var raw = expected - playedPos;
+      if (raw > self.loopMs / 2) raw -= self.loopMs;            // wrap to nearest
+      if (raw < -self.loopMs / 2) raw += self.loopMs;
+      if (self.loopBase == null) { self.loopBase = raw; }       // lock onto the start offset (cursor leads sound by L on purpose)
+      var dev = raw - self.loopBase;                            // GENUINE drift since the lock (clock/audio divergence)
+      if (dev > self.loopMs / 2) dev -= self.loopMs;
+      if (dev < -self.loopMs / 2) dev += self.loopMs;
+      self.tele({ driftMs: Math.round(dev) });
+      if (Math.abs(dev) < 8) { self.src.playbackRate.value = 1; return; }
+      if (Math.abs(dev) > 120) { self.startLoop(self.T0, self.loopMs); return; } // reseat on a big slip
+      try { self.src.playbackRate.value = 1 + (dev > 0 ? 1 : -1) * 0.003; } catch (e) {}
     }, 1000);
   };
   AudioSync.prototype.stopSource = function () {
