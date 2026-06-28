@@ -25,6 +25,13 @@
     <div class="card">
       <p data-t="how">Domyślnie świeci <b>ekran telefonu</b> (działa na każdym telefonie). Na Androidzie możesz dodatkowo włączyć <b>prawdziwą latarkę</b> — przeglądarka poprosi wtedy o dostęp do kamery. <b>Nie nagrywamy ani nie wysyłamy żadnego obrazu</b> — kamera służy wyłącznie do włączania diody.</p>
       <p class="muted" data-t="batt">Pokaz zużywa baterię, telefon może się nagrzać, a ekran pozostaje włączony. Trzymaj telefon ekranem do sceny i nie blokuj go.</p>
+
+      <!-- brightness ask: instruction only, NOT a gate (join stays gated solely by #agree) -->
+      <div class="card warn" id="brightAsk" style="margin:12px 0 0">
+        <b data-t="bright_h">🔆 Ustaw jasność na maksimum</b>
+        <p data-t="bright_b">Przesuń jasność ekranu na maksimum i wyłącz jasność automatyczną (adaptacyjną) — w ciemnej sali telefon sam ją przyciemnia. Im jaśniej, tym mocniejszy wspólny efekt.</p>
+      </div>
+
       <label class="muted" style="display:flex;gap:8px;align-items:flex-start;margin-top:8px">
         <input type="checkbox" id="agree"><span data-t="agree">Rozumiem ostrzeżenie o błyskach i zgadzam się dołączyć.</span>
       </label>
@@ -43,6 +50,7 @@
   <div id="live" class="wrap hidden" style="text-align:center">
     <h1 data-t="live_h">Jesteś światłem ✨</h1>
     <p class="muted" data-t="live_b">Trzymaj telefon ekranem do sceny. Nie blokuj ekranu.</p>
+    <button id="audioBtn" class="ghost hidden" data-t="audio_btn">🔊 Odtwórz muzykę też na moim telefonie</button>
     <p class="muted" id="resume" class="hidden"></p>
   </div>
 
@@ -57,9 +65,11 @@
 <canvas id="wave" class="hidden" title="the music — the lights follow this"></canvas>
 <div id="diag" class="hidden"></div>
 <div id="statuspill" class="hidden"></div>
+<div id="brightToast" class="hidden"></div>
 
 <script src="/static/clocksync.js"></script>
 <script src="/static/presets.js"></script>
+<script src="/static/audio-sync.js"></script>
 <script src="/static/i18n.js"></script>
 <script src="/static/audience.js"></script>
 </body>

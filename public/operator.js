@@ -1,8 +1,9 @@
 (function () {
   'use strict';
   var TOKEN = window.__TOKEN__;
-  var LEAD_MS = 600;
+  var LEAD_MS = Number(window.__LEAD__) || 900; // from config (single source of truth)
   var ws = null, clock = null, armedId = null, audioReady = false, nudge = 0, curState = 'idle';
+  var pendingGo = false, goWatcher = null; // GO deferred until the operator clock locks
   var player = document.getElementById('player');
 
   var $ = function (id) { return document.getElementById(id); };
@@ -36,7 +37,9 @@
   function renderState(st) {
     curState = st.status;
     $('state').textContent = st.status;
-    $('go').textContent = st.status === 'paused' ? '▶ RESUME' : (st.status === 'running' ? '● LIVE' : '▶ GO');
+    if (pendingGo) return; // keep the "⏳ syncing clock…" label while a GO is deferred
+    var locking = (st.status === 'idle' && !(clock && clock.ready));
+    $('go').textContent = st.status === 'paused' ? '▶ RESUME' : (st.status === 'running' ? '● LIVE' : (locking ? '▶ GO (clock…)' : '▶ GO'));
   }
 
   $('tracks').addEventListener('click', function (e) {
@@ -79,15 +82,8 @@
 
   function flashBtn(el) { el.style.boxShadow = '0 0 0 3px #fff'; setTimeout(function () { el.style.boxShadow = ''; }, 300); }
 
-  $('go').addEventListener('click', function () {
-    if (armedId == null) { alert('Arm a track first.'); return; }
-    flashBtn($('go'));
-    if (curState === 'paused') {              // RESUME from the pause point (continue, not restart)
-      if (audioReady && player.src) { var pr = player.play(); if (pr && pr.catch) pr.catch(function () {}); }
-      if (ws && ws.readyState === 1) ws.send(JSON.stringify({ t: 'op', cmd: 'resume' }));
-      return;
-    }
-    $('go').textContent = '● starting…';      // instant feedback (there is a ~0.6s lead before the drop)
+  function doGo() {
+    $('go').textContent = '● starting…';      // instant feedback (there is a lead before the drop)
     // Lights start at T0 = now + lead (server clock via offset + nudge); audio is
     // scheduled to the same instant. nudge fine-tunes PA latency.
     var T0 = performance.now() + LEAD_MS + (clock ? clock.offset : 0) + nudge;
@@ -96,6 +92,25 @@
       setTimeout(function () { var p = player.play(); if (p && p.catch) p.catch(function () {}); }, LEAD_MS);
     }
     if (ws && ws.readyState === 1) ws.send(JSON.stringify({ t: 'op', cmd: 'go', T0: T0 }));
+  }
+  $('go').addEventListener('click', function () {
+    if (armedId == null) { alert('Arm a track first.'); return; }
+    flashBtn($('go'));
+    if (curState === 'paused') {              // RESUME from the pause point (continue, not restart)
+      if (audioReady && player.src) { var pr = player.play(); if (pr && pr.catch) pr.catch(function () {}); }
+      if (ws && ws.readyState === 1) ws.send(JSON.stringify({ t: 'op', cmd: 'resume' }));
+      return;
+    }
+    // Do NOT GO off an unconverged operator clock — that shifts the whole crowd vs the
+    // music. Defer and auto-fire the instant the clock locks (usually <2s).
+    if (!(clock && clock.ready)) {
+      pendingGo = true; $('go').textContent = '⏳ syncing clock…';
+      if (!goWatcher) goWatcher = setInterval(function () {
+        if (clock && clock.ready && pendingGo) { pendingGo = false; clearInterval(goWatcher); goWatcher = null; doGo(); }
+      }, 100);
+      return;
+    }
+    doGo();
   });
   $('pause').addEventListener('click', function () { flashBtn($('pause')); try { player.pause(); } catch (e) {} if (ws) ws.send(JSON.stringify({ t: 'op', cmd: 'pause' })); });
   $('stop').addEventListener('click', function () { flashBtn($('stop')); try { player.pause(); player.currentTime = 0; } catch (e) {} if (ws) ws.send(JSON.stringify({ t: 'op', cmd: 'stop' })); });
@@ -114,11 +129,14 @@
     ws.onopen = function () {
       $('conn').textContent = 'online';
       ws.send(JSON.stringify({ t: 'hello', role: 'operator', token: TOKEN }));
-      var n = 0; var p = setInterval(function () { if (ws.readyState === 1) { clock.ping(); if (++n >= 12) clearInterval(p); } }, 120);
+      // Longer rapid sync (~2s, 25 @80ms) so the operator clock is genuinely converged
+      // before a human can arm+GO — a GO off an unconverged operator clock shifts the
+      // WHOLE crowd vs the music (the reported first-run ~0.5s desync).
+      var n = 0; var p = setInterval(function () { if (ws.readyState === 1) { clock.ping(); if (++n >= 25) clearInterval(p); } }, 80);
       setInterval(function () { if (ws.readyState === 1) clock.ping(); }, 25000);
     };
     ws.onmessage = function (ev) { var m; try { m = JSON.parse(ev.data); } catch (e) { return; }
-      if (m.t === 'sync') { clock.onReply(m.c0, m.s1); return; }
+      if (m.t === 'sync') { clock.onReply(m.c0, m.s1); if (clock.ready && curState === 'idle') renderState({ status: curState }); return; }
       if (m.t === 'count') { $('count').textContent = m.audience; $('countBig').textContent = m.audience; return; }
       if (m.t === 'state') { renderState(m.state); return; }
     };

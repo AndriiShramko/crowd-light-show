@@ -6,7 +6,10 @@
   var DIAG = params.get('diag') === '1';        // show clock-sync diagnostics
   var JITTER = Math.max(0, Number(params.get('jitter') || 0)); // simulated inbound delay (ms)
   var ROOM = (function () { var r = params.get('room') || ''; return /^[a-z0-9]{6,24}$/.test(r) ? r : ''; })(); // studio demo room
+  var AUDIO = params.get('audio') === '1'; // headless: auto opt-in to phone audio
+  var JOIN_SPREAD = (AUTO || DEMO || ROOM) ? 0 : 800; // spread the join herd (stadium); off for tests/demo
   var env = null, waveEl = null, waveCtx = null, waveTick = 0; // music waveform + playhead
+  var audio = null, audioOn = false, audioCaching = false; // per-phone synchronized music (opt-in)
 
   // Live parametric preset engine (studio channel). Each phone renders the active
   // preset locally off the synced clock; switches are a tiny broadcast (epoch++).
@@ -25,11 +28,13 @@
   var agree = document.getElementById('agree');
   var joinScreen = document.getElementById('joinScreen');
   var joinTorch = document.getElementById('joinTorch');
+  var brightToast = document.getElementById('brightToast');
 
   // Test/telemetry hook (read by the Playwright sync harness). Every new path writes
   // here — it is the single machine-readable seam for verification.
   window.__cls = { flashes: [], lastBg: '#000', offset: 0, timeOrigin: performance.timeOrigin, status: 'idle', started: false, consented: false, everLit: false, colors: [],
-    room: ROOM || 'main', idx: 0, total: 1, preset: null, presetRgb: null, presetPos: -1, presetEpoch: 0 };
+    room: ROOM || 'main', idx: 0, total: 1, preset: null, presetRgb: null, presetPos: -1, presetEpoch: 0,
+    synced: false, degraded: false, quality: null, audio: { wanted: false, ready: false, scheduled: false } };
 
   var ws = null, clock = null, timeline = null;
   var runState = { status: 'idle', T0: null, epoch: 0, pausePos: 0 };
@@ -48,13 +53,28 @@
   joinTorch.addEventListener('click', function () { join(true); });
   stopBtn.addEventListener('click', leave);
   document.getElementById('rejoin').addEventListener('click', function () { location.reload(); });
+  var audioBtn = document.getElementById('audioBtn');
+  if (audioBtn) audioBtn.addEventListener('click', enableAudio); // user gesture creates+resumes AudioContext
 
   if (AUTO) { agree.checked = true; joinScreen.disabled = false; setTimeout(function () { join(false); }, 50); }
 
   document.addEventListener('visibilitychange', function () {
-    if (!document.hidden && window.__cls.started) { acquireWake(); }
+    if (!document.hidden && window.__cls.started) {
+      acquireWake();
+      if (clock) { clock.resync(); resyncBurst(); } // froze while backgrounded — re-converge (stays dark until ready)
+      if (audio && audioOn) audio.resume();
+    }
   });
 
+  // Web pages CANNOT set screen brightness (no API on iOS/Android) — and auto-brightness
+  // DIMS the phone in a dark venue. So we ask: a short self-dismissing reminder on join
+  // (plus the consent-card instruction). Skipped for headless/auto so harnesses are unaffected.
+  function showBrightToast() {
+    if (AUTO || !brightToast) return;
+    brightToast.textContent = i18n.t('bright_toast');
+    brightToast.classList.remove('hidden');
+    setTimeout(function () { brightToast.classList.add('hidden'); }, 4000);
+  }
   var lastStatusKey = '';
   function setStatus(key) { if (key === lastStatusKey) return; lastStatusKey = key; pill.classList.remove('hidden'); pill.textContent = i18n.t(key); }
 
@@ -66,14 +86,25 @@
     elLive.classList.remove('hidden');
     stopBtn.classList.remove('hidden'); stopBtn.textContent = i18n.t('stop');
     setStatus('st_conn');
+    showBrightToast();             // non-blocking reminder to max brightness (can't set it for them)
     requestFullscreen();
     acquireWake();
     if (withTorch) startTorch();
     initWave();
-    connect();
+    // Spread the join thundering-herd at a stadium: stagger WS handshakes over a
+    // window so thousands don't connect in the same instant (off for tests/demo).
+    setTimeout(connect, Math.random() * JOIN_SPREAD);
+    if (AUDIO) enableAudio(); // headless auto opt-in
     requestAnimationFrame(render);
   }
 
+  // A short burst of pings (join, and after a background-resume) to converge fast.
+  function resyncBurst() {
+    var n = 0; var p = setInterval(function () {
+      if (!ws || ws.readyState !== 1) return;
+      clock.ping(); if (++n >= 14) clearInterval(p); // ClockSync is "ready" at >=8 clean samples
+    }, 80);
+  }
   function connect() {
     var proto = location.protocol === 'https:' ? 'wss' : 'ws';
     ws = new WebSocket(proto + '://' + location.host + '/ws');
@@ -81,9 +112,10 @@
     ws.onopen = function () {
       ws.send(JSON.stringify({ t: 'hello', role: 'audience', room: ROOM || undefined, platform: isAndroid ? 'android' : (/iPhone|iPad|iPod/i.test(navigator.userAgent) ? 'ios' : 'other') }));
       setStatus('st_sync');
-      var n = 0;
-      var pinger = setInterval(function () { if (ws.readyState === 1) { clock.ping(); if (++n >= 40) clearInterval(pinger); } }, 70); // ~2.8s rapid sync
-      setInterval(function () { if (ws.readyState === 1) clock.ping(); }, 3000); // continuous re-sync (drift + late convergence)
+      resyncBurst();
+      // Steady re-sync every 20s — cheap (10x fewer frames than 3s at stadium scale),
+      // still < the 25s server ping and < cellular NAT timeout. Drift over 20s is sub-ms.
+      setInterval(function () { if (ws.readyState === 1) clock.ping(); }, 20000);
       if (DEMO) {
         fetch('/api/demo').then(function (r) { return r.json(); }).then(function (d) {
           timeline = d.timeline; demoT0 = d.T0; demoMode = true; buildEnvelope(); setStatus('st_play');
@@ -104,13 +136,14 @@
 
   function onMsg(raw) {
     var m; try { m = JSON.parse(raw); } catch (e) { return; }
-    if (m.t === 'sync') { clock.onReply(m.c0, m.s1); window.__cls.offset = clock.offset; window.__cls.synced = clock.ready; window.__cls.rtt = clock.rtt; if (clock.ready && runState.status === 'idle') setStatus('st_wait'); return; }
+    if (m.t === 'full') { window.__cls.full = true; setStatus('st_full'); try { ws.close(); } catch (e) {} setTimeout(connect, 3000 + Math.random() * 5000); return; } // venue full: backoff+jitter retry (no retry storm)
+    if (m.t === 'sync') { clock.onReply(m.c0, m.s1); window.__cls.offset = clock.offset; window.__cls.synced = clock.ready; window.__cls.degraded = clock.degraded; window.__cls.quality = clock.quality; window.__cls.rtt = clock.rtt; if (clock.ready && runState.status === 'idle') setStatus('st_wait'); return; }
     if (m.t === 'welcome' || m.t === 'state') { if (m.state) applyState(m.state); return; }
-    if (m.t === 'timeline') { timeline = m.data; window.__cls.gotTimeline = (timeline && timeline.cues || []).length; buildEnvelope(); return; }
-    if (m.t === 'start') { runState = { status: 'running', T0: m.T0, epoch: m.epoch, pausePos: 0 }; window.__cls.status = 'running'; window.__cls.gotStart = m.T0; prevLum = 0; flashArmed = true; setStatus('st_play'); return; }
-    if (m.t === 'pause') { runState.status = 'paused'; runState.pausePos = m.pos; window.__cls.status = 'paused'; setStatus('st_paused'); return; }
-    if (m.t === 'stop') { runState = { status: 'idle', T0: null, epoch: m.epoch, pausePos: 0 }; window.__cls.status = 'idle'; setStatus('st_wait'); return; }
-    if (m.t === 'blackout') { runState = { status: 'blackout', T0: null, epoch: m.epoch }; window.__cls.status = 'blackout'; return; }
+    if (m.t === 'timeline') { timeline = m.data; window.__cls.gotTimeline = (timeline && timeline.cues || []).length; buildEnvelope(); if (audioOn) cacheAudio(); showAudioBtn(); return; }
+    if (m.t === 'start') { runState = { status: 'running', T0: m.T0, epoch: m.epoch, pausePos: 0 }; window.__cls.status = 'running'; window.__cls.gotStart = m.T0; prevLum = 0; flashArmed = true; if (audio && audioOn) audio.start(m.T0); setStatus('st_play'); return; }
+    if (m.t === 'pause') { runState.status = 'paused'; runState.pausePos = m.pos; window.__cls.status = 'paused'; if (audio) audio.stop(); setStatus('st_paused'); return; }
+    if (m.t === 'stop') { runState = { status: 'idle', T0: null, epoch: m.epoch, pausePos: 0 }; preset = null; window.__cls.preset = null; window.__cls.status = 'idle'; if (audio) audio.stop(); hideWave(); setStatus('st_wait'); return; }
+    if (m.t === 'blackout') { runState = { status: 'blackout', T0: null, epoch: m.epoch }; preset = null; window.__cls.preset = null; window.__cls.status = 'blackout'; if (audio) audio.stop(); hideWave(); return; }
     // ---- studio: live parametric presets ----
     if (m.t === 'index') { myIndex = m.index | 0; N = Math.max(1, m.total | 0); window.__cls.idx = myIndex; window.__cls.total = N; return; }
     if (m.t === 'preset') {
@@ -128,6 +161,32 @@
   function applyState(s) {
     runState.status = s.status; runState.T0 = s.T0; runState.epoch = s.epoch; runState.pausePos = s.pausePos || 0;
     window.__cls.status = s.status;
+    prevLum = 0; flashArmed = true; // late-join: don't suppress the first legitimate flash
+    if (s.status === 'running' && s.T0 != null && audio && audioOn) audio.start(s.T0); // late-join audio
+  }
+
+  // ---- per-phone synchronized music (opt-in) ----
+  function showAudioBtn() {
+    if (!audioBtn || ROOM || DEMO) return;            // only the main timeline show
+    if (timeline && runState.status !== 'blackout') audioBtn.classList.remove('hidden');
+  }
+  function enableAudio() {
+    if (audioOn || !window.AudioSync) return;
+    audioOn = true; window.__cls.audio.wanted = true;
+    if (audioBtn) { audioBtn.textContent = i18n.t('audio_on'); audioBtn.disabled = true; }
+    audio = new AudioSync(clock || new ClockSync(function () {}));
+    audio.tele = function (o) { for (var k in o) window.__cls.audio[k] = o[k]; };
+    audio.init().then(function () { cacheAudio(); }).catch(function () {});
+  }
+  function cacheAudio() {
+    if (!audio || !audioOn || audio.ready() || audioCaching) return;
+    audioCaching = true;
+    fetch('/api/audience/audio').then(function (r) { return r.ok ? r.arrayBuffer() : null; })
+      .then(function (ab) { audioCaching = false; if (!ab) return; return audio.cache(ab).then(function () {
+        // if the show is already running, jump in at the right position now
+        if (runState.status === 'running' && runState.T0 != null) audio.start(runState.T0);
+      }); })
+      .catch(function () { audioCaching = false; });
   }
 
   function sampleCue(pos) {
@@ -170,8 +229,11 @@
         var cd = sampleCue(pos); lum = cd.b; rgb = cd.rgb; playing = true;
       } else if (synced && timeline && runState.status === 'running') {
         pos = clock.serverNow() - runState.T0;
-        if (pos >= 0 && pos <= timeline.durationMs + 250) { var c = sampleCue(pos); lum = c.b; rgb = c.rgb; playing = true; }
-        setStatus('st_play');
+        if (pos > timeline.durationMs + 250) {
+          // Track finished: end locally (go dark, hide the waveform) even before the
+          // server's auto-stop arrives — the music is over, so stop flashing.
+          runState.status = 'idle'; window.__cls.status = 'idle'; hideWave(); setStatus('st_wait');
+        } else if (pos >= 0) { var c = sampleCue(pos); lum = c.b; rgb = c.rgb; playing = true; setStatus('st_play'); }
       } else if (!synced && (demoMode || runState.status === 'running')) {
         setStatus('st_sync'); // clock not converged yet → stay dark, don't flash out of sync
       }
@@ -204,6 +266,7 @@
     env = a; if (waveEl) waveEl.classList.remove('hidden');
   }
   function initWave() { waveEl = document.getElementById('wave'); if (waveEl) waveCtx = waveEl.getContext('2d'); }
+  function hideWave() { if (waveEl) waveEl.classList.add('hidden'); }
   function drawWave(pos) {
     if (!waveCtx || !env) return;
     var cw = waveEl.clientWidth || 320, ch = waveEl.clientHeight || 44;
@@ -256,6 +319,7 @@
   function leave() {
     window.__cls.started = false;
     preset = null; runState.status = 'idle'; // opt-out is terminal: stop all rendering
+    if (audio) { try { audio.teardown(); } catch (e) {} audio = null; audioOn = false; }
     try { if (ws) ws.close(); } catch (e) {}
     try { if (wakeLock) wakeLock.release(); } catch (e) {}
     if (torchTrack) { try { torchTrack.applyConstraints({ advanced: [{ torch: false }] }); } catch (e) {} try { torchTrack.stop(); } catch (e) {} torchTrack = null; }

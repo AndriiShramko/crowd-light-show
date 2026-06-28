@@ -38,6 +38,10 @@ button:disabled { opacity: .5; cursor: default; }
   pointer-events: auto; background: rgba(0,0,0,.55); border-color: rgba(255,255,255,.4); color: #fff; padding: 10px 14px; }
 #statuspill { position: fixed; bottom: 12px; left: 50%; transform: translateX(-50%); z-index: 3;
   background: rgba(0,0,0,.5); color: #fff; padding: 6px 12px; border-radius: 999px; font-size: .8rem; pointer-events: none; }
+#brightToast { position: fixed; bottom: 52px; left: 50%; transform: translateX(-50%); z-index: 4;
+  max-width: 86vw; text-align: center; background: rgba(20,16,4,.92); color: var(--warn);
+  border: 1px solid var(--warn); padding: 10px 16px; border-radius: 999px; font-size: .9rem;
+  font-weight: 600; pointer-events: none; box-shadow: 0 4px 18px rgba(0,0,0,.5); }
 #wave { position: fixed; left: 8px; width: calc(100vw - 16px); bottom: 44px; height: 44px; z-index: 3;
   background: rgba(0,0,0,.5); border-radius: 8px; pointer-events: none; }
 #diag { position: fixed; left: 8px; bottom: 12px; z-index: 4; font-size: 11px; color: #9aa3b2;

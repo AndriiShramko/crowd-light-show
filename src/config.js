@@ -49,6 +49,13 @@ export const config = {
   // (red-team "?next" dormancy): set STUDIO_ENABLED=0 to put it fully to sleep on
   // prod without a redeploy — endpoints 503, landing CTA hidden, audience unaffected.
   studioEnabled: process.env.STUDIO_ENABLED !== '0',
+  // Per-phone synchronized audio (opt-in "play the music on my phone too"). Gated on
+  // the armed track being license-attested (bigger public-performance footprint than
+  // one PA). Set CROWD_AUDIO_ENABLED=0 to disable. Honest scope: small/medium venue.
+  crowdAudioEnabled: process.env.CROWD_AUDIO_ENABLED !== '0',
+  // Capacity guard: refuse new audience past this with a graceful "venue full" so the
+  // single process degrades instead of OOM-killing the container at stadium scale.
+  maxAudience: Number(process.env.MAX_AUDIENCE || 1500),
 };
 
 export function scryptVerify(plainPass, stored) {

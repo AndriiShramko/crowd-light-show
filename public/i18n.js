@@ -10,9 +10,11 @@
       batt: 'Pokaz zużywa baterię, telefon może się nagrzać, a ekran pozostaje włączony. Trzymaj telefon ekranem do sceny i nie blokuj go.',
       agree: 'Rozumiem ostrzeżenie o błyskach i zgadzam się dołączyć.',
       join: 'Dołącz — użyj ekranu', join_torch: 'Dołącz + latarka (Android, używa kamery)',
-      made: 'Stworzone przez', live_h: 'Jesteś światłem ✨', live_b: 'Trzymaj telefon ekranem do sceny. Nie blokuj ekranu.',
+      made: 'Stworzone przez', live_h: 'Jesteś światłem ✨', live_b: 'Trzymaj telefon ekranem do sceny. Nie blokuj ekranu. Jasność na maksimum, automatyczna wyłączona.',
+      bright_h: '🔆 Ustaw jasność na maksimum', bright_b: 'Przesuń jasność ekranu na maksimum i wyłącz jasność automatyczną (adaptacyjną) — w ciemnej sali telefon sam ją przyciemnia. Im jaśniej, tym mocniejszy wspólny efekt.', bright_toast: '🔆 Jasność na maks + wyłącz automatyczną',
       left_h: 'Wyszedłeś z pokazu', rejoin: 'Dołącz ponownie', stop: 'Stop',
       st_conn: 'łączenie…', st_sync: 'synchronizacja…', st_ready: 'gotowe • tryb ekranu', st_ready_t: 'gotowe • ekran + latarka', st_play: 'gra ▶', st_wait: 'czekam na start…', st_paused: 'pauza', st_resume: 'Dotknij, aby wrócić — nie blokuj ekranu',
+      audio_btn: '🔊 Odtwórz muzykę też na moim telefonie', audio_on: '🔊 Muzyka włączona — w rytmie z resztą', st_full: 'komplet — ponawiam…',
     },
     en: {
       title: 'Crowd Light Show', sub: 'Your phone becomes part of one light show synchronized to the music.',
@@ -22,9 +24,11 @@
       batt: 'The show uses battery, your phone may get warm, and the screen stays on. Hold the phone screen toward the stage and don’t lock it.',
       agree: 'I understand the flashing warning and agree to join.',
       join: 'Join — use my screen', join_torch: 'Join + flashlight (Android, uses camera)',
-      made: 'Made by', live_h: 'You are a light ✨', live_b: 'Hold the phone screen toward the stage. Don’t lock the screen.',
+      made: 'Made by', live_h: 'You are a light ✨', live_b: 'Hold the phone screen toward the stage. Don’t lock the screen. Brightness at max, auto off.',
+      bright_h: '🔆 Turn brightness up to max', bright_b: 'Slide your screen brightness to maximum and turn off auto (adaptive) brightness — in a dark room the phone dims itself. The brighter your screen, the stronger the crowd effect.', bright_toast: '🔆 Brightness to max + turn off auto',
       left_h: 'You left the show', rejoin: 'Join again', stop: 'Stop',
       st_conn: 'connecting…', st_sync: 'syncing…', st_ready: 'ready • screen mode', st_ready_t: 'ready • screen + torch', st_play: 'playing ▶', st_wait: 'waiting for start…', st_paused: 'paused', st_resume: 'Tap to return — keep the screen on',
+      audio_btn: '🔊 Play the music on my phone too', audio_on: '🔊 Music on — in sync with the crowd', st_full: 'venue full — retrying…',
     },
   };
   var lang = 'pl';

@@ -32,6 +32,9 @@ export class ShowHub {
     this.timelineCache = new Map(); // trackId -> parsed timeline
     this.alloc = new IndexAllocator();          // main-room index allocator
     this.preset = null;          // main-room live preset {type,params,epoch,startedAt} | null
+    this._endTimer = null;       // auto-stop timer: ends the show when the track finishes
+    this._indexDirty = new Set(); // rooms whose phones need a fresh index broadcast (coalesced)
+    this._indexTimer = null;
     this.rooms = new Map();       // ephemeral demo rooms: id -> {members:Set, preset, alloc}
     this.state = {
       epoch: 0,
@@ -51,12 +54,19 @@ export class ShowHub {
     return data;
   }
 
-  send(ws, obj) {
-    try { if (ws.readyState === OPEN) ws.send(JSON.stringify(obj)); } catch { /* drop */ }
+  send(ws, obj) { this.sendStr(ws, JSON.stringify(obj)); }
+  // Backpressure guard (M7): a stalled cellular phone that can't drain its socket
+  // must not accumulate unbounded buffered frames in the process — drop instead (the
+  // show runs locally off the timeline/preset it already has, so a missed frame is
+  // harmless). Protects the 512 MB container at stadium scale.
+  sendStr(ws, str) {
+    try { if (ws.readyState === OPEN && ws.bufferedAmount < 1000000) ws.send(str); } catch { /* drop */ }
   }
-
-  broadcastAudience(obj) { for (const ws of this.audience) this.send(ws, obj); }
-  broadcastOperators(obj) { for (const ws of this.operators) this.send(ws, obj); }
+  // Serialize ONCE per broadcast and reuse the string for every socket (M1) — at
+  // thousands of phones this turns an N×JSON.stringify allocation bomb (which would
+  // OOM-kill the container on a timeline broadcast) into a single serialization.
+  broadcastAudience(obj) { const s = JSON.stringify(obj); for (const ws of this.audience) this.sendStr(ws, s); }
+  broadcastOperators(obj) { const s = JSON.stringify(obj); for (const ws of this.operators) this.sendStr(ws, s); }
 
   // ---- rooms (main + ephemeral guest demo rooms) ----
   getRoom(roomId, create) {
@@ -74,7 +84,24 @@ export class ShowHub {
 
   // Send every member of a room its OWN sticky index + the current grid width N.
   broadcastIndices(members, alloc) {
-    for (const ws of members) this.send(ws, { t: 'index', index: alloc.indexOf(ws), total: alloc.total() });
+    const total = alloc.total();
+    for (const ws of members) this.sendStr(ws, JSON.stringify({ t: 'index', index: alloc.indexOf(ws), total }));
+  }
+  // Coalesce index broadcasts (M2): a join/leave only marks the room dirty; a single
+  // debounced flush re-indexes it. Avoids the O(N²) message storm during a join herd
+  // (each of N arrivals would otherwise broadcast to all N phones).
+  markIndexDirty(roomId) {
+    this._indexDirty.add(roomId || MAIN_ROOM);
+    if (this._indexTimer) return;
+    this._indexTimer = setTimeout(() => {
+      this._indexTimer = null;
+      const dirty = this._indexDirty; this._indexDirty = new Set();
+      for (const id of dirty) {
+        if (id === MAIN_ROOM) this.broadcastIndices(this.audience, this.alloc);
+        else { const r = this.rooms.get(id); if (r) this.broadcastIndices(r.members, r.alloc); }
+      }
+    }, 200);
+    if (this._indexTimer.unref) this._indexTimer.unref();
   }
 
   addAudience(ws, roomId) {
@@ -90,14 +117,16 @@ export class ShowHub {
         const tl = this.loadTimeline(this.state.trackId);
         if (tl) this.send(ws, { t: 'timeline', trackId: this.state.trackId, data: tl });
       }
-      this.broadcastIndices(this.audience, this.alloc);
+      this.send(ws, { t: 'index', index: this.alloc.indexOf(ws), total: this.alloc.total() }); // joiner gets its index now
+      this.markIndexDirty(MAIN_ROOM);   // others refresh total on the coalesced flush
       this.broadcastCount();
     } else {
       const r = this.getRoom(roomId, true);
       r.members.add(ws); r.alloc.alloc(ws);
       this.send(ws, { t: 'welcome', state: { status: 'demo' }, serverTime: serverClock() });
       if (r.preset) this.send(ws, { t: 'preset', ...r.preset });
-      this.broadcastIndices(r.members, r.alloc);
+      this.send(ws, { t: 'index', index: r.alloc.indexOf(ws), total: r.alloc.total() });
+      this.markIndexDirty(roomId);
     }
   }
 
@@ -105,14 +134,14 @@ export class ShowHub {
     const roomId = ws.room || MAIN_ROOM;
     if (roomId === MAIN_ROOM) {
       this.audience.delete(ws); this.alloc.free(ws);
-      this.broadcastIndices(this.audience, this.alloc);
+      this.markIndexDirty(MAIN_ROOM);
       this.broadcastCount();
     } else {
       const r = this.rooms.get(roomId);
       if (r) {
         r.members.delete(ws); r.alloc.free(ws);
         if (r.members.size === 0) this.rooms.delete(roomId); // ephemeral: clean up empty rooms
-        else this.broadcastIndices(r.members, r.alloc);
+        else this.markIndexDirty(roomId);
       }
     }
   }
@@ -154,6 +183,23 @@ export class ShowHub {
     this.preset = null;
     this.broadcastAudience({ t: 'preset', type: 'off', params: {}, epoch, startedAt: serverClock() });
   }
+
+  // Auto-stop the show when the track finishes, so phones don't keep flashing after
+  // the music ends (the timeline runs locally; without this, each phone only goes
+  // dark at durationMs but the operator must remember to STOP). One server timer ends
+  // everyone together. tailMs gives a hair past the last cue before going dark.
+  cancelEnd() { if (this._endTimer) { clearTimeout(this._endTimer); this._endTimer = null; } }
+  scheduleEnd() {
+    this.cancelEnd();
+    if (this.state.status !== 'running' || this.state.T0 == null) return;
+    const tl = this.loadTimeline(this.state.trackId);
+    const dur = tl && tl.durationMs;
+    if (!dur) return;
+    const remaining = (this.state.T0 + dur) - serverClock() + 300; // +tail
+    this._endTimer = setTimeout(() => { if (this.state.status === 'running') this.stop(); }, Math.max(0, remaining));
+    if (this._endTimer.unref) this._endTimer.unref();
+  }
+
   addOperator(ws) { this.operators.add(ws); this.send(ws, { t: 'state', state: this.publicState() }); this.broadcastCount(); }
   removeOperator(ws) { this.operators.delete(ws); }
 
@@ -172,6 +218,7 @@ export class ShowHub {
   arm(trackId) {
     const tl = this.loadTimeline(trackId);
     if (!tl) return { ok: false, error: 'no timeline for track' };
+    this.cancelEnd();
     this.clearPreset(); // a timeline show supersedes any live preset on the main room
     this.state.trackId = trackId;
     this.state.status = 'idle';
@@ -196,11 +243,13 @@ export class ShowHub {
     this.state.pausePos = 0;
     this.broadcastAudience({ t: 'start', epoch: this.state.epoch, trackId: this.state.trackId, T0 });
     this.broadcastState();
+    this.scheduleEnd();
     return { ok: true };
   }
 
   pause() {
     if (this.state.status !== 'running') return { ok: false, error: 'not running' };
+    this.cancelEnd();
     this.state.epoch++;
     this.state.pausePos = serverClock() - this.state.T0;
     this.state.status = 'paused';
@@ -218,10 +267,13 @@ export class ShowHub {
     this.state.T0 = serverClock() - this.state.pausePos;
     this.broadcastAudience({ t: 'start', epoch: this.state.epoch, trackId: this.state.trackId, T0: this.state.T0 });
     this.broadcastState();
+    this.scheduleEnd();
     return { ok: true, pos: this.state.pausePos };
   }
 
   stop() {
+    this.cancelEnd();
+    this.preset = null; // STOP also kills any live preset (it must not keep flashing)
     this.state.epoch++;
     this.state.status = 'idle';
     this.state.T0 = null;
@@ -233,6 +285,8 @@ export class ShowHub {
 
   blackout() {
     // Immediate, all-dark, highest-priority. Separate from audience opt-out.
+    this.cancelEnd();
+    this.preset = null; // BLACKOUT kills the preset too (all dark, nothing renders)
     this.state.epoch++;
     this.state.status = 'blackout';
     this.state.T0 = null;

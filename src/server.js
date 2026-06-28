@@ -151,6 +151,21 @@ app.post('/api/demo/preset/param', (req, reply) => {
   return hub.setParam(room, v.key, v.value);
 });
 
+// ---- per-phone synchronized audio: serve ONLY the currently-armed track, no auth,
+// rate-limited, and ONLY if the operator attested the licence (crowd-wide public
+// performance is a bigger footprint than one PA). No :id param => can't enumerate
+// arbitrary uploads. Phones opt in client-side and schedule it off the synced clock.
+app.get('/api/audience/audio', { config: { rateLimit: { max: 40, timeWindow: '1 minute' } } }, (req, reply) => {
+  if (!config.crowdAudioEnabled) return reply.code(503).send({ error: 'crowd audio disabled' });
+  const trackId = hub.state.trackId;
+  if (trackId == null) return reply.code(409).send({ error: 'no armed track' });
+  const t = db.prepare('SELECT * FROM track WHERE id=?').get(trackId);
+  if (!t || !t.file_path || !fs.existsSync(t.file_path)) return reply.code(404).send({ error: 'no audio' });
+  if (!t.license_attested) return reply.code(403).send({ error: 'track not licensed for crowd playback' });
+  reply.header('Accept-Ranges', 'bytes').header('Cache-Control', 'public, max-age=3600');
+  return reply.type('application/octet-stream').send(fs.createReadStream(t.file_path));
+});
+
 // ---- lead capture from the landing (public, rate-limited, honeypot) ----
 app.post('/api/apply', async (req, reply) => {
   const b = req.body || {};
@@ -178,6 +193,7 @@ app.get('/operator', (req, reply) => {
   const token = issueToken('operator');
   let html = fs.readFileSync(path.join(config.publicDir, 'operator.html'), 'utf8');
   html = html.replace('@@OPTOKEN@@', token);
+  html = html.replaceAll('@@LEAD@@', String(config.startLeadMs)); // single source of truth for the GO lead
   return reply.type('text/html').send(html);
 });
 
@@ -330,7 +346,16 @@ app.delete('/api/operator/application/:id', (req, reply) => {
 await app.ready();
 
 // ---------- WebSocket hub ----------
-const wss = new WebSocketServer({ noServer: true });
+// permessage-deflate (M5): the armed-timeline broadcast (a repetitive cue JSON, tens
+// of KB) compresses ~10-20x. threshold skips the tiny/frequent sync & preset frames
+// (compressing 30-byte frames is net-negative CPU). *NoContextTakeover is MANDATORY
+// at scale — a per-socket zlib context × thousands would itself OOM the container.
+const wss = new WebSocketServer({ noServer: true, perMessageDeflate: {
+  threshold: 1024,
+  zlibDeflateOptions: { level: 3, memLevel: 7 },
+  serverNoContextTakeover: true,
+  clientNoContextTakeover: true,
+} });
 app.server.on('upgrade', (req, socket, head) => {
   const { url } = req;
   if (!url || !url.startsWith('/ws')) { socket.destroy(); return; }
@@ -351,6 +376,8 @@ wss.on('connection', (ws) => {
       } else {
         ws.role = 'audience'; ws.platform = String(m.platform || 'other').slice(0, 16);
         const room = (typeof m.room === 'string' && /^[a-z0-9]{6,24}$/.test(m.room)) ? m.room : 'main';
+        // Capacity guard (M6): graceful "venue full" instead of OOM-killing the box.
+        if (room === 'main' && hub.audience.size >= config.maxAudience) { hub.send(ws, { t: 'full' }); ws.close(); return; }
         hub.addAudience(ws, room);
       }
       return;

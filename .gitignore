@@ -16,3 +16,5 @@ vendor/ffmpeg
 tmp/
 sync_report.json
 presets_report.json
+audio_report.json
+round4_report.json
