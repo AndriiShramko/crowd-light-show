@@ -53,6 +53,9 @@ export class ShowHub {
     this.timelineCache.set(trackId, data);
     return data;
   }
+  // Evict a cached timeline so a deleted-then-reuploaded track id (SQLite reuses the max
+  // rowid after a delete) can never serve the OLD track's cues to new joiners.
+  evictTimeline(trackId) { this.timelineCache.delete(Number(trackId)); }
 
   send(ws, obj) { this.sendStr(ws, JSON.stringify(obj)); }
   // Backpressure guard (M7): a stalled cellular phone that can't drain its socket
@@ -215,11 +218,14 @@ export class ShowHub {
   }
 
   // ---- operator actions (only callable from an authed operator socket) ----
-  arm(trackId) {
+  arm(trackId, opts = {}) {
     const tl = this.loadTimeline(trackId);
     if (!tl) return { ok: false, error: 'no timeline for track' };
     this.cancelEnd();
-    this.clearPreset(); // a timeline show supersedes any live preset on the main room
+    // Default: a timeline show supersedes any live preset. For AUDIO-REACTIVE presets the
+    // operator passes keepPreset:true so the preset keeps rendering and reads the running
+    // track's loudness envelope (the timeline stays armed/running underneath).
+    if (!opts.keepPreset) this.clearPreset();
     this.state.trackId = trackId;
     this.state.status = 'idle';
     this.state.T0 = null;

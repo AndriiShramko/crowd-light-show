@@ -3,7 +3,19 @@
 // preset is structurally unrepresentable (clamped or rejected), at any params.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import vm from 'node:vm';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { validatePreset, validateParam, simulate, PRESETS, clampColor, relLum, PARAM_SCHEMA, PRESET_TYPES } from '../src/presets.js';
+import { compileFromEnvelope, maxFlashesPerWindow } from '../src/compiler.js';
+
+// load the browser engine for makeBackstop (the on-device safety slew the phone applies)
+const __dir = path.dirname(fileURLToPath(import.meta.url));
+const __sandbox = { window: {} };
+vm.createContext(__sandbox);
+vm.runInContext(fs.readFileSync(path.join(__dir, '..', 'public', 'presets.js'), 'utf8'), __sandbox);
+const CLS = __sandbox.window.CLS_PRESETS;
 
 const LOW = 0.25, HIGH = 0.6;
 function flashesOf(type, params, index, N) {
@@ -60,6 +72,53 @@ test('rainbow_chase sweeps the red hue but the painted red ratio stays < 0.8', (
     if (sum > 0) assert.ok(c[0] / sum < 0.8, 'painted red ratio ' + (c[0] / sum).toFixed(2));
   }
   assert.ok(sawRedHue, 'expected the rainbow to pass through a red hue');
+});
+
+// ---- audio-reactive safety: a beat-heavy track at FULL reactivity stays <=3 flashes/s ----
+function sampleB(cues, pos) {
+  if (pos <= cues[0].t) return cues[0].b;
+  if (pos >= cues[cues.length - 1].t) return cues[cues.length - 1].b;
+  let lo = 0, hi = cues.length - 1;
+  while (lo < hi - 1) { const mid = (lo + hi) >> 1; if (cues[mid].t <= pos) lo = mid; else hi = mid; }
+  const a = cues[lo], b = cues[hi], f = (pos - a.t) / Math.max(1, b.t - a.t);
+  return a.b + (b.b - a.b) * f;
+}
+test('audio-reactive presets stay <=3 flashes/s on a beat-heavy track (rendered pipeline)', () => {
+  // a deliberately strobe-prone source: loud<->quiet every 120ms (~8 onsets/s) BEFORE governing
+  const env = [];
+  for (let t = 0; t <= 8000; t += 20) env.push({ t, rms: (Math.floor(t / 120) % 2) === 0 ? 0.95 : 0.05 });
+  const cues = compileFromEnvelope(env, { durationMs: 8000 });
+  assert.ok(maxFlashesPerWindow(cues) <= 3, 'fixture cue series must already be governed <=3/s');
+
+  // Drive the EXACT phone render pipeline: clampColor + makeBackstop(150), level = governed b(t).
+  for (const type of PRESET_TYPES) {
+    for (const depth of [0.3, 0.6, 1]) {
+      const v = validatePreset(type, { audioDepth: depth, audioGamma: 1, bpm: 180, depth: 0.8, speed: 0.5 });
+      assert.ok(v.ok, `${type} depth ${depth} rejected`);
+      for (const N of [12]) for (const idx of [0, 6, 11]) {
+        const backstop = CLS.makeBackstop(150);
+        const cross = []; let armed = true;
+        for (let ms = 0; ms <= 8000; ms += 16) {
+          const level = sampleB(cues, ms);
+          let rgb = clampColor(PRESETS[type](ms, v.params, idx, N, level));
+          rgb = backstop(rgb, 16);                       // the on-device slew the phone applies
+          const L = relLum(rgb);
+          if (L < LOW) armed = true; else if (L >= HIGH && armed) { cross.push(ms); armed = false; }
+        }
+        let j = 0, w = 0; for (let i = 0; i < cross.length; i++) { while (cross[i] - cross[j] >= 1000) j++; w = Math.max(w, i - j + 1); }
+        assert.ok(w <= 3, `${type} depth=${depth} N=${N} idx=${idx}: ${w} flashes/s on beat-heavy track`);
+      }
+    }
+  }
+});
+
+test('validatePreset gate is safe with audio params (dual-pass level 0/1)', () => {
+  const v = validatePreset('pulse', { audioDepth: 1, audioGamma: 1, depth: 0.8, bpm: 180 });
+  assert.ok(v.ok && v.sim.maxFlashesPerWindow <= 3, 'reactive pulse must pass gate <=3/s');
+  // audioDepth/audioGamma are clamped to schema bounds by validateParam (live morph path)
+  assert.equal(validateParam('pulse', 'audioDepth', 5).value, 1);
+  assert.equal(validateParam('pulse', 'audioDepth', -1).value, 0);
+  assert.equal(validateParam('ocean', 'audioGamma', 99).value, 2.5);
 });
 
 test('validatePreset rejects unknown; off is allowed; validateParam clamps', () => {

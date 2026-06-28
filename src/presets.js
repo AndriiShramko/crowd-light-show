@@ -61,40 +61,76 @@ function palAt(pal, x) {
   return hsl2rgb(lerpHue(a[0], b[0], f), lerp(a[1], b[1], f), lerp(a[2], b[2], f));
 }
 
+// Music reactivity drive. `level` is the GOVERNED loudness (sampleCue(trackPos).b,
+// already <=3 flashes/s) sampled at the synced track position — identical on every
+// phone, so reactivity stays in sync for free. Returns the effective drive 0..1:
+// ZERO whenever audioDepth is 0 OR there is no track (level undefined/0), so a preset
+// with the default audioDepth=0 is BYTE-IDENTICAL to the pre-reactive behaviour.
+// audioGamma shapes the response curve (a "sensitivity" feel); 1 = linear = no effect.
+export function envL(level, p) {
+  let lv = (typeof level === 'number' && level === level) ? level : 0; // NaN/undefined -> 0
+  lv = lv < 0 ? 0 : lv > 1 ? 1 : lv;
+  let d = p.audioDepth == null ? 0 : (p.audioDepth < 0 ? 0 : p.audioDepth > 1 ? 1 : p.audioDepth);
+  let a = d * lv;
+  const g = p.audioGamma == null ? 1 : p.audioGamma;
+  if (g !== 1) a = Math.pow(a, g);
+  return a;
+}
+function lvl01(level) { return (typeof level === 'number' && level === level) ? clamp01(level) : 0; }
+
 // ---------- the ~4 hero presets (math: spec-studio-arch C) ----------
-// Each: (positionMs, params, index, N) -> [r,g,b] 0..255 (RAW; caller clampColors).
+// Each: (positionMs, params, index, N, level) -> [r,g,b] 0..255 (RAW; caller clampColors).
+// `level` (0..1, default 0) = the music's governed loudness at this instant; presets
+// fold it in via envL() so a=0 reproduces the autonomous (non-reactive) output exactly.
 export const PRESETS = {
-  // Pulse — global sinusoidal "breathing". Flashes/sec = bpm/60, capped at 3 (bpm<=180).
-  pulse(position, p, index, N) {
+  // Pulse — sinusoidal "breathing"; with audio it crossfades toward the music's loudness.
+  pulse(position, p, index, N, level) {
     const t = position / 1000;
-    const L = clamp01(p.base + p.depth * sin01(t * p.bpm / 60));
+    const a = envL(level, p);
+    const gen = clamp01(p.base + p.depth * sin01(t * p.bpm / 60));
+    const music = clamp01(p.base + (1 - p.base) * lvl01(level));
+    const L = gen + a * (music - gen);                  // == gen when a==0
     return hsl2rgb(p.hue, p.sat, L * 0.85 + 0.04);
   },
-  // Color Waves — a spatial band of colour rolls across the crowd by index.
-  color_waves(position, p, index, N) {
+  // Color Waves — spatial band rolls across the crowd (time-based); audio dims it when quiet.
+  color_waves(position, p, index, N, level) {
     const t = position / 1000;
     const u = N > 1 ? index / (N - 1) : 0;
     const phase = p.dir * p.speed * t - u / p.wavelength;
-    return palAt(WAVE_PAL, phase);
+    const rgb = palAt(WAVE_PAL, phase);
+    const a = envL(level, p);
+    const k = 1 - a * (1 - (0.35 + 0.65 * lvl01(level)));  // k==1 when a==0; k in [0.35,1]
+    return [rgb[0] * k, rgb[1] * k, rgb[2] * k];
   },
-  // Rainbow Chase — one rainbow wrapped over the crowd (by index), slowly turning.
-  // Luminance is constant (l=0.5) so it never flashes; only hue moves.
-  rainbow_chase(position, p, index, N) {
+  // Rainbow Chase — rainbow wrapped over the crowd (hue time-based); audio lifts brightness.
+  rainbow_chase(position, p, index, N, level) {
     const t = position / 1000;
     const u = N > 1 ? index / (N - 1) : 0;
     const h = 360 * frac(p.dir * p.speed * t + p.spread * u);
-    return hsl2rgb(h, 0.9, 0.5);
+    const a = envL(level, p);
+    const L = 0.5 - a * (0.5 - (0.18 + 0.42 * lvl01(level)));  // L==0.5 when a==0; L in [0.18,0.6]
+    return hsl2rgb(h, 0.9, L);
   },
-  // Ocean — slow calm default. Global, ~0.12 Hz, trivially sub-flash.
-  ocean(position, p, index, N) {
+  // Ocean — slow calm swell; audio lifts the crest brightness with loudness.
+  ocean(position, p, index, N, level) {
     const t = position / 1000;
     const ph = sin01(t * p.speed);
-    return hsl2rgb(lerp(180, 205, ph), 0.7, 0.30 + 0.35 * ph);
+    const a = envL(level, p);
+    const lAuto = 0.30 + 0.35 * ph;
+    const lMusic = 0.30 + 0.35 * ph + 0.30 * lvl01(level);
+    const L = lAuto + a * (lMusic - lAuto);             // == lAuto when a==0
+    return hsl2rgb(lerp(180, 205, ph), 0.7, clamp01(L));
   },
 };
 
 // ---------- parameter schema (defaults + safe bounds; also drives the UI) ----------
 // maxHz reasoning is baked into the bounds; validatePreset() additionally SIMULATES.
+// Music reactivity, shared by every preset (so the operator gets the sliders for free).
+// audioDepth def 0 => a freshly-picked preset is NON-reactive until the operator drags it.
+const AUDIO_PARAMS = {
+  audioDepth: { min: 0, max: 1, step: 0.01, def: 0, label: 'Music reactivity' },
+  audioGamma: { min: 0.4, max: 2.5, step: 0.05, def: 1, label: 'Reactivity curve' },
+};
 export const PARAM_SCHEMA = {
   pulse: {
     label: 'Pulse', spatial: false,
@@ -104,6 +140,7 @@ export const PARAM_SCHEMA = {
       base: { min: 0.05, max: 0.5, step: 0.01, def: 0.18, label: 'Floor' },
       hue: { min: 0, max: 360, step: 1, def: 265, label: 'Hue' },
       sat: { min: 0, max: 1, step: 0.01, def: 0.7, label: 'Saturation' },
+      ...AUDIO_PARAMS,
     },
   },
   color_waves: {
@@ -112,6 +149,7 @@ export const PARAM_SCHEMA = {
       speed: { min: 0.02, max: 0.6, step: 0.01, def: 0.15, label: 'Speed' },
       wavelength: { min: 0.3, max: 3, step: 0.05, def: 1.0, label: 'Wavelength' },
       dir: { min: -1, max: 1, step: 2, def: 1, label: 'Direction' },
+      ...AUDIO_PARAMS,
     },
   },
   rainbow_chase: {
@@ -120,12 +158,14 @@ export const PARAM_SCHEMA = {
       speed: { min: 0.02, max: 0.5, step: 0.01, def: 0.1, label: 'Speed' },
       spread: { min: 0.2, max: 3, step: 0.05, def: 1.0, label: 'Spread' },
       dir: { min: -1, max: 1, step: 2, def: 1, label: 'Direction' },
+      ...AUDIO_PARAMS,
     },
   },
   ocean: {
     label: 'Ocean', spatial: false,
     params: {
       speed: { min: 0.04, max: 0.3, step: 0.01, def: 0.12, label: 'Speed' },
+      ...AUDIO_PARAMS,
     },
   },
 };
@@ -155,21 +195,27 @@ export function simulate(type, params, N = 12) {
   const fn = PRESETS[type];
   const idxs = N > 2 ? [0, Math.floor((N - 1) / 2), N - 1] : [0];
   let maxFlashes = 0, maxRed = 0;
-  for (const index of idxs) {
-    const cross = [];
-    let armed = true;
-    for (let ms = 0; ms <= 4000; ms += 10) {
-      const rgb = clampColor(fn(ms, params, index, N));   // exactly what the phone paints
-      const sum = rgb[0] + rgb[1] + rgb[2];
-      if (sum > 0) maxRed = Math.max(maxRed, rgb[0] / sum);
-      const L = relLum(rgb);
-      if (L < LOW) armed = true;
-      else if (L >= HIGH && armed) { cross.push(ms); armed = false; }
+  // Dual-pass over loudness: level=0 (autonomous, the binding strobe case) and level=1
+  // (max music). A constant held level can't oscillate, so level=0 stays the worst case;
+  // the live signal (governed b, <=3/s) is even safer. The on-device makeBackstop is the
+  // hard guarantee for intermediate, varying loudness (proved by test/presets_safety).
+  for (const lvl of [0, 1]) {
+    for (const index of idxs) {
+      const cross = [];
+      let armed = true;
+      for (let ms = 0; ms <= 4000; ms += 10) {
+        const rgb = clampColor(fn(ms, params, index, N, lvl));   // exactly what the phone paints
+        const sum = rgb[0] + rgb[1] + rgb[2];
+        if (sum > 0) maxRed = Math.max(maxRed, rgb[0] / sum);
+        const L = relLum(rgb);
+        if (L < LOW) armed = true;
+        else if (L >= HIGH && armed) { cross.push(ms); armed = false; }
+      }
+      // max crossings in any 1000ms sliding window
+      let j = 0, w = 0;
+      for (let i = 0; i < cross.length; i++) { while (cross[i] - cross[j] >= 1000) j++; w = Math.max(w, i - j + 1); }
+      maxFlashes = Math.max(maxFlashes, w);
     }
-    // max crossings in any 1000ms sliding window
-    let j = 0, w = 0;
-    for (let i = 0; i < cross.length; i++) { while (cross[i] - cross[j] >= 1000) j++; w = Math.max(w, i - j + 1); }
-    maxFlashes = Math.max(maxFlashes, w);
   }
   return { maxFlashesPerWindow: maxFlashes, maxRedRatio: maxRed };
 }

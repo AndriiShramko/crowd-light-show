@@ -41,6 +41,7 @@
   var wakeLock = null, torchTrack = null, torchOn = false, lastTorchAt = 0, useTorch = false;
   var lastBg = '#000', prevLum = 0, flashArmed = true;
   var demoMode = false, demoT0 = 0;
+  var renderRunning = false; // the rAF loop starts once and survives leave()/rejoin
 
   var isAndroid = /Android/i.test(navigator.userAgent);
   var canTryTorch = isAndroid && !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
@@ -95,7 +96,7 @@
     // window so thousands don't connect in the same instant (off for tests/demo).
     setTimeout(connect, Math.random() * JOIN_SPREAD);
     if (AUDIO) enableAudio(); // headless auto opt-in
-    requestAnimationFrame(render);
+    if (!renderRunning) { renderRunning = true; requestAnimationFrame(render); } // start once; survives rejoin
   }
 
   // A short burst of pings (join, and after a background-resume) to converge fast.
@@ -199,6 +200,19 @@
     return { b: a.b + (b.b - a.b) * f, rgb: [a.rgb[0] + (b.rgb[0] - a.rgb[0]) * f, a.rgb[1] + (b.rgb[1] - a.rgb[1]) * f, a.rgb[2] + (b.rgb[2] - a.rgb[2]) * f] };
   }
 
+  // The music's governed loudness at the current TRACK position — the deterministic,
+  // already-safe (<=3 fl/s) signal that makes presets react to the song while staying
+  // perfectly in sync (every phone samples the same cue b at the same synced trackPos).
+  // Neutral (level 0) whenever no track is running -> presets behave exactly as before.
+  function sampleEnv() {
+    if (!timeline || !timeline.cues || runState.T0 == null || runState.status !== 'running' || !(clock && clock.ready)) {
+      return { level: 0, active: false, trackPos: -1 };
+    }
+    var trackPos = clock.serverNow() - runState.T0;
+    if (trackPos < 0 || trackPos > timeline.durationMs) return { level: 0, active: false, trackPos: trackPos };
+    return { level: sampleCue(trackPos).b, active: true, trackPos: trackPos };
+  }
+
   function render() {
     requestAnimationFrame(render);
     window.__cls.ticks = (window.__cls.ticks || 0) + 1;
@@ -211,12 +225,14 @@
       // STUDIO: render the active parametric preset locally off the synced clock.
       if (synced) {
         pos = clock.serverNow() - preset.startedAt;
-        var raw = P.PRESETS[preset.type](pos, preset.params, myIndex, N);
+        var env = sampleEnv();                          // music loudness at the synced track position
+        var raw = P.PRESETS[preset.type](pos, preset.params, myIndex, N, env.level);
         finalRgb = P.clampColor(raw);                 // safety backstop #1: no saturated red
         var nowf = performance.now(); var dt = lastFrameT ? nowf - lastFrameT : 16; lastFrameT = nowf;
         if (backstop) finalRgb = backstop(finalRgb, dt); // safety backstop #2: >=150ms ramp / <=3 fl/s
         flum = P.relLum(finalRgb); playing = true; epochNow = preset.epoch;
         window.__cls.presetRgb = finalRgb; window.__cls.presetPos = Math.round(pos);
+        window.__cls.envLevel = env.level; window.__cls.envActive = env.active; window.__cls.trackPos = Math.round(env.trackPos);
         setStatus('st_play');
       } else { setStatus('st_sync'); }
     } else {
@@ -325,8 +341,13 @@
     if (torchTrack) { try { torchTrack.applyConstraints({ advanced: [{ torch: false }] }); } catch (e) {} try { torchTrack.stop(); } catch (e) {} torchTrack = null; }
     if (document.fullscreenElement) { try { document.exitFullscreen(); } catch (e) {} }
     flashEl.style.backgroundColor = '#000'; lastBg = '#000';
-    elLive.classList.add('hidden'); stopBtn.classList.add('hidden'); pill.classList.add('hidden');
-    elLeft.classList.remove('hidden');
+    hideWave(); if (brightToast) brightToast.classList.add('hidden');
+    elLive.classList.add('hidden'); stopBtn.classList.add('hidden'); pill.classList.add('hidden'); lastStatusKey = '';
+    // Back to the main menu with consent ALREADY accepted — one tap to rejoin, no
+    // re-checking the box (the user already agreed this session).
+    agree.checked = true; joinScreen.disabled = false; joinTorch.disabled = false;
+    elLeft.classList.add('hidden');
+    elConsent.classList.remove('hidden');
   }
 
   // expose for harness control

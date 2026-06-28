@@ -244,6 +244,7 @@ app.post('/api/operator/upload', async (req, reply) => {
     VALUES (?, ?, 'upload', ?, ?, (SELECT COALESCE(MAX(position),0)+1 FROM track WHERE show_id=?), 'pending', ?)`)
     .run(show.id, (mp.filename || 'track').replace(/\.[^.]+$/, ''), filePath, buf.length, show.id, now());
   const trackId = info.lastInsertRowid;
+  hub.evictTimeline(trackId);   // a reused row id must never serve a previous track's cached cues
 
   try {
     const { durationMs, envelope, beats } = await analyze(filePath);
@@ -282,6 +283,8 @@ app.delete('/api/operator/track/:id', (req, reply) => {
   if (t) {
     for (const p of [t.file_path, t.timeline_path]) { try { if (p) fs.unlinkSync(p); } catch {} }
     db.prepare('DELETE FROM track WHERE id=?').run(t.id);
+    hub.evictTimeline(t.id);                       // drop cached cues (id may be reused)
+    if (hub.state.trackId === t.id) hub.stop();    // don't leave a deleted track armed
   }
   return { ok: true };
 });
@@ -302,7 +305,7 @@ app.post('/api/operator/nudge', (req, reply) => {
 // HTTP control (gated). go() is server-timed here (used by the sync harness and as
 // a fallback); the live operator console uses the WS go with a browser-computed,
 // audio-aligned T0 (P0-1).
-app.post('/api/operator/arm', (req, reply) => { if (!requireOperator(req, reply)) return; return hub.arm(Number(req.body.trackId)); });
+app.post('/api/operator/arm', (req, reply) => { if (!requireOperator(req, reply)) return; return hub.arm(Number(req.body.trackId), { keepPreset: !!(req.body && req.body.keepPreset) }); });
 app.post('/api/operator/go', (req, reply) => { if (!requireOperator(req, reply)) return; return hub.go(serverClock() + config.startLeadMs); });
 app.post('/api/operator/pause', (req, reply) => { if (!requireOperator(req, reply)) return; return hub.pause(); });
 app.post('/api/operator/resume', (req, reply) => { if (!requireOperator(req, reply)) return; return hub.resume(); });
@@ -386,7 +389,7 @@ wss.on('connection', (ws) => {
     if (m.t === 'sync') { hub.send(ws, { t: 'sync', c0: m.c0, s1: serverClock() }); return; }
     if (ws.role === 'operator' && m.t === 'op') {
       const c = m.cmd;
-      if (c === 'arm') hub.arm(Number(m.trackId));
+      if (c === 'arm') hub.arm(Number(m.trackId), { keepPreset: !!m.keepPreset });
       else if (c === 'go') hub.go(Number(m.T0));
       else if (c === 'pause') hub.pause();
       else if (c === 'resume') hub.resume();

@@ -7,6 +7,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-06-28
+
+Presets that react to the music, tighter per-phone audio, and audience-UX polish.
+
+### Added
+
+- **Music-reactive presets** — presets no longer "live on their own": each phone folds
+  the song's loudness at the synced track position into the preset, so Pulse breathes on
+  the beat, Color Waves / Rainbow Chase / Ocean brighten with the music — and every phone
+  stays perfectly in sync because the loudness is read from the same already-governed,
+  already-delivered timeline (no new data, no new clock). The operator tunes each preset's
+  reaction **live** with a **Music reactivity** (and **Reactivity curve**) slider; default 0,
+  so a preset is unchanged until you raise it. Reactivity engages once a track is armed + GO.
+- New tests: `presets_audio` (reactivity correlates with loud/quiet sections; all phones
+  agree; depth 0 == the non-reactive output) and a beat-heavy reactive **strobe-safety**
+  assertion in `presets_safety`.
+
+### Changed
+
+- **Tighter per-phone audio sync** — the phone now compensates each device's audio
+  **output latency** (`outputLatency` + `baseLatency`), scheduling the buffer so the
+  **sound leaving the speaker** — not the buffer cursor — lands on the show clock. On
+  phones whose browser reports latency this removes the bulk of the audible per-phone
+  delay; the drift deadband was also tightened (15 ms → 5 ms). Honest limits unchanged:
+  Bluetooth/iOS latency is often unreadable and the speed of sound caps a whole room — a
+  small-venue / shared-moment feature, not a stadium PA.
+- **Client safety governor upgraded** — the on-device backstop now enforces an explicit
+  **flash-gate** (≤ 3 low→high crossings/sec) in addition to the ≥ 150 ms ramp, so *any*
+  preset — at any params, any music, any reactivity — is provably ≤ 3 flashes/s on-device,
+  matching the server cue compiler.
+- **Stop returns to the main menu with consent pre-accepted** — leaving the show shows the
+  join screen with the agreement already ticked, so rejoining is a single tap (no re-consent).
+- **The flashlight (torch) button is now light-blue**, visually distinct from the screen-join button.
+
+### Fixed
+
+- **Stale timeline after delete + re-upload** — the per-track timeline cache was keyed by
+  row id, and SQLite reuses a row id after the highest track is deleted, so a deleted-then-
+  reuploaded track could serve the *previous* track's cues to new joiners. The cache is now
+  evicted on delete and on upload, and deleting the armed track stops the show. Caught by a
+  new `cache_evict` regression test.
+
 ## [0.3.0] - 2026-06-28
 
 Reliability + scale + per-phone audio. Hardens time-sync toward "never out of step,"
@@ -112,7 +154,8 @@ Initial MVP release.
   flash-rate / strobe limits and the clock-sync + timeline alignment.
 - **Dockerized deploy** — runs in a single container (Node.js + ffmpeg).
 
-[Unreleased]: https://github.com/AndriiShramko/crowd-light-show/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/AndriiShramko/crowd-light-show/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/AndriiShramko/crowd-light-show/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/AndriiShramko/crowd-light-show/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/AndriiShramko/crowd-light-show/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/AndriiShramko/crowd-light-show/releases/tag/v0.1.0

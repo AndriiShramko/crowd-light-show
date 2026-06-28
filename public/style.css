@@ -19,6 +19,8 @@ button, .btn { font: inherit; cursor: pointer; border-radius: 12px; border: 1px 
   background: #1d2330; color: var(--fg); padding: 14px 18px; width: 100%; margin-top: 10px; }
 button.primary { background: var(--accent); color: #04122b; border-color: var(--accent); font-weight: 700; }
 button.ghost { background: transparent; }
+/* light-blue (голубой) call-to-action — the "turn on the flashlight" button */
+button.accent-blue { background: #2bc0ee; color: #042233; border-color: #2bc0ee; font-weight: 700; }
 button:disabled { opacity: .5; cursor: default; }
 .row { display: flex; gap: 10px; }
 .row > * { flex: 1; }

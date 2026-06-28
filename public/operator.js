@@ -37,6 +37,7 @@
   function renderState(st) {
     curState = st.status;
     $('state').textContent = st.status;
+    updateReactHint(); // reactivity hint flips when a track starts/stops running
     if (pendingGo) return; // keep the "⏳ syncing clock…" label while a GO is deferred
     var locking = (st.status === 'idle' && !(clock && clock.ready));
     $('go').textContent = st.status === 'paused' ? '▶ RESUME' : (st.status === 'running' ? '● LIVE' : (locking ? '▶ GO (clock…)' : '▶ GO'));
@@ -187,6 +188,16 @@
       inp.addEventListener('input', function () { val.textContent = inp.value; activeParams[k] = Number(inp.value); sendParam(k, Number(inp.value)); });
       row.appendChild(lab); row.appendChild(inp); row.appendChild(val); wrap.appendChild(row);
     });
+    updateReactHint();
+  }
+  // Tell the operator when the active preset is actually reacting to the music.
+  function updateReactHint() {
+    var el = $('reactHint'); if (!el) return;
+    if (!activeType || activeType === 'off') { el.textContent = ''; return; }
+    var running = curState === 'running' && armedId != null;
+    el.textContent = running
+      ? '🎵 Reacting to the running track — raise “Music reactivity” to taste.'
+      : '🎵 Music reactivity needs a track: arm + GO a track above, then raise it.';
   }
   var paramTimer = null, pendingParam = {};
   function sendParam(k, v) {

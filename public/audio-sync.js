@@ -27,6 +27,16 @@
     return this.ctx.resume();
   };
   AudioSync.prototype.setVolume = function (v) { if (this.gain) this.gain.gain.value = Math.max(0, Math.min(1, v)); };
+  // Total output latency of THIS device: graph->device buffer (baseLatency) + device->
+  // physical speaker incl. OS stack (outputLatency). The big, device-dependent term. We
+  // schedule the buffer cursor this much EARLIER so the SOUND (not the cursor) lands on
+  // the show clock — that's what removes the audible per-phone delay. Safari returns
+  // undefined (-> 0, uncompensated); Bluetooth latency is often unreadable (see README).
+  AudioSync.prototype._outLatency = function () {
+    var ol = (typeof this.ctx.outputLatency === 'number') ? this.ctx.outputLatency : 0;
+    var bl = (typeof this.ctx.baseLatency === 'number') ? this.ctx.baseLatency : 0;
+    return ol + bl; // seconds
+  };
   AudioSync.prototype.cache = function (arrayBuffer) {
     var self = this;
     return new Promise(function (res, rej) {
@@ -51,17 +61,22 @@
     var showPos = targetShow - T0;
     if (showPos > durMs) { this.tele({ scheduled: false, ended: true }); return; } // track already over
     var src = this.ctx.createBufferSource(); src.buffer = this.buf; src.connect(this.gain);
+    var L = this._outLatency();                           // pull the cursor earlier by speaker latency
     var when, offsetSec;
-    if (showPos < 0) { when = this.anchor.actx + (T0 - this.anchor.showAtActx) / 1000; offsetSec = 0; } // future T0
-    else { when = this.anchor.actx + (targetShow - this.anchor.showAtActx) / 1000; offsetSec = showPos / 1000; }
+    if (showPos < 0) { when = this.anchor.actx + (T0 - this.anchor.showAtActx) / 1000 - L; offsetSec = 0; } // future T0
+    else { when = this.anchor.actx + (targetShow - this.anchor.showAtActx) / 1000 - L; offsetSec = showPos / 1000; }
     var safeWhen = Math.max(this.ctx.currentTime + 0.01, when);
     var clampSec = safeWhen - when;                       // if we lost time, skip the buffer forward too
     var realOffset = Math.max(0, offsetSec + clampSec);
     try { src.start(safeWhen, realOffset); } catch (e) { return; }
-    this.src = src; this.startOffsetSec = realOffset;
-    // Telemetry: the scheduled start AS A SHOW-CLOCK INSTANT (what the harness asserts).
+    this.src = src; this.startOffsetSec = realOffset; this.outLatencySec = L;
+    // Telemetry: the cursor instant AND the SOUND instant (cursor + L = when sound leaves
+    // THIS speaker). With the -L comp, soundShowInstant collapses to ~T0 on every device
+    // that reports latency, so cross-phone SOUND spread is the real, ear-aligned metric.
     var scheduledShowInstant = this.anchor.showAtActx + (safeWhen - this.anchor.actx) * 1000 - realOffset * 1000;
-    this.tele({ scheduled: true, scheduledShowInstant: scheduledShowInstant, T0: T0, offsetSec: realOffset, driftMs: 0 });
+    var soundShowInstant = scheduledShowInstant + L * 1000;
+    this.tele({ scheduled: true, scheduledShowInstant: scheduledShowInstant, soundShowInstant: soundShowInstant,
+      outLatencyMs: Math.round(L * 1000), T0: T0, offsetSec: realOffset, driftMs: 0 });
     this._startDrift();
   };
   AudioSync.prototype._startDrift = function () {
@@ -72,7 +87,7 @@
       var played = ((self.ctx.currentTime - self.anchor.actx) + self.startOffsetSec) * 1000; // ms actually rendered
       var drift = expected - played;                                                    // +ve = audio behind
       self.tele({ driftMs: Math.round(drift) });
-      if (Math.abs(drift) < 15) { self.src.playbackRate.value = 1; return; }            // deadband
+      if (Math.abs(drift) < 5) { self.src.playbackRate.value = 1; return; }             // tight deadband (was 15) — less audible wander; nudge actively drives drift toward 0
       if (Math.abs(drift) > 90) { self.start(self.T0); return; }                        // reseat on big jump
       try { self.src.playbackRate.value = 1 + (drift > 0 ? 1 : -1) * 0.003; } catch (e) {} // inaudible nudge
     }, 1000);
