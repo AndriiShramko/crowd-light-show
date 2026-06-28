@@ -9,7 +9,7 @@
   var AUDIO = params.get('audio') === '1'; // headless: auto opt-in to phone audio
   var JOIN_SPREAD = (AUTO || DEMO || ROOM) ? 0 : 800; // spread the join herd (stadium); off for tests/demo
   var env = null, waveEl = null, waveCtx = null, waveTick = 0; // music waveform + playhead
-  var audio = null, audioOn = false, audioCaching = false; // per-phone synchronized music (opt-in)
+  var audio = null, audioOn = false, audioCaching = false, audioTrackId = null; // per-phone synchronized music (opt-in)
 
   // Live parametric preset engine (studio channel). Each phone renders the active
   // preset locally off the synced clock; switches are a tiny broadcast (epoch++).
@@ -143,7 +143,14 @@
     if (m.t === 'full') { window.__cls.full = true; setStatus('st_full'); try { ws.close(); } catch (e) {} setTimeout(connect, 3000 + Math.random() * 5000); return; } // venue full: backoff+jitter retry (no retry storm)
     if (m.t === 'sync') { clock.onReply(m.c0, m.s1); window.__cls.offset = clock.offset; window.__cls.synced = clock.ready; window.__cls.degraded = clock.degraded; window.__cls.quality = clock.quality; window.__cls.rtt = clock.rtt; if (clock.ready && runState.status === 'idle') setStatus('st_wait'); return; }
     if (m.t === 'welcome' || m.t === 'state') { if (m.state) applyState(m.state); return; }
-    if (m.t === 'timeline') { timeline = m.data; window.__cls.gotTimeline = (timeline && timeline.cues || []).length; buildEnvelope(); if (audioOn) cacheAudio(); showAudioBtn(); return; }
+    if (m.t === 'timeline') {
+      timeline = m.data; window.__cls.gotTimeline = (timeline && timeline.cues || []).length; window.__cls.trackId = m.trackId; buildEnvelope();
+      if (m.trackId !== audioTrackId) {                 // operator armed a DIFFERENT track
+        audioTrackId = m.trackId;
+        if (audio && audio.dropBuffer) audio.dropBuffer(); // drop the old track's cached audio so the new one is fetched
+      }
+      if (audioOn) cacheAudio(); showAudioBtn(); return;
+    }
     if (m.t === 'start') { runState = { status: 'running', T0: m.T0, epoch: m.epoch, pausePos: 0 }; window.__cls.status = 'running'; window.__cls.gotStart = m.T0; prevLum = 0; flashArmed = true; if (audio && audioOn) audio.start(m.T0); setStatus('st_play'); return; }
     if (m.t === 'pause') { runState.status = 'paused'; runState.pausePos = m.pos; window.__cls.status = 'paused'; if (audio) audio.stop(); setStatus('st_paused'); return; }
     if (m.t === 'stop') { runState = { status: 'idle', T0: null, epoch: m.epoch, pausePos: 0 }; preset = null; window.__cls.preset = null; window.__cls.status = 'idle'; if (audio) audio.stop(); hideWave(); setStatus('st_wait'); return; }
@@ -179,6 +186,7 @@
     audioOn = true; window.__cls.audio.wanted = true;
     if (audioBtn) { audioBtn.textContent = i18n.t('audio_on'); audioBtn.disabled = true; }
     audio = new AudioSync(clock || new ClockSync(function () {}));
+    if (window.__forceLatComp) audio.compensateLatency = true;   // opt-in (heterogeneous fleet / harness)
     audio.tele = function (o) { for (var k in o) window.__cls.audio[k] = o[k]; };
     audio.init().then(function () { cacheAudio(); }).catch(function () {});
   }
@@ -195,7 +203,7 @@
     if (!audio || audioCaching || audio.ready()) return;
     audio.clock = clock;
     audioCaching = true;
-    fetch('/api/demo/audio').then(function (r) { return r.ok ? r.arrayBuffer() : null; })
+    fetch('/api/demo/audio?v=' + ((timeline && timeline.trackId) || '')).then(function (r) { return r.ok ? r.arrayBuffer() : null; })
       .then(function (ab) {
         audioCaching = false; if (!ab) return;
         return audio.cache(ab).then(function () {
@@ -210,7 +218,10 @@
   function cacheAudio() {
     if (!audio || !audioOn || audio.ready() || audioCaching) return;
     audioCaching = true;
-    fetch('/api/audience/audio').then(function (r) { return r.ok ? r.arrayBuffer() : null; })
+    // ?v=<trackId> busts the HTTP cache: the endpoint serves the ARMED track (same URL for
+    // all), so without a per-track key the browser would replay the previous track's cached
+    // audio when the operator arms a different one.
+    fetch('/api/audience/audio?v=' + (audioTrackId == null ? '' : audioTrackId)).then(function (r) { return r.ok ? r.arrayBuffer() : null; })
       .then(function (ab) { audioCaching = false; if (!ab) return; return audio.cache(ab).then(function () {
         // if the show is already running, jump in at the right position now
         if (runState.status === 'running' && runState.T0 != null) audio.start(runState.T0);

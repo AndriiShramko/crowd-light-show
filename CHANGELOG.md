@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-06-29
+
+Two audio fixes: restore tight same-model phone sync, and let the operator actually change the track.
+
+### Fixed
+
+- **Per-phone audio sync regression (same-model nearby phones).** v0.4.0's per-device
+  output-latency compensation made identical nearby phones *worse*: their true speaker
+  latency is the same (so cursor-alignment already aligns the sound), but subtracting each
+  device's *reported* `outputLatency` — which is noisy, quantized, device-variable, and `0`
+  on Safari — pushed them apart by tens of ms. And the tightened 5 ms drift deadband made
+  each phone chase its own clock noise with independent `playbackRate` nudges (wobble).
+  Now: **latency compensation is OFF by default** (cursor aligns to the synced show clock,
+  so identical devices lock; it's an opt-in for known mixed fleets), and the **drift
+  corrector is reseat-only** (no continuous `playbackRate` nudging). This restores the
+  v0.3.0 "in sync" behavior and removes the noise. Mixed-device/Bluetooth still can't be
+  perfect (genuinely different speaker latency) — that's stated plainly and unchanged.
+- **Changing the armed track now changes the music on phones.** The `/api/audience/audio`
+  URL is the same for every track (it serves the *armed* track) but carried a 1-hour
+  `Cache-Control`, so a phone replayed the *previous* track's cached audio after the
+  operator armed a different one. Audio fetches are now cache-busted per track id.
+
+### Tests
+
+- `audio_samemodel` (identical phones lock the cursor, independent of reported latency, no
+  wobble), `track_switch` (arming a different track re-fetches the new audio); the existing
+  `audio_sync` harness now validates the **opt-in** compensation path.
+
 ## [0.5.0] - 2026-06-28
 
 Landing demo plays the music, audience-form autofill, and an English-first demo.
@@ -181,7 +209,8 @@ Initial MVP release.
   flash-rate / strobe limits and the clock-sync + timeline alignment.
 - **Dockerized deploy** — runs in a single container (Node.js + ffmpeg).
 
-[Unreleased]: https://github.com/AndriiShramko/crowd-light-show/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/AndriiShramko/crowd-light-show/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/AndriiShramko/crowd-light-show/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/AndriiShramko/crowd-light-show/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/AndriiShramko/crowd-light-show/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/AndriiShramko/crowd-light-show/compare/v0.2.0...v0.3.0

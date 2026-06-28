@@ -52,6 +52,7 @@ async function main() {
         Object.defineProperty(AC.prototype, 'baseLatency', { get() { return 0.005; }, configurable: true });
       }
       window.__fakeOutLatencyMs = ms;
+      window.__forceLatComp = true;   // this harness validates the OPT-IN latency-compensation path
     }, fakeLatencyMs);
     await p.goto(`${BASE}/join?s=${code}&auto=1&audio=1`);
     pages.push(p);

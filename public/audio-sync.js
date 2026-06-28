@@ -16,6 +16,12 @@
     this.clock = clock; this.ctx = null; this.gain = null; this.buf = null;
     this.src = null; this.anchor = null; this.startOffsetSec = 0; this.T0 = null;
     this.driftTimer = null; this.tele = function () {};
+    // OFF by default: same-model phones share the same TRUE speaker latency, so aligning
+    // the buffer cursor to the show clock already aligns their SOUND — and subtracting a
+    // per-device REPORTED outputLatency (noisy, quantized, device-variable, 0 on Safari)
+    // only pushes identical phones apart. Compensation is an explicit opt-in for known
+    // heterogeneous fleets; even then it is clamped.
+    this.compensateLatency = false;
   }
   // MUST be called from a user-gesture handler (autoplay policy).
   AudioSync.prototype.init = function () {
@@ -27,15 +33,20 @@
     return this.ctx.resume();
   };
   AudioSync.prototype.setVolume = function (v) { if (this.gain) this.gain.gain.value = Math.max(0, Math.min(1, v)); };
-  // Total output latency of THIS device: graph->device buffer (baseLatency) + device->
-  // physical speaker incl. OS stack (outputLatency). The big, device-dependent term. We
-  // schedule the buffer cursor this much EARLIER so the SOUND (not the cursor) lands on
-  // the show clock — that's what removes the audible per-phone delay. Safari returns
-  // undefined (-> 0, uncompensated); Bluetooth latency is often unreadable (see README).
+  // REPORTED output latency of THIS device (TELEMETRY ONLY): graph->device buffer
+  // (baseLatency) + device->speaker incl. OS stack (outputLatency). Browser-estimated,
+  // quantized, variable run-to-run even on identical hardware; Safari returns undefined(->0).
   AudioSync.prototype._outLatency = function () {
     var ol = (typeof this.ctx.outputLatency === 'number') ? this.ctx.outputLatency : 0;
     var bl = (typeof this.ctx.baseLatency === 'number') ? this.ctx.baseLatency : 0;
-    return ol + bl; // seconds
+    return ol + bl; // seconds — telemetry
+  };
+  // The latency actually SUBTRACTED from the schedule. 0 by default (cursor == show clock,
+  // so identical devices lock); only when explicitly opted in, and clamped against absurd reads.
+  AudioSync.prototype._latComp = function () {
+    if (!this.compensateLatency) return 0;
+    var L = this._outLatency();
+    return (L > 0 && L <= 0.5) ? L : 0;
   };
   AudioSync.prototype.cache = function (arrayBuffer) {
     var self = this;
@@ -64,7 +75,8 @@
     var showPos = targetShow - T0;
     if (showPos > durMs) { this.tele({ scheduled: false, ended: true }); return; } // track already over
     var src = this.ctx.createBufferSource(); src.buffer = this.buf; src.connect(this.gain);
-    var L = this._outLatency();                           // pull the cursor earlier by speaker latency
+    var L = this._latComp();                              // 0 by default -> cursor == show clock (identical phones lock)
+    var Lrep = this._outLatency();                        // reported latency (telemetry only)
     var when, offsetSec;
     if (showPos < 0) { when = this.anchor.actx + (T0 - this.anchor.showAtActx) / 1000 - L; offsetSec = 0; } // future T0
     else { when = this.anchor.actx + (targetShow - this.anchor.showAtActx) / 1000 - L; offsetSec = showPos / 1000; }
@@ -73,13 +85,13 @@
     var realOffset = Math.max(0, offsetSec + clampSec);
     try { src.start(safeWhen, realOffset); } catch (e) { return; }
     this.src = src; this.startOffsetSec = realOffset; this.outLatencySec = L;
-    // Telemetry: the cursor instant AND the SOUND instant (cursor + L = when sound leaves
-    // THIS speaker). With the -L comp, soundShowInstant collapses to ~T0 on every device
-    // that reports latency, so cross-phone SOUND spread is the real, ear-aligned metric.
+    // Cursor instant is the PRIMARY alignment (== show clock when comp is off, the default,
+    // so same-model phones lock). soundShowInstant uses the REPORTED latency so a mixed
+    // fleet's spread stays observable even though we don't compensate it by default.
     var scheduledShowInstant = this.anchor.showAtActx + (safeWhen - this.anchor.actx) * 1000 - realOffset * 1000;
-    var soundShowInstant = scheduledShowInstant + L * 1000;
+    var soundShowInstant = scheduledShowInstant + Lrep * 1000;
     this.tele({ scheduled: true, scheduledShowInstant: scheduledShowInstant, soundShowInstant: soundShowInstant,
-      outLatencyMs: Math.round(L * 1000), T0: T0, offsetSec: realOffset, driftMs: 0 });
+      outLatencyMs: Math.round(Lrep * 1000), compMs: Math.round(L * 1000), rate: 1, T0: T0, offsetSec: realOffset, driftMs: 0 });
     this._startDrift();
   };
   AudioSync.prototype._startDrift = function () {
@@ -89,10 +101,14 @@
       var expected = self.clock.serverNow() - self.T0;                                  // ms (ground truth)
       var played = ((self.ctx.currentTime - self.anchor.actx) + self.startOffsetSec) * 1000; // ms actually rendered
       var drift = expected - played;                                                    // +ve = audio behind
-      self.tele({ driftMs: Math.round(drift) });
-      if (Math.abs(drift) < 5) { self.src.playbackRate.value = 1; return; }             // tight deadband (was 15) — less audible wander; nudge actively drives drift toward 0
-      if (Math.abs(drift) > 90) { self.start(self.T0); return; }                        // reseat on big jump
-      try { self.src.playbackRate.value = 1 + (drift > 0 ? 1 : -1) * 0.003; } catch (e) {} // inaudible nudge
+      self.tele({ driftMs: Math.round(drift), rate: 1 });
+      // RESEAT-ONLY: the buffer is scheduled ABSOLUTELY off the synced clock, and the
+      // AudioContext clock drifts <10ms over a 3-min track — below the cross-phone floor.
+      // A continuous playbackRate nudge made each phone chase its OWN clock noise, so
+      // identical phones wobbled against each other. So we NEVER nudge; we only reseat
+      // (one clean reschedule) if something large happened (tab suspend / glitch / throttle).
+      self.src.playbackRate.value = 1;
+      if (Math.abs(drift) > 60) self.start(self.T0);
     }, 1000);
   };
   // LOOPING playback synced to a fixed epoch (the landing demo): every phone plays the
@@ -102,7 +118,8 @@
     this.stopSource();
     this._anchorClocks();
     this.T0 = epochMs; this.loopMs = loopMs; this.looping = true;
-    var L = this._outLatency();
+    var L = this._latComp();                                   // 0 by default (cursor == show clock)
+    var Lrep = this._outLatency();
     var loopSec = Math.min(this.buf.duration, loopMs / 1000); // audio loop period == lights loop period
     var targetShow = this.clock.serverNow() + 120;            // +0.12s scheduling margin
     var loopPos = (((targetShow - epochMs) % loopMs) + loopMs) % loopMs; // ms into the loop at target
@@ -115,7 +132,7 @@
     if (offsetSec < 0) offsetSec += loopSec;
     try { src.start(safeWhen, offsetSec); } catch (e) { return; }
     this.src = src; this.startOffsetSec = offsetSec; this.startWhenActx = safeWhen; this.loopSec = loopSec;
-    this.tele({ scheduled: true, looping: true, outLatencyMs: Math.round(L * 1000), loopMs: loopMs, driftMs: 0 });
+    this.tele({ scheduled: true, looping: true, outLatencyMs: Math.round(Lrep * 1000), compMs: Math.round(L * 1000), loopMs: loopMs, rate: 1, driftMs: 0 });
     this._startLoopDrift();
   };
   AudioSync.prototype._startLoopDrift = function () {
@@ -133,10 +150,9 @@
       var dev = raw - self.loopBase;                            // GENUINE drift since the lock (clock/audio divergence)
       if (dev > self.loopMs / 2) dev -= self.loopMs;
       if (dev < -self.loopMs / 2) dev += self.loopMs;
-      self.tele({ driftMs: Math.round(dev) });
-      if (Math.abs(dev) < 8) { self.src.playbackRate.value = 1; return; }
-      if (Math.abs(dev) > 120) { self.startLoop(self.T0, self.loopMs); return; } // reseat on a big slip
-      try { self.src.playbackRate.value = 1 + (dev > 0 ? 1 : -1) * 0.003; } catch (e) {}
+      self.tele({ driftMs: Math.round(dev), rate: 1 });
+      self.src.playbackRate.value = 1;                                           // never nudge (no inter-phone wobble)
+      if (Math.abs(dev) > 80) self.startLoop(self.T0, self.loopMs);              // reseat only on a real slip
     }, 1000);
   };
   AudioSync.prototype.stopSource = function () {
@@ -144,6 +160,9 @@
     if (this.src) { try { this.src.stop(); } catch (e) {} try { this.src.disconnect(); } catch (e) {} this.src = null; }
   };
   AudioSync.prototype.stop = function () { this.stopSource(); this.tele({ scheduled: false }); };
+  // Drop the decoded buffer (operator armed a different track) so the next cache() fetches
+  // the NEW track's audio instead of replaying the old one. ready() goes false again.
+  AudioSync.prototype.dropBuffer = function () { this.stopSource(); this.buf = null; this.looping = false; this.tele({ ready: false, scheduled: false }); };
   AudioSync.prototype.resume = function () { if (this.ctx) this.ctx.resume(); if (this.src && this.T0 != null) this.start(this.T0); };
   AudioSync.prototype.teardown = function () { this.stopSource(); if (this.ctx) { try { this.ctx.close(); } catch (e) {} this.ctx = null; } this.buf = null; };
   global.AudioSync = AudioSync;
