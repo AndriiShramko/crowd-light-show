@@ -11,6 +11,7 @@ services:
       - VIRTUAL_PORT=3000
       - LETSENCRYPT_HOST=lightshow.flyreelstudio.eu
       - LETSENCRYPT_EMAIL=zmei116@gmail.com
+      - STUDIO_ENABLED=1                # live presets + landing studio demo (set 0 to put dormant)
     expose:
       - "3000"                        # internal only — reached via nginx-proxy, no host port
     networks:

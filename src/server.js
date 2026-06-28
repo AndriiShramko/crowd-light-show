@@ -14,6 +14,7 @@ import { analyze } from './audio.js';
 import { compileFromEnvelope } from './compiler.js';
 import { hub, serverClock } from './show.js';
 import { notifyTelegram } from './notify.js';
+import { validatePreset, validateParam, PARAM_SCHEMA, PRESET_TYPES, DEFAULT_PRESET } from './presets.js';
 
 // A built-in, always-looping demo light show so anyone can try it with zero setup
 // (the "Try it" QR / /join?demo=1). Synthetic, safety-clamped, ~24s loop.
@@ -83,10 +84,23 @@ function joinUrl(show) {
 }
 
 // ---------- public pages ----------
-app.get('/', (req, reply) => reply.type('text/html').send(fs.readFileSync(path.join(config.publicDir, 'index.html'))));
+// Inject the studio feature flag so the landing only surfaces the "Try it live"
+// studio CTA when enabled (or when the URL forces it with ?next=1, for staged rollout).
+function serveLanding(reply) {
+  let html = fs.readFileSync(path.join(config.publicDir, 'index.html'), 'utf8');
+  html = html.replaceAll('@@STUDIO@@', config.studioEnabled ? 'true' : 'false');
+  return reply.type('text/html').send(html);
+}
+app.get('/', (req, reply) => serveLanding(reply));
 app.get('/join', (req, reply) => reply.type('text/html').send(fs.readFileSync(path.join(config.publicDir, 'audience.html'))));
 app.get('/about', (req, reply) => reply.type('text/html').send(fs.readFileSync(path.join(config.publicDir, 'about.html'))));
 app.get('/try', (req, reply) => reply.type('text/html').send(fs.readFileSync(path.join(config.publicDir, 'try.html'))));
+// Studio = guest-controlled live preset demo (no auth, ephemeral room). The "Try it
+// live" target: switch presets in real time and see your own phones change.
+app.get('/studio', (req, reply) => {
+  if (!config.studioEnabled) return reply.code(503).type('text/html').send('<h1>Studio is currently disabled.</h1>');
+  return reply.type('text/html').send(fs.readFileSync(path.join(config.publicDir, 'studio.html')));
+});
 app.get('/healthz', () => ({ ok: true, freeDiskBytes: freeDiskBytes(), audience: hub.audience.size, status: hub.state.status }));
 app.get('/api/public/show', () => { const s = getOrCreateDefaultShow(); return { code: s.join_code, status: hub.state.status }; });
 
@@ -97,6 +111,44 @@ app.get('/api/demo', () => ({ timeline: DEMO, T0: DEMO_T0, duration: DEMO.durati
 app.get('/api/demo/qr', async (req, reply) => {
   const png = await QRCode.toBuffer(`${config.publicBaseUrl || ''}/join?demo=1`, { width: 600, margin: 2 });
   return reply.type('image/png').send(png);
+});
+
+// ---- studio guest demo: ephemeral, no-auth, room-scoped live presets ----
+// A guest on the landing mints a private room id, points their own phones at it via
+// QR, and switches presets live. Switches reach ONLY phones that joined that room
+// (server-mediated fan-out — a guest can never touch the real show or other rooms),
+// and every cue still passes server-side validatePreset (safety is never bypassed).
+const ROOM_RE = /^[a-z0-9]{6,24}$/;
+app.get('/api/demo/room', (req, reply) => {
+  if (!config.studioEnabled) return reply.code(503).send({ error: 'studio disabled' });
+  const room = crypto.randomBytes(8).toString('hex');
+  const url = `${config.publicBaseUrl || ''}/join?room=${room}`;
+  return { room, joinUrl: url, types: PRESET_TYPES, schema: PARAM_SCHEMA, default: DEFAULT_PRESET };
+});
+app.get('/api/demo/room-qr', async (req, reply) => {
+  const room = String(req.query.room || '');
+  if (!ROOM_RE.test(room)) return reply.code(400).send({ error: 'bad room' });
+  const png = await QRCode.toBuffer(`${config.publicBaseUrl || ''}/join?room=${room}`, { width: 600, margin: 2 });
+  return reply.type('image/png').send(png);
+});
+app.post('/api/demo/preset', (req, reply) => {
+  if (!config.studioEnabled) return reply.code(503).send({ error: 'studio disabled' });
+  const room = String((req.body && req.body.room) || '');
+  if (!ROOM_RE.test(room)) return reply.code(400).send({ error: 'bad room' });
+  if (hub.rooms.size > 2000) return reply.code(429).send({ error: 'too many rooms' });
+  const v = validatePreset(String((req.body && req.body.type) || ''), (req.body && req.body.params) || {});
+  if (!v.ok) return reply.code(400).send({ error: v.error });
+  return hub.setPreset(room, v); // -> { ok, epoch, members }
+});
+app.post('/api/demo/preset/param', (req, reply) => {
+  if (!config.studioEnabled) return reply.code(503).send({ error: 'studio disabled' });
+  const room = String((req.body && req.body.room) || '');
+  if (!ROOM_RE.test(room)) return reply.code(400).send({ error: 'bad room' });
+  const r = hub.rooms.get(room);
+  if (!r || !r.preset) return reply.code(409).send({ error: 'no active preset' });
+  const v = validateParam(r.preset.type, String((req.body && req.body.key) || ''), (req.body && req.body.value));
+  if (!v.ok) return reply.code(400).send({ error: v.error });
+  return hub.setParam(room, v.key, v.value);
 });
 
 // ---- lead capture from the landing (public, rate-limited, honeypot) ----
@@ -241,6 +293,30 @@ app.post('/api/operator/resume', (req, reply) => { if (!requireOperator(req, rep
 app.post('/api/operator/stop', (req, reply) => { if (!requireOperator(req, reply)) return; return hub.stop(); });
 app.post('/api/operator/blackout', (req, reply) => { if (!requireOperator(req, reply)) return; return hub.blackout(); });
 
+// ---- live parametric presets (studio channel) — operator-controlled, main room ----
+// Catalog + param schema for the console/studio UI.
+app.get('/api/operator/presets', (req, reply) => {
+  if (!requireOperator(req, reply)) return;
+  return { types: PRESET_TYPES, schema: PARAM_SCHEMA, default: DEFAULT_PRESET, active: hub.preset };
+});
+// Switch preset (epoch++ -> instant flip on the next frame, all phones in sync).
+app.post('/api/operator/preset', (req, reply) => {
+  if (!requireOperator(req, reply)) return;
+  if (!config.studioEnabled) return reply.code(503).send({ error: 'studio disabled' });
+  const v = validatePreset(String((req.body && req.body.type) || ''), (req.body && req.body.params) || {});
+  if (!v.ok) return reply.code(400).send({ error: v.error });
+  return hub.setPreset('main', v); // -> { ok, epoch }
+});
+// Live param tweak — morph WITHOUT restarting the preset (epoch/phase preserved).
+app.post('/api/operator/preset/param', (req, reply) => {
+  if (!requireOperator(req, reply)) return;
+  if (!config.studioEnabled) return reply.code(503).send({ error: 'studio disabled' });
+  if (!hub.preset) return reply.code(409).send({ error: 'no active preset' });
+  const v = validateParam(hub.preset.type, String((req.body && req.body.key) || ''), (req.body && req.body.value));
+  if (!v.ok) return reply.code(400).send({ error: v.error });
+  return hub.setParam('main', v.key, v.value);
+});
+
 app.get('/api/operator/applications', (req, reply) => {
   if (!requireOperator(req, reply)) return;
   return { applications: db.prepare('SELECT * FROM application ORDER BY created_at DESC LIMIT 200').all() };
@@ -274,7 +350,8 @@ wss.on('connection', (ws) => {
         ws.role = 'operator'; hub.addOperator(ws);
       } else {
         ws.role = 'audience'; ws.platform = String(m.platform || 'other').slice(0, 16);
-        hub.addAudience(ws);
+        const room = (typeof m.room === 'string' && /^[a-z0-9]{6,24}$/.test(m.room)) ? m.room : 'main';
+        hub.addAudience(ws, room);
       }
       return;
     }
@@ -304,6 +381,9 @@ setInterval(() => {
     ws.isAlive = false; try { ws.ping(); } catch {}
   }
 }, 25000).unref();
+
+// Reap orphan demo rooms periodically (ephemeral guest studio rooms).
+setInterval(() => hub.sweepRooms(), 60000).unref();
 
 getOrCreateDefaultShow();
 app.listen({ port: config.port, host: config.host }).then(() => {

@@ -366,6 +366,7 @@ img, svg { max-width: 100%; }
       <h1>Turn every phone in the crowd into <span class="m-grad-text">one giant light show</span></h1>
       <p class="m-hero-sub">Synced to your music, with no app to install — it works on any phone. The audience just scans a QR, and the whole room lights up together on the beat.</p>
       <div class="m-hero-cta">
+        <a class="m-btn m-btn-primary m-studio-cta" href="/studio" style="display:none">Try it live — you control it →</a>
         <a class="m-btn m-btn-primary" href="/try">Try the live demo →</a>
         <a class="m-btn m-btn-ghost" href="#contact">Get it for your event</a>
       </div>
@@ -514,6 +515,7 @@ img, svg { max-width: 100%; }
     <div class="m-tryband-inner">
       <h2>See it yourself in 10 seconds</h2>
       <p>Open the live demo, scan the QR with your phone, and watch your own screen join the show. Grab a few phones for the full effect.</p>
+      <a class="m-btn m-btn-primary m-studio-cta" href="/studio" style="display:none">Try it live — switch presets yourself →</a>
       <a class="m-btn m-btn-primary" href="/try">Open the live demo →</a>
     </div>
   </div>
@@ -647,6 +649,15 @@ img, svg { max-width: 100%; }
         btn.textContent = original;
       });
   });
+})();
+
+// Studio "Try it live" CTA — dormant by default; revealed only when the studio
+// feature is enabled server-side (@@STUDIO@@) or forced for staged rollout (?next=1).
+(function () {
+  var enabled = ('@@STUDIO@@' === 'true') || /[?&]next=1\b/.test(location.search);
+  if (!enabled) return;
+  var els = document.querySelectorAll('.m-studio-cta');
+  for (var i = 0; i < els.length; i++) els[i].style.display = '';
 })();
 </script>
 </body>

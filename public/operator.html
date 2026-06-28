@@ -40,8 +40,16 @@
     <audio id="player" controls preload="auto" style="width:100%;margin-top:12px"></audio>
   </div>
 
+  <div class="card" id="studioCard">
+    <h2>4 · Live presets <span class="muted" style="font-weight:400">— real-time, no track needed</span></h2>
+    <p class="muted">Switch the whole crowd live. Spatial presets use each phone's place in the crowd. Every preset is safety-clamped on the server (≤3 flashes/s, no red strobe).</p>
+    <div id="presetBtns" class="row" style="flex-wrap:wrap;gap:8px"></div>
+    <div id="presetParams" style="margin-top:10px"></div>
+    <p class="muted" id="presetMsg">Pick a preset to go live. (This is separate from the music timeline above.)</p>
+  </div>
+
   <div class="card">
-    <h2>4 · Applications <button id="refreshApps" style="width:auto;float:right;margin:0">↻ Refresh</button></h2>
+    <h2>5 · Applications <button id="refreshApps" style="width:auto;float:right;margin:0">↻ Refresh</button></h2>
     <p class="muted" id="appsMsg">Leads from the landing page form appear here.</p>
     <table id="apps"><tbody></tbody></table>
   </div>

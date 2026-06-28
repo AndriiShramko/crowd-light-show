@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<title>Try it live · Crowd Light Show</title>
+<link rel="stylesheet" href="/static/style.css">
+<style>
+  #crowd { width: 100%; max-width: 520px; aspect-ratio: 16/10; background: #000; border-radius: 12px; display: block; }
+  .preset-btn.active { outline: 2px solid #5aa0ff; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="lang"><a href="/">← Home</a></div>
+  <h1>Try it live ✨</h1>
+  <p class="muted">Switch a real light show in real time. Point a few phones at the QR below, then tap presets and watch them all change together — synchronized off one clock. No setup, no login. Works with one phone too (the preview below mirrors exactly what your phones show).</p>
+
+  <div class="card">
+    <h2>1 · Point your phones here</h2>
+    <div class="qrbox"><img id="qr" alt="Join QR"></div>
+    <p class="muted">Open on each phone: <a id="joinurl" target="_blank" rel="noopener">…</a></p>
+    <p class="muted">Connected devices: <b id="count">0</b> · sync: <span id="sync">…</span></p>
+  </div>
+
+  <div class="card">
+    <h2>2 · Switch presets live</h2>
+    <div id="presetBtns" class="row" style="flex-wrap:wrap;gap:8px"></div>
+    <div id="presetParams" style="margin-top:10px"></div>
+    <p class="muted" id="presetMsg">Loading presets…</p>
+  </div>
+
+  <div class="card">
+    <h2>3 · How a crowd looks</h2>
+    <p class="muted">A simulated wall of phones, running the live preset off the same clock. Spatial presets (Color Waves, Rainbow Chase) split across the crowd by each phone's place in the room.</p>
+    <canvas id="crowd" width="520" height="325"></canvas>
+    <video id="crowdVid" class="hidden" playsinline muted loop controls style="width:100%;max-width:520px;border-radius:12px;margin-top:10px"></video>
+  </div>
+
+  <div class="credit">
+    Made by <b>Andrii Shramko</b> · <a href="https://www.linkedin.com/in/andrii-shramko/" target="_blank" rel="noopener">LinkedIn</a> ·
+    <a href="/about" target="_blank">About</a><br>
+    Free &amp; open-source (Apache-2.0). Want this at your event? <a href="https://www.linkedin.com/in/andrii-shramko/" target="_blank" rel="noopener">Get in touch.</a>
+  </div>
+</div>
+
+<script src="/static/clocksync.js"></script>
+<script src="/static/presets.js"></script>
+<script src="/static/studio.js"></script>
+</body>
+</html>

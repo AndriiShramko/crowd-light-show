@@ -146,5 +146,64 @@
   });
   $('refreshApps').addEventListener('click', loadApps);
 
-  connect(); loadState(); loadApps(); setInterval(loadState, 8000); setInterval(loadApps, 20000);
+  // ---- live presets (studio) ----
+  var presetSchema = null, activeType = null, activeParams = {};
+  function defParams(type) { var o = {}, ps = presetSchema[type].params; for (var k in ps) o[k] = ps[k].def; return o; }
+  function highlightPreset() {
+    Array.prototype.forEach.call($('presetBtns').querySelectorAll('button'), function (b) {
+      var t = b.getAttribute('data-preset');
+      b.className = (t === activeType) ? 'primary' : (t === 'off' ? 'ghost' : '');
+    });
+  }
+  function renderParams() {
+    var wrap = $('presetParams'); wrap.innerHTML = '';
+    if (!activeType || !presetSchema[activeType]) return;
+    var ps = presetSchema[activeType].params;
+    Object.keys(ps).forEach(function (k) {
+      var spec = ps[k];
+      var row = document.createElement('div'); row.className = 'nudge';
+      var lab = document.createElement('span'); lab.textContent = spec.label; lab.style.minWidth = '110px';
+      var inp = document.createElement('input'); inp.type = 'range'; inp.min = spec.min; inp.max = spec.max; inp.step = spec.step;
+      inp.value = activeParams[k] != null ? activeParams[k] : spec.def;
+      var val = document.createElement('span'); val.textContent = inp.value; val.style.minWidth = '52px';
+      inp.addEventListener('input', function () { val.textContent = inp.value; activeParams[k] = Number(inp.value); sendParam(k, Number(inp.value)); });
+      row.appendChild(lab); row.appendChild(inp); row.appendChild(val); wrap.appendChild(row);
+    });
+  }
+  var paramTimer = null, pendingParam = {};
+  function sendParam(k, v) {
+    pendingParam[k] = v; if (paramTimer) return;
+    paramTimer = setTimeout(function () {
+      var pp = pendingParam; pendingParam = {}; paramTimer = null;
+      Object.keys(pp).forEach(function (key) {
+        api('/api/operator/preset/param', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: key, value: pp[key] }) });
+      });
+    }, 80); // throttle slider spam (morph is phase-preserving, order-independent)
+  }
+  function pickPreset(type) {
+    if (type === 'off') {
+      activeType = null; $('presetParams').innerHTML = ''; highlightPreset();
+      api('/api/operator/preset', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'off' }) });
+      $('presetMsg').textContent = 'Presets off.'; return;
+    }
+    activeType = type; activeParams = defParams(type); renderParams(); highlightPreset();
+    api('/api/operator/preset', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: type, params: activeParams }) })
+      .then(function (r) { return r.json(); })
+      .then(function (j) { $('presetMsg').textContent = j.ok ? ('● LIVE: ' + presetSchema[type].label + ' — epoch ' + j.epoch) : ('Error: ' + (j.error || '')); });
+  }
+  function loadPresets() {
+    api('/api/operator/presets').then(function (r) { return r.ok ? r.json() : null; }).then(function (d) {
+      if (!d) return; presetSchema = d.schema;
+      var box = $('presetBtns'); box.innerHTML = '';
+      d.types.forEach(function (type) {
+        var b = document.createElement('button'); b.style.width = 'auto'; b.textContent = d.schema[type].label; b.setAttribute('data-preset', type); box.appendChild(b);
+      });
+      var off = document.createElement('button'); off.style.width = 'auto'; off.className = 'ghost'; off.textContent = '■ Off'; off.setAttribute('data-preset', 'off'); box.appendChild(off);
+      if (d.active && d.active.type && d.active.type !== 'off') { activeType = d.active.type; activeParams = Object.assign({}, d.active.params); renderParams(); }
+      highlightPreset();
+    });
+  }
+  if ($('presetBtns')) $('presetBtns').addEventListener('click', function (e) { var t = e.target.getAttribute('data-preset'); if (t) pickPreset(t); });
+
+  connect(); loadState(); loadApps(); loadPresets(); setInterval(loadState, 8000); setInterval(loadApps, 20000);
 })();

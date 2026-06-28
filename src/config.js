@@ -45,6 +45,10 @@ export const config = {
   maxFlashesPerSec: 3, // WCAG 2.3.2 hard cap
   minRampMs: 150, // minimum ramp for large luminance changes
   startLeadMs: 900, // T0 scheduled this far in the future
+  // Studio (live presets + landing demo). Master kill-switch for the new code path
+  // (red-team "?next" dormancy): set STUDIO_ENABLED=0 to put it fully to sleep on
+  // prod without a redeploy — endpoints 503, landing CTA hidden, audience unaffected.
+  studioEnabled: process.env.STUDIO_ENABLED !== '0',
 };
 
 export function scryptVerify(plainPass, stored) {

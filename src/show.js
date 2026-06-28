@@ -7,12 +7,32 @@ import { db } from './db.js';
 export function serverClock() { return performance.now(); }
 
 const OPEN = 1; // ws.OPEN
+export const MAIN_ROOM = 'main';
+
+// Sticky index allocator: hands each phone a stable 0-based index so spatial presets
+// (and, later, the pixel wall) can place it in the crowd. Indices are STICKY — a
+// surviving phone is never renumbered when others join/leave (red-team P0) — and a
+// freed index is reused by the next joiner (monotonic fill, tolerates sparse sets).
+class IndexAllocator {
+  constructor() { this.used = new Set(); this.byWs = new Map(); }
+  alloc(ws) {
+    if (this.byWs.has(ws)) return this.byWs.get(ws);
+    let i = 0; while (this.used.has(i)) i++;
+    this.used.add(i); this.byWs.set(ws, i); return i;
+  }
+  free(ws) { const i = this.byWs.get(ws); if (i != null) { this.used.delete(i); this.byWs.delete(ws); } }
+  indexOf(ws) { return this.byWs.get(ws); }
+  total() { let m = -1; for (const i of this.used) if (i > m) m = i; return m + 1; } // grid width
+}
 
 export class ShowHub {
   constructor() {
-    this.audience = new Set();   // { ws } audience sockets
+    this.audience = new Set();   // { ws } MAIN-room audience sockets
     this.operators = new Set();  // authed operator sockets
     this.timelineCache = new Map(); // trackId -> parsed timeline
+    this.alloc = new IndexAllocator();          // main-room index allocator
+    this.preset = null;          // main-room live preset {type,params,epoch,startedAt} | null
+    this.rooms = new Map();       // ephemeral demo rooms: id -> {members:Set, preset, alloc}
     this.state = {
       epoch: 0,
       status: 'idle',     // idle | running | paused | blackout
@@ -38,18 +58,102 @@ export class ShowHub {
   broadcastAudience(obj) { for (const ws of this.audience) this.send(ws, obj); }
   broadcastOperators(obj) { for (const ws of this.operators) this.send(ws, obj); }
 
-  addAudience(ws) {
-    this.audience.add(ws);
-    // Late/joining client: hand it the full picture so it can run offline & in-sync.
-    this.send(ws, { t: 'welcome', state: this.publicState(), serverTime: serverClock() });
-    if (this.state.trackId != null) {
-      const tl = this.loadTimeline(this.state.trackId);
-      if (tl) this.send(ws, { t: 'timeline', trackId: this.state.trackId, data: tl });
-    }
-    this.broadcastCount();
+  // ---- rooms (main + ephemeral guest demo rooms) ----
+  getRoom(roomId, create) {
+    if (!roomId || roomId === MAIN_ROOM) return null; // main is special (this.audience)
+    let r = this.rooms.get(roomId);
+    if (!r && create) { r = { members: new Set(), preset: null, alloc: new IndexAllocator(), createdAt: serverClock() }; this.rooms.set(roomId, r); }
+    return r || null;
   }
 
-  removeAudience(ws) { this.audience.delete(ws); this.broadcastCount(); }
+  // Reap orphan demo rooms (a preset set but no phones ever joined / all left).
+  sweepRooms(ttlMs = 60000) {
+    const cutoff = serverClock() - ttlMs;
+    for (const [id, r] of this.rooms) if (r.members.size === 0 && (r.createdAt || 0) < cutoff) this.rooms.delete(id);
+  }
+
+  // Send every member of a room its OWN sticky index + the current grid width N.
+  broadcastIndices(members, alloc) {
+    for (const ws of members) this.send(ws, { t: 'index', index: alloc.indexOf(ws), total: alloc.total() });
+  }
+
+  addAudience(ws, roomId) {
+    roomId = roomId || MAIN_ROOM;
+    ws.room = roomId;
+    if (roomId === MAIN_ROOM) {
+      this.audience.add(ws);
+      this.alloc.alloc(ws);
+      // Late/joining client: hand it the full picture so it can run offline & in-sync.
+      this.send(ws, { t: 'welcome', state: this.publicState(), serverTime: serverClock() });
+      if (this.preset) this.send(ws, { t: 'preset', ...this.preset });
+      if (this.state.trackId != null) {
+        const tl = this.loadTimeline(this.state.trackId);
+        if (tl) this.send(ws, { t: 'timeline', trackId: this.state.trackId, data: tl });
+      }
+      this.broadcastIndices(this.audience, this.alloc);
+      this.broadcastCount();
+    } else {
+      const r = this.getRoom(roomId, true);
+      r.members.add(ws); r.alloc.alloc(ws);
+      this.send(ws, { t: 'welcome', state: { status: 'demo' }, serverTime: serverClock() });
+      if (r.preset) this.send(ws, { t: 'preset', ...r.preset });
+      this.broadcastIndices(r.members, r.alloc);
+    }
+  }
+
+  removeAudience(ws) {
+    const roomId = ws.room || MAIN_ROOM;
+    if (roomId === MAIN_ROOM) {
+      this.audience.delete(ws); this.alloc.free(ws);
+      this.broadcastIndices(this.audience, this.alloc);
+      this.broadcastCount();
+    } else {
+      const r = this.rooms.get(roomId);
+      if (r) {
+        r.members.delete(ws); r.alloc.free(ws);
+        if (r.members.size === 0) this.rooms.delete(roomId); // ephemeral: clean up empty rooms
+        else this.broadcastIndices(r.members, r.alloc);
+      }
+    }
+  }
+
+  // ---- live parametric presets (studio channel) ----
+  // `valid` must already have passed validatePreset (server-authoritative safety).
+  setPreset(roomId, valid) {
+    const startedAt = serverClock();
+    if (!roomId || roomId === MAIN_ROOM) {
+      const epoch = (this.preset ? this.preset.epoch : 0) + 1;
+      this.preset = { type: valid.type, params: valid.params, epoch, startedAt };
+      this.broadcastAudience({ t: 'preset', ...this.preset });
+      this.broadcastState();
+      return { ok: true, epoch };
+    }
+    const r = this.getRoom(roomId, true);
+    const epoch = (r.preset ? r.preset.epoch : 0) + 1;
+    r.preset = { type: valid.type, params: valid.params, epoch, startedAt };
+    for (const ws of r.members) this.send(ws, { t: 'preset', ...r.preset });
+    return { ok: true, epoch, members: r.members.size };
+  }
+
+  // A single param tweak: morph WITHOUT bumping epoch/startedAt (phase preserved).
+  setParam(roomId, key, value) {
+    const r = (!roomId || roomId === MAIN_ROOM) ? null : this.getRoom(roomId, false);
+    const preset = r ? r.preset : this.preset;
+    if (!preset) return { ok: false, error: 'no active preset' };
+    preset.params[key] = value;
+    const msg = { t: 'paramUpdate', epoch: preset.epoch, key, value };
+    if (r) { for (const ws of r.members) this.send(ws, msg); }
+    else this.broadcastAudience(msg);
+    return { ok: true, epoch: preset.epoch };
+  }
+
+  // Drop the main-room preset (back to timeline/idle). Used when a timeline is armed.
+  clearPreset() {
+    if (!this.preset) return;
+    const epoch = this.preset.epoch + 1;
+    this.preset = null;
+    this.broadcastAudience({ t: 'preset', type: 'off', params: {}, epoch, startedAt: serverClock() });
+  }
   addOperator(ws) { this.operators.add(ws); this.send(ws, { t: 'state', state: this.publicState() }); this.broadcastCount(); }
   removeOperator(ws) { this.operators.delete(ws); }
 
@@ -68,6 +172,7 @@ export class ShowHub {
   arm(trackId) {
     const tl = this.loadTimeline(trackId);
     if (!tl) return { ok: false, error: 'no timeline for track' };
+    this.clearPreset(); // a timeline show supersedes any live preset on the main room
     this.state.trackId = trackId;
     this.state.status = 'idle';
     this.state.T0 = null;

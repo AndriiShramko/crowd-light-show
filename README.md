@@ -16,7 +16,9 @@
 - **Tight sync even on bad networks** — clock-offset handshake + a pre-baked timeline that runs locally on each phone, so the crowd stays together even when the venue Wi-Fi is congested.
 - **Resilient** — the whole show timeline is delivered on join, so a phone keeps running the show even if its connection drops.
 - **Operator console** — upload audio, build a playlist, project the QR, and drive the show with a master transport.
-- **Safety first** — a server-side safety governor caps flashing and blocks dangerous strobe patterns (see Safety).
+- **Live presets (studio)** — switch the whole crowd between parametric presets (Pulse, Color Waves, Rainbow Chase, Ocean) in real time; spatial presets split across the crowd by each phone's place. No track required.
+- **Try it live** — a guest can mint a private room at `/studio`, point a few phones at a QR, and switch presets themselves with no login (degrades gracefully to a single device).
+- **Safety first** — a server-side safety governor caps flashing and blocks dangerous strobe patterns (see Safety). Presets are validated and clamped on the server too.
 - **Anonymous & ephemeral** — no accounts, no personal data, no tracking cookies.
 
 ---

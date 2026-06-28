@@ -5,7 +5,16 @@
   var DEMO = params.get('demo') === '1';        // zero-setup looping demo (Try it)
   var DIAG = params.get('diag') === '1';        // show clock-sync diagnostics
   var JITTER = Math.max(0, Number(params.get('jitter') || 0)); // simulated inbound delay (ms)
+  var ROOM = (function () { var r = params.get('room') || ''; return /^[a-z0-9]{6,24}$/.test(r) ? r : ''; })(); // studio demo room
   var env = null, waveEl = null, waveCtx = null, waveTick = 0; // music waveform + playhead
+
+  // Live parametric preset engine (studio channel). Each phone renders the active
+  // preset locally off the synced clock; switches are a tiny broadcast (epoch++).
+  var P = window.CLS_PRESETS;
+  var preset = null;        // { type, params, epoch, startedAt }
+  var myIndex = 0, N = 1;   // sticky index in the crowd + grid width
+  var backstop = P ? P.makeBackstop(150) : null; // client-side safety slew (defense in depth)
+  var lastFrameT = 0;
 
   var flashEl = document.getElementById('flash');
   var stopBtn = document.getElementById('stopbtn');
@@ -17,8 +26,10 @@
   var joinScreen = document.getElementById('joinScreen');
   var joinTorch = document.getElementById('joinTorch');
 
-  // Test/telemetry hook (read by the Playwright sync harness).
-  window.__cls = { flashes: [], lastBg: '#000', offset: 0, timeOrigin: performance.timeOrigin, status: 'idle', started: false, consented: false, everLit: false, colors: [] };
+  // Test/telemetry hook (read by the Playwright sync harness). Every new path writes
+  // here — it is the single machine-readable seam for verification.
+  window.__cls = { flashes: [], lastBg: '#000', offset: 0, timeOrigin: performance.timeOrigin, status: 'idle', started: false, consented: false, everLit: false, colors: [],
+    room: ROOM || 'main', idx: 0, total: 1, preset: null, presetRgb: null, presetPos: -1, presetEpoch: 0 };
 
   var ws = null, clock = null, timeline = null;
   var runState = { status: 'idle', T0: null, epoch: 0, pausePos: 0 };
@@ -68,7 +79,7 @@
     ws = new WebSocket(proto + '://' + location.host + '/ws');
     clock = new ClockSync(function (o) { try { ws.send(JSON.stringify(o)); } catch (e) {} });
     ws.onopen = function () {
-      ws.send(JSON.stringify({ t: 'hello', role: 'audience', platform: isAndroid ? 'android' : (/iPhone|iPad|iPod/i.test(navigator.userAgent) ? 'ios' : 'other') }));
+      ws.send(JSON.stringify({ t: 'hello', role: 'audience', room: ROOM || undefined, platform: isAndroid ? 'android' : (/iPhone|iPad|iPod/i.test(navigator.userAgent) ? 'ios' : 'other') }));
       setStatus('st_sync');
       var n = 0;
       var pinger = setInterval(function () { if (ws.readyState === 1) { clock.ping(); if (++n >= 40) clearInterval(pinger); } }, 70); // ~2.8s rapid sync
@@ -100,6 +111,18 @@
     if (m.t === 'pause') { runState.status = 'paused'; runState.pausePos = m.pos; window.__cls.status = 'paused'; setStatus('st_paused'); return; }
     if (m.t === 'stop') { runState = { status: 'idle', T0: null, epoch: m.epoch, pausePos: 0 }; window.__cls.status = 'idle'; setStatus('st_wait'); return; }
     if (m.t === 'blackout') { runState = { status: 'blackout', T0: null, epoch: m.epoch }; window.__cls.status = 'blackout'; return; }
+    // ---- studio: live parametric presets ----
+    if (m.t === 'index') { myIndex = m.index | 0; N = Math.max(1, m.total | 0); window.__cls.idx = myIndex; window.__cls.total = N; return; }
+    if (m.t === 'preset') {
+      if (m.type === 'off' || !P || !P.PRESETS[m.type]) { preset = null; window.__cls.preset = null; window.__cls.status = 'idle'; setStatus('st_wait'); return; }
+      preset = { type: m.type, params: m.params || P.defaults(m.type), epoch: m.epoch | 0, startedAt: m.startedAt };
+      window.__cls.preset = m.type; window.__cls.presetEpoch = preset.epoch; window.__cls.presetStartedAt = m.startedAt; window.__cls.status = 'running';
+      prevLum = 0; flashArmed = true; setStatus('st_play'); return;
+    }
+    if (m.t === 'paramUpdate') {
+      if (preset && m.epoch === preset.epoch) { preset.params[m.key] = m.value; } // epoch-gated, phase preserved
+      return;
+    }
   }
 
   function applyState(s) {
@@ -121,32 +144,54 @@
     requestAnimationFrame(render);
     window.__cls.ticks = (window.__cls.ticks || 0) + 1;
     var synced = !!(clock && clock.ready); window.__cls.synced = synced;
-    var lum = 0, rgb = [0, 0, 0], pos = -1, playing = false;
-    if (timeline && runState.status === 'paused') {
-      pos = runState.pausePos; var cp = sampleCue(pos); lum = cp.b; rgb = cp.rgb; playing = true;
-    } else if (synced && demoMode && timeline) {
-      var d = timeline.durationMs; pos = ((clock.serverNow() - demoT0) % d + d) % d; // loop forever
-      var cd = sampleCue(pos); lum = cd.b; rgb = cd.rgb; playing = true;
-    } else if (synced && timeline && runState.status === 'running') {
-      pos = clock.serverNow() - runState.T0;
-      if (pos >= 0 && pos <= timeline.durationMs + 250) { var c = sampleCue(pos); lum = c.b; rgb = c.rgb; playing = true; }
-      setStatus('st_play');
-    } else if (!synced && (demoMode || runState.status === 'running')) {
-      setStatus('st_sync'); // clock not converged yet → stay dark, don't flash out of sync
+    var finalRgb = [0, 0, 0], flum = 0, pos = -1, playing = false, epochNow = runState.epoch;
+
+    if (runState.status === 'blackout') {
+      // operator BLACKOUT overrides everything — go dark immediately.
+    } else if (preset && preset.type && P) {
+      // STUDIO: render the active parametric preset locally off the synced clock.
+      if (synced) {
+        pos = clock.serverNow() - preset.startedAt;
+        var raw = P.PRESETS[preset.type](pos, preset.params, myIndex, N);
+        finalRgb = P.clampColor(raw);                 // safety backstop #1: no saturated red
+        var nowf = performance.now(); var dt = lastFrameT ? nowf - lastFrameT : 16; lastFrameT = nowf;
+        if (backstop) finalRgb = backstop(finalRgb, dt); // safety backstop #2: >=150ms ramp / <=3 fl/s
+        flum = P.relLum(finalRgb); playing = true; epochNow = preset.epoch;
+        window.__cls.presetRgb = finalRgb; window.__cls.presetPos = Math.round(pos);
+        setStatus('st_play');
+      } else { setStatus('st_sync'); }
+    } else {
+      // TIMELINE (existing show): luminance + colour from the pre-baked cue list.
+      var lum = 0, rgb = [0, 0, 0];
+      if (timeline && runState.status === 'paused') {
+        pos = runState.pausePos; var cp = sampleCue(pos); lum = cp.b; rgb = cp.rgb; playing = true;
+      } else if (synced && demoMode && timeline) {
+        var d = timeline.durationMs; pos = ((clock.serverNow() - demoT0) % d + d) % d; // loop forever
+        var cd = sampleCue(pos); lum = cd.b; rgb = cd.rgb; playing = true;
+      } else if (synced && timeline && runState.status === 'running') {
+        pos = clock.serverNow() - runState.T0;
+        if (pos >= 0 && pos <= timeline.durationMs + 250) { var c = sampleCue(pos); lum = c.b; rgb = c.rgb; playing = true; }
+        setStatus('st_play');
+      } else if (!synced && (demoMode || runState.status === 'running')) {
+        setStatus('st_sync'); // clock not converged yet → stay dark, don't flash out of sync
+      }
+      finalRgb = [Math.round(rgb[0] * lum), Math.round(rgb[1] * lum), Math.round(rgb[2] * lum)];
+      flum = lum;
     }
-    var bg = 'rgb(' + Math.round(rgb[0] * lum) + ',' + Math.round(rgb[1] * lum) + ',' + Math.round(rgb[2] * lum) + ')';
+
+    var bg = 'rgb(' + finalRgb[0] + ',' + finalRgb[1] + ',' + finalRgb[2] + ')';
     if (bg !== lastBg) {
       flashEl.style.backgroundColor = bg; lastBg = bg; window.__cls.lastBg = bg;
       if (bg !== 'rgb(0,0,0)') { window.__cls.everLit = true; if (window.__cls.colors.indexOf(bg) < 0 && window.__cls.colors.length < 40) window.__cls.colors.push(bg); }
     }
-    if (demoMode || runState.status === 'running') {
-      if (lum < 0.25) flashArmed = true;
-      else if (lum >= 0.6 && flashArmed) { flashArmed = false; window.__cls.flashes.push({ epoch: runState.epoch, pos: Math.round(pos), wall: performance.timeOrigin + performance.now() }); }
+    if (playing) {
+      if (flum < 0.25) flashArmed = true;
+      else if (flum >= 0.6 && flashArmed) { flashArmed = false; window.__cls.flashes.push({ epoch: epochNow, pos: Math.round(pos), wall: performance.timeOrigin + performance.now() }); }
     }
-    prevLum = lum;
-    window.__cls.lastPos = Math.round(pos); window.__cls.maxLum = Math.max(window.__cls.maxLum || 0, lum);
-    driveTorch(lum);
-    if ((++waveTick % 5) === 0) { drawWave(playing ? pos : -1); if (DIAG) updateDiag(pos); }
+    prevLum = flum;
+    window.__cls.lastPos = Math.round(pos); window.__cls.maxLum = Math.max(window.__cls.maxLum || 0, flum);
+    driveTorch(flum);
+    if ((++waveTick % 5) === 0) { drawWave(playing && timeline ? pos : -1); if (DIAG) updateDiag(pos); }
   }
 
   // Small per-device waveform of the track's loudness envelope + a moving playhead,
@@ -210,6 +255,7 @@
 
   function leave() {
     window.__cls.started = false;
+    preset = null; runState.status = 'idle'; // opt-out is terminal: stop all rendering
     try { if (ws) ws.close(); } catch (e) {}
     try { if (wakeLock) wakeLock.release(); } catch (e) {}
     if (torchTrack) { try { torchTrack.applyConstraints({ advanced: [{ torch: false }] }); } catch (e) {} try { torchTrack.stop(); } catch (e) {} torchTrack = null; }
