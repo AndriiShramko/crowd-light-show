@@ -2,14 +2,14 @@
   'use strict';
   var TOKEN = window.__TOKEN__;
   var LEAD_MS = 900;
-  var ws = null, clock = null, audioCtx = null, armedBuffer = null, armedId = null, source = null, nudge = 0;
+  var ws = null, clock = null, armedId = null, audioReady = false, nudge = 0;
+  var player = document.getElementById('player');
 
   var $ = function (id) { return document.getElementById(id); };
   function api(path, opts) {
     opts = opts || {}; opts.headers = Object.assign({ Authorization: 'Bearer ' + TOKEN }, opts.headers || {});
     return fetch(path, opts);
   }
-  function ensureAudio() { if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)(); if (audioCtx.state === 'suspended') audioCtx.resume(); }
 
   function loadState() {
     api('/api/operator/state').then(function (r) { return r.ok ? r.json() : null; }).then(function (s) {
@@ -53,43 +53,36 @@
   });
 
   function armTrack(id) {
-    ensureAudio();
-    armedId = id; armedBuffer = null;
-    // Arm the LIGHTS immediately (distribute the timeline) — independent of whether
-    // this browser can decode the audio. The show must never depend on local decode.
+    armedId = id; audioReady = false;
+    // Arm the LIGHTS immediately (distribute the timeline) — independent of audio.
     if (ws && ws.readyState === 1) ws.send(JSON.stringify({ t: 'op', cmd: 'arm', trackId: id }));
     $('armed').textContent = 'track #' + id + ' (lights ready, loading audio…)';
-    // Best-effort: load + decode the audio for console playback (P0-1 alignment).
-    // If the browser can't decode this format, the lights still run — play the music
-    // from another source and use GO + nudge to line it up.
-    api('/api/operator/audio/' + id).then(function (r) { return r.arrayBuffer(); })
-      .then(function (ab) { return audioCtx.decodeAudioData(ab); })
-      .then(function (buf) { if (armedId === id) { armedBuffer = buf; $('armed').textContent = 'track #' + id + ' ♪ audio ready'; } })
-      .catch(function () { if (armedId === id) $('armed').textContent = 'track #' + id + ' (lights only — this browser can’t play this audio; play music separately)'; });
+    // Stream the audio into an <audio> element via a Blob URL (the original ~3 MB
+    // file, NOT a giant decoded buffer): low memory, robust, decoded on the fly.
+    api('/api/operator/audio/' + id).then(function (r) { return r.ok ? r.blob() : null; })
+      .then(function (blob) {
+        if (armedId !== id) return;
+        if (!blob) throw new Error('no audio');
+        if (player.dataset.url) { try { URL.revokeObjectURL(player.dataset.url); } catch (e) {} }
+        var url = URL.createObjectURL(blob); player.dataset.url = url; player.src = url; player.load();
+        audioReady = true; $('armed').textContent = 'track #' + id + ' ♪ audio ready';
+      })
+      .catch(function () { if (armedId === id) $('armed').textContent = 'track #' + id + ' (lights only — play music separately)'; });
   }
 
   $('go').addEventListener('click', function () {
     if (armedId == null) { alert('Arm a track first.'); return; }
-    ensureAudio();
-    // P0-1: when the console can play the audio, derive T0 from the REAL audio start
-    // so the light and the audible PA track share one origin (nudge compensates PA
-    // latency). If audio couldn't be decoded here, start the lights at now+lead and
-    // play the music from another source, lining it up with the nudge slider.
-    var T0;
-    if (armedBuffer) {
-      var ctxStart = audioCtx.currentTime + LEAD_MS / 1000;
-      var perfStart = performance.now() + LEAD_MS;
-      T0 = perfStart + (clock ? clock.offset : 0) + nudge;
-      if (source) { try { source.stop(); } catch (e) {} }
-      source = audioCtx.createBufferSource(); source.buffer = armedBuffer; source.connect(audioCtx.destination);
-      source.start(ctxStart);
-    } else {
-      T0 = performance.now() + LEAD_MS + (clock ? clock.offset : 0) + nudge;
+    // Lights start at T0 = now + lead (server clock via offset + nudge). The audio
+    // element is scheduled to start at the same instant; nudge fine-tunes PA latency.
+    var T0 = performance.now() + LEAD_MS + (clock ? clock.offset : 0) + nudge;
+    if (audioReady && player.src) {
+      try { player.pause(); player.currentTime = 0; } catch (e) {}
+      setTimeout(function () { var p = player.play(); if (p && p.catch) p.catch(function () {}); }, LEAD_MS);
     }
     if (ws && ws.readyState === 1) ws.send(JSON.stringify({ t: 'op', cmd: 'go', T0: T0 }));
   });
-  $('pause').addEventListener('click', function () { if (source) { try { source.stop(); } catch (e) {} } if (ws) ws.send(JSON.stringify({ t: 'op', cmd: 'pause' })); });
-  $('stop').addEventListener('click', function () { if (source) { try { source.stop(); } catch (e) {} } if (ws) ws.send(JSON.stringify({ t: 'op', cmd: 'stop' })); });
+  $('pause').addEventListener('click', function () { try { player.pause(); } catch (e) {} if (ws) ws.send(JSON.stringify({ t: 'op', cmd: 'pause' })); });
+  $('stop').addEventListener('click', function () { try { player.pause(); player.currentTime = 0; } catch (e) {} if (ws) ws.send(JSON.stringify({ t: 'op', cmd: 'stop' })); });
   $('blackout').addEventListener('click', function () { if (ws) ws.send(JSON.stringify({ t: 'op', cmd: 'blackout' })); });
 
   $('nudge').addEventListener('input', function () { nudge = Number($('nudge').value); $('nudgeVal').textContent = nudge + ' ms'; });
@@ -117,5 +110,25 @@
     ws.onerror = function () {};
   }
 
-  connect(); loadState(); setInterval(loadState, 8000);
+  function loadApps() {
+    api('/api/operator/applications').then(function (r) { return r.ok ? r.json() : null; }).then(function (d) {
+      if (!d) return;
+      var tb = $('apps').querySelector('tbody'); tb.innerHTML = '';
+      $('appsMsg').textContent = d.applications.length ? (d.applications.length + ' lead(s)') : 'No leads yet — submissions from the landing form appear here.';
+      d.applications.forEach(function (a) {
+        var when = new Date(a.created_at).toLocaleString();
+        var tr = document.createElement('tr');
+        tr.innerHTML = '<td><b>' + esc(a.name) + '</b> · ' + esc(a.contact) + '<br><span class="muted">' + esc(a.event_type || '') + (a.message ? ' · ' + esc(a.message) : '') + '<br>' + when + (a.notified ? ' · ✓ TG' : '') + '</span></td>'
+          + '<td style="text-align:right;vertical-align:top"><button data-delapp="' + a.id + '" class="ghost" style="width:auto">✕</button></td>';
+        tb.appendChild(tr);
+      });
+    });
+  }
+  $('apps').addEventListener('click', function (e) {
+    var id = e.target.getAttribute('data-delapp');
+    if (id) api('/api/operator/application/' + id, { method: 'DELETE' }).then(loadApps);
+  });
+  $('refreshApps').addEventListener('click', loadApps);
+
+  connect(); loadState(); loadApps(); setInterval(loadState, 8000); setInterval(loadApps, 20000);
 })();

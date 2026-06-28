@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Try the demo · Crowd Light Show</title>
+<meta name="description" content="Try the Crowd Light Show demo: scan a QR with your phone and your screen joins a looping demo light show. Safe and flash-rate limited.">
+<link rel="stylesheet" href="/static/style.css">
+<style>
+/* ===== Try-page marketing styles (layered on top of /static/style.css) ===== */
+:root {
+  --m-bg: #07080d;
+  --m-bg2: #0b0d14;
+  --m-card: #11151f;
+  --m-line: #232a39;
+  --m-fg: #eef1f6;
+  --m-muted: #9aa3b2;
+  --m-accent: #5aa0ff;
+  --m-glow1: #5aa0ff;
+  --m-glow2: #b15cff;
+  --m-glow3: #ff6ec7;
+  --m-gold: #ffcf57;
+  --m-maxw: 1100px;
+}
+html, body { background: var(--m-bg); color: var(--m-fg); }
+body { overflow-x: hidden; min-height: 100dvh; }
+img, svg { max-width: 100%; }
+.t-page { max-width: 100%; }
+.t-container { max-width: 760px; margin: 0 auto; padding: 0 clamp(16px, 4vw, 32px); }
+
+/* nav */
+.t-nav { position: sticky; top: 0; z-index: 50; backdrop-filter: blur(12px);
+  background: rgba(7,8,13,.78); border-bottom: 1px solid var(--m-line); }
+.t-nav-inner { display: flex; align-items: center; gap: 14px;
+  padding: 10px clamp(16px, 4vw, 32px); max-width: var(--m-maxw); margin: 0 auto; }
+.t-brand { display: flex; align-items: center; gap: 9px; font-weight: 800;
+  font-size: clamp(.98rem, 1.4vw, 1.1rem); color: var(--m-fg); text-decoration: none; margin-right: auto; }
+.t-dot { width: 12px; height: 12px; border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #fff, var(--m-glow1) 55%, var(--m-glow2));
+  box-shadow: 0 0 10px var(--m-glow1), 0 0 18px var(--m-glow2);
+  animation: t-pulse 2.4s ease-in-out infinite; flex: none; }
+@keyframes t-pulse { 0%,100% { opacity:1; transform: scale(1);} 50% { opacity:.55; transform: scale(.82);} }
+.t-back { color: var(--m-muted); text-decoration: none; font-size: .92rem; font-weight: 500; }
+.t-back:hover, .t-back:focus-visible { color: var(--m-fg); outline: none; }
+
+/* buttons */
+.t-btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  font: inherit; font-weight: 700; line-height: 1.1; padding: 15px 26px; border-radius: 999px;
+  cursor: pointer; text-decoration: none; border: 1px solid transparent; width: auto;
+  transition: transform .12s ease, box-shadow .2s ease; }
+.t-btn:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+.t-btn-primary { color: #06122b;
+  background: linear-gradient(120deg, var(--m-glow1), var(--m-glow2) 70%, var(--m-glow3));
+  box-shadow: 0 6px 22px rgba(90,160,255,.35), 0 2px 8px rgba(177,92,255,.3); font-size: 1.05rem; }
+.t-btn-primary:hover { transform: translateY(-2px); box-shadow: 0 10px 32px rgba(90,160,255,.5), 0 4px 14px rgba(177,92,255,.45); }
+
+/* hero / content */
+.t-hero { position: relative; padding: clamp(40px, 8vw, 72px) 0 clamp(28px, 5vw, 48px); overflow: hidden; text-align: center; }
+.t-blob { position: absolute; border-radius: 50%; filter: blur(70px); opacity: .5; z-index: 0; pointer-events: none;
+  animation: t-float 14s ease-in-out infinite; }
+.t-blob.b1 { width: 60vw; max-width: 460px; aspect-ratio: 1; left: -10vw; top: -6vw;
+  background: radial-gradient(circle, var(--m-glow1), transparent 70%); }
+.t-blob.b2 { width: 56vw; max-width: 440px; aspect-ratio: 1; right: -10vw; top: 0;
+  background: radial-gradient(circle, var(--m-glow3), transparent 70%); animation-delay: -6s; }
+@keyframes t-float { 0%,100% { transform: translate(0,0) scale(1);} 50% { transform: translate(3%,4%) scale(1.08);} }
+@media (prefers-reduced-motion: reduce) { .t-blob, .t-dot { animation: none; } }
+
+.t-hero-inner { position: relative; z-index: 1; }
+.t-eyebrow { display: inline-flex; align-items: center; gap: 8px; font-size: .8rem; font-weight: 600;
+  letter-spacing: .4px; text-transform: uppercase; color: var(--m-accent);
+  background: rgba(90,160,255,.1); border: 1px solid rgba(90,160,255,.25);
+  padding: 6px 13px; border-radius: 999px; margin-bottom: 18px; }
+.t-hero h1 { font-size: clamp(1.9rem, 6vw, 3rem); line-height: 1.08; letter-spacing: -.02em;
+  margin: 0 auto 16px; font-weight: 800; max-width: 16ch; }
+.t-grad { background: linear-gradient(100deg, var(--m-glow1), var(--m-glow3) 55%, var(--m-gold));
+  -webkit-background-clip: text; background-clip: text; color: transparent; }
+.t-instruction { font-size: clamp(1.02rem, 2.2vw, 1.25rem); color: var(--m-muted); line-height: 1.55;
+  max-width: 52ch; margin: 0 auto; }
+
+/* QR card */
+.t-qr-card { position: relative; z-index: 1;
+  background: linear-gradient(165deg, var(--m-card), #0b0e16); border: 1px solid var(--m-line);
+  border-radius: 22px; padding: clamp(24px, 5vw, 40px); text-align: center;
+  margin: clamp(28px, 5vw, 44px) 0; box-shadow: 0 24px 64px rgba(0,0,0,.5); }
+.t-qr-card img { display: block; margin: 0 auto; }
+.t-qr-or { display: flex; align-items: center; gap: 14px; color: var(--m-muted);
+  font-size: .82rem; text-transform: uppercase; letter-spacing: .12em; margin: clamp(20px,4vw,28px) auto; max-width: 320px; }
+.t-qr-or::before, .t-qr-or::after { content: ""; flex: 1; height: 1px; background: var(--m-line); }
+.t-note { color: var(--m-muted); font-size: .92rem; line-height: 1.6; max-width: 54ch;
+  margin: 14px auto 0; }
+.t-link-box { display: inline-block; margin-top: 12px; font-size: .88rem; word-break: break-all;
+  background: rgba(255,255,255,.03); border: 1px solid var(--m-line); border-radius: 10px;
+  padding: 8px 12px; color: var(--m-accent); }
+
+/* safety pill */
+.t-safe { display: inline-flex; align-items: center; gap: 8px; margin-top: 18px;
+  font-size: .85rem; color: var(--m-muted);
+  background: rgba(255,207,87,.08); border: 1px solid rgba(255,207,87,.25);
+  padding: 8px 14px; border-radius: 999px; }
+
+/* footer */
+.t-footer { border-top: 1px solid var(--m-line); padding: clamp(28px, 5vw, 44px) 0; background: var(--m-bg2); margin-top: clamp(24px,5vw,48px); }
+.t-footer-inner { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px; justify-content: center; text-align: center; }
+.t-footer-inner a { color: var(--m-muted); text-decoration: none; font-size: .9rem; }
+.t-footer-inner a:hover { color: var(--m-fg); }
+.t-credit { color: var(--m-muted); font-size: .88rem; }
+.t-credit strong { color: var(--m-fg); }
+</style>
+</head>
+<body class="t-page">
+
+<header class="t-nav">
+  <nav class="t-nav-inner" aria-label="Primary">
+    <a class="t-brand" href="/" aria-label="Crowd Light Show home"><span class="t-dot" aria-hidden="true"></span>Crowd Light Show</a>
+    <a class="t-back" href="/">← Back to home</a>
+  </nav>
+</header>
+
+<main>
+<section class="t-hero">
+  <span class="t-blob b1" aria-hidden="true"></span>
+  <span class="t-blob b2" aria-hidden="true"></span>
+  <div class="t-container t-hero-inner">
+    <span class="t-eyebrow"><span class="t-dot" aria-hidden="true" style="width:8px;height:8px"></span>Live demo</span>
+    <h1>Try the <span class="t-grad">light show</span> right now</h1>
+    <p class="t-instruction">Scan this QR with your phone, then tap <strong>Join</strong> — your screen becomes part of a looping demo light show. Grab a few phones for the full effect.</p>
+  </div>
+</section>
+
+<section class="t-container">
+  <div class="t-qr-card">
+    <img src="/api/demo/qr" alt="Scan to join the demo" style="width:min(320px,80vw);background:#fff;padding:12px;border-radius:14px">
+
+    <div class="t-qr-or">or</div>
+
+    <a class="t-btn t-btn-primary" href="/join?demo=1">Run the demo on THIS device →</a>
+
+    <p class="t-note">It's a safe, flash-rate-limited demo. On a phone, scan the code above; you can also open the join link directly:</p>
+    <span class="t-link-box">https://lightshow.flyreelstudio.eu/join?demo=1</span>
+
+    <div><span class="t-safe">⚠️ Safe &amp; flash-rate limited — leave any time with “Stop”.</span></div>
+  </div>
+
+  <p class="t-credit" style="text-align:center"><a class="t-back" href="/">← Back to home</a></p>
+</section>
+</main>
+
+<footer class="t-footer">
+  <div class="t-container t-footer-inner">
+    <span class="t-credit">Made by <strong>Andrii Shramko</strong></span>
+    <a href="https://www.linkedin.com/in/andrii-shramko/" target="_blank" rel="noopener">LinkedIn</a>
+    <a href="/about">About &amp; safety</a>
+    <a href="https://github.com/AndriiShramko/crowd-light-show" target="_blank" rel="noopener">Source</a>
+  </div>
+</footer>
+
+</body>
+</html>

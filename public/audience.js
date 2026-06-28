@@ -2,6 +2,7 @@
   'use strict';
   var params = new URLSearchParams(location.search);
   var AUTO = params.get('auto') === '1';        // headless auto-join (sync harness)
+  var DEMO = params.get('demo') === '1';        // zero-setup looping demo (Try it)
   var JITTER = Math.max(0, Number(params.get('jitter') || 0)); // simulated inbound delay (ms)
 
   var flashEl = document.getElementById('flash');
@@ -21,6 +22,7 @@
   var runState = { status: 'idle', T0: null, epoch: 0, pausePos: 0 };
   var wakeLock = null, torchTrack = null, torchOn = false, lastTorchAt = 0, useTorch = false;
   var lastBg = '#000', prevLum = 0, flashArmed = true;
+  var demoMode = false, demoT0 = 0;
 
   var isAndroid = /Android/i.test(navigator.userAgent);
   var canTryTorch = isAndroid && !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
@@ -67,6 +69,11 @@
       var n = 0;
       var pinger = setInterval(function () { if (ws.readyState === 1) { clock.ping(); if (++n >= 12) { clearInterval(pinger); } } }, 120);
       setInterval(function () { if (ws.readyState === 1) clock.ping(); }, 25000); // periodic re-sync
+      if (DEMO) {
+        fetch('/api/demo').then(function (r) { return r.json(); }).then(function (d) {
+          timeline = d.timeline; demoT0 = d.T0; demoMode = true; setStatus('st_play');
+        }).catch(function () {});
+      }
     };
     ws.onmessage = function (ev) {
       // Simulated delivery jitter on broadcasts (start/timeline/pause/...). The
@@ -110,7 +117,10 @@
     requestAnimationFrame(render);
     window.__cls.ticks = (window.__cls.ticks || 0) + 1;
     var lum = 0, rgb = [0, 0, 0], pos = -1;
-    if (timeline && (runState.status === 'running' || runState.status === 'paused')) {
+    if (demoMode && timeline) {
+      var d = timeline.durationMs; pos = ((clock.serverNow() - demoT0) % d + d) % d; // loop forever
+      var cd = sampleCue(pos); lum = cd.b; rgb = cd.rgb;
+    } else if (timeline && (runState.status === 'running' || runState.status === 'paused')) {
       pos = runState.status === 'paused' ? runState.pausePos : (clock.serverNow() - runState.T0);
       if (pos >= 0 && pos <= timeline.durationMs + 250) { var c = sampleCue(pos); lum = c.b; rgb = c.rgb; }
     }
@@ -121,7 +131,7 @@
     }
     // flash-onset detection (for the sync harness): hysteresis low->high crossing,
     // robust to the multi-frame ramp (same logic as the server compiler).
-    if (runState.status === 'running') {
+    if (demoMode || runState.status === 'running') {
       if (lum < 0.25) flashArmed = true;
       else if (lum >= 0.6 && flashArmed) {
         flashArmed = false;

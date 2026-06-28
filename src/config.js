@@ -33,6 +33,9 @@ export const config = {
   // HMAC secret for operator session tokens.
   sessionSecret: process.env.SESSION_SECRET || crypto.randomBytes(32).toString('hex'),
   ffmpegPath: process.env.FFMPEG_PATH || 'ffmpeg',
+  // Optional Telegram notification for new lead/applications (owner DM).
+  telegramBotToken: process.env.TELEGRAM_BOT_TOKEN || '',
+  telegramChatId: process.env.TELEGRAM_CHAT_ID || '',
   maxUploadBytes: Number(process.env.MAX_UPLOAD_BYTES || 50 * 1024 * 1024),
   maxTracksPerShow: Number(process.env.MAX_TRACKS || 10),
   uploadsBudgetBytes: Number(process.env.UPLOADS_BUDGET || 2 * 1024 * 1024 * 1024),

@@ -64,8 +64,22 @@ CREATE TABLE IF NOT EXISTS seat (
   zone TEXT
 );
 
+-- Lead capture from the marketing landing (stored for the admin list; also DM'd
+-- to the owner via Telegram if configured).
+CREATE TABLE IF NOT EXISTS application (
+  id INTEGER PRIMARY KEY,
+  name TEXT,
+  contact TEXT,
+  event_type TEXT,
+  message TEXT,
+  ip TEXT,
+  notified INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_track_show ON track(show_id);
 CREATE INDEX IF NOT EXISTS idx_seat_map ON seat(seatmap_id);
+CREATE INDEX IF NOT EXISTS idx_app_created ON application(created_at DESC);
 `);
 
 export function now() { return Date.now(); }

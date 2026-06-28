@@ -4,11 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Crowd Light Show — turn the audience's phones into one synchronized light show</title>
-<meta name="description" content="Open-source web app that turns a crowd's phones into one light show synchronized to the music. Scan a QR, the whole audience flashes together — concerts, clubs, stadiums, parties. No app install.">
+<meta name="description" content="Open-source web app that turns a crowd's phones into one synchronized light show in time with the music. Scan a QR, the whole audience flashes together — concert, stadium, club, party. No app install. Audience / concert / festival / wedding / arena light show.">
 <link rel="canonical" href="https://lightshow.flyreelstudio.eu/">
 <meta property="og:type" content="website">
 <meta property="og:title" content="Crowd Light Show — synchronized phone light show for crowds">
-<meta property="og:description" content="Turn a crowd's phones into one synchronized light show in time with the music. Open-source, no app install.">
+<meta property="og:description" content="Turn a crowd's phones into one synchronized light show in time with the music. Open-source, no app install. Works on any phone.">
 <meta property="og:url" content="https://lightshow.flyreelstudio.eu/">
 <meta name="twitter:card" content="summary">
 <link rel="stylesheet" href="/static/style.css">
@@ -30,30 +30,624 @@
   }
 }
 </script>
+<style>
+/* ===== Marketing landing styles (layered on top of /static/style.css) ===== */
+:root {
+  --m-bg: #07080d;
+  --m-bg2: #0b0d14;
+  --m-card: #11151f;
+  --m-line: #232a39;
+  --m-fg: #eef1f6;
+  --m-muted: #9aa3b2;
+  --m-accent: #5aa0ff;
+  --m-pink: #ff4dd8;
+  --m-glow1: #5aa0ff;
+  --m-glow2: #b15cff;
+  --m-glow3: #ff6ec7;
+  --m-gold: #ffcf57;
+  --m-maxw: 1100px;
+}
+
+html, body { background: var(--m-bg); color: var(--m-fg); scroll-behavior: smooth; }
+body { overflow-x: hidden; }
+
+/* Reset the narrow .wrap from style.css for the marketing page */
+.m-page { max-width: 100%; }
+.m-container { max-width: var(--m-maxw); margin: 0 auto; padding: 0 clamp(16px, 4vw, 32px); }
+
+img, svg { max-width: 100%; }
+
+/* ---------- Top nav ---------- */
+.m-nav {
+  position: sticky; top: 0; z-index: 50;
+  backdrop-filter: blur(12px);
+  background: rgba(7,8,13,.78);
+  border-bottom: 1px solid var(--m-line);
+}
+.m-nav-inner {
+  display: flex; align-items: center; gap: clamp(10px, 2vw, 24px);
+  padding: 10px clamp(16px, 4vw, 32px);
+  max-width: var(--m-maxw); margin: 0 auto;
+}
+.m-brand {
+  display: flex; align-items: center; gap: 9px;
+  font-weight: 800; font-size: clamp(.98rem, 1.4vw, 1.12rem);
+  letter-spacing: .2px; color: var(--m-fg); text-decoration: none;
+  white-space: nowrap; margin-right: auto;
+}
+.m-brand .m-dot {
+  width: 12px; height: 12px; border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #fff, var(--m-glow1) 55%, var(--m-glow2));
+  box-shadow: 0 0 10px var(--m-glow1), 0 0 18px var(--m-glow2);
+  animation: m-pulse 2.4s ease-in-out infinite;
+  flex: none;
+}
+@keyframes m-pulse { 0%,100% { opacity: 1; transform: scale(1);} 50% { opacity:.55; transform: scale(.82);} }
+.m-nav-links { display: none; gap: clamp(10px, 1.6vw, 22px); align-items: center; }
+.m-nav-links a {
+  color: var(--m-muted); text-decoration: none; font-size: .92rem; font-weight: 500;
+  padding: 6px 2px; border-bottom: 2px solid transparent; transition: color .15s, border-color .15s;
+}
+.m-nav-links a:hover, .m-nav-links a:focus-visible { color: var(--m-fg); border-color: var(--m-accent); outline: none; }
+@media (min-width: 860px) { .m-nav-links { display: flex; } }
+
+/* ---------- Buttons ---------- */
+.m-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  font: inherit; font-weight: 700; line-height: 1.1;
+  padding: 13px 20px; border-radius: 999px; cursor: pointer;
+  text-decoration: none; border: 1px solid transparent; width: auto;
+  transition: transform .12s ease, box-shadow .2s ease, background .2s ease;
+}
+.m-btn:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+.m-btn-primary {
+  color: #06122b;
+  background: linear-gradient(120deg, var(--m-glow1), var(--m-glow2) 70%, var(--m-glow3));
+  box-shadow: 0 6px 22px rgba(90,160,255,.35), 0 2px 8px rgba(177,92,255,.3);
+}
+.m-btn-primary:hover { transform: translateY(-2px); box-shadow: 0 10px 32px rgba(90,160,255,.5), 0 4px 14px rgba(177,92,255,.45); }
+.m-btn-ghost {
+  color: var(--m-fg); background: rgba(255,255,255,.04);
+  border-color: var(--m-line);
+}
+.m-btn-ghost:hover { transform: translateY(-2px); background: rgba(255,255,255,.09); border-color: var(--m-accent); }
+.m-btn-sm { padding: 9px 16px; font-size: .9rem; }
+
+/* ---------- Hero ---------- */
+.m-hero { position: relative; padding: clamp(48px, 8vw, 96px) 0 clamp(40px, 6vw, 72px); overflow: hidden; }
+.m-hero-bg {
+  position: absolute; inset: -20% -10% auto -10%; height: 120%; z-index: 0; pointer-events: none;
+}
+.m-blob {
+  position: absolute; border-radius: 50%; filter: blur(70px); opacity: .55;
+  animation: m-float 14s ease-in-out infinite;
+}
+.m-blob.b1 { width: 46vw; height: 46vw; max-width: 520px; max-height: 520px; left: -6vw; top: -8vw;
+  background: radial-gradient(circle, var(--m-glow1), transparent 70%); }
+.m-blob.b2 { width: 42vw; height: 42vw; max-width: 480px; max-height: 480px; right: -4vw; top: 2vw;
+  background: radial-gradient(circle, var(--m-glow2), transparent 70%); animation-delay: -4s; }
+.m-blob.b3 { width: 38vw; height: 38vw; max-width: 440px; max-height: 440px; left: 30vw; top: 16vw;
+  background: radial-gradient(circle, var(--m-glow3), transparent 70%); animation-delay: -8s; opacity:.4; }
+@keyframes m-float { 0%,100% { transform: translate(0,0) scale(1);} 33% { transform: translate(3%,4%) scale(1.08);} 66% { transform: translate(-3%,-2%) scale(.96);} }
+
+.m-hero-inner { position: relative; z-index: 1; display: grid; gap: clamp(28px, 5vw, 48px); align-items: center; }
+@media (min-width: 920px) { .m-hero-inner { grid-template-columns: 1.05fr .95fr; } }
+
+.m-eyebrow {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-size: .82rem; font-weight: 600; letter-spacing: .4px; text-transform: uppercase;
+  color: var(--m-accent); background: rgba(90,160,255,.1); border: 1px solid rgba(90,160,255,.25);
+  padding: 6px 13px; border-radius: 999px; margin-bottom: 18px;
+}
+.m-hero h1 {
+  font-size: clamp(2rem, 6.2vw, 3.6rem); line-height: 1.05; letter-spacing: -.02em;
+  margin: 0 0 18px; font-weight: 800; max-width: 16ch;
+}
+.m-grad-text {
+  background: linear-gradient(100deg, var(--m-glow1), var(--m-glow3) 55%, var(--m-gold));
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+.m-hero-sub {
+  font-size: clamp(1.02rem, 2vw, 1.22rem); color: var(--m-muted); line-height: 1.55;
+  margin: 0 0 28px; max-width: 46ch;
+}
+.m-hero-cta { display: flex; flex-wrap: wrap; gap: 12px; }
+.m-hero-meta { margin-top: 22px; font-size: .85rem; color: var(--m-muted); display: flex; flex-wrap: wrap; gap: 6px 16px; }
+.m-hero-meta span { display: inline-flex; align-items: center; gap: 6px; }
+
+/* Hero visual: a stylized crowd of glowing phones */
+.m-hero-visual {
+  position: relative; aspect-ratio: 4/3; border-radius: 22px;
+  background: linear-gradient(160deg, #0e1220, #0a0c14);
+  border: 1px solid var(--m-line); overflow: hidden;
+  box-shadow: 0 30px 80px rgba(0,0,0,.55), inset 0 1px 0 rgba(255,255,255,.04);
+}
+.m-stage-glow {
+  position: absolute; left: 50%; top: 8%; transform: translateX(-50%);
+  width: 70%; height: 40%;
+  background: radial-gradient(ellipse at center, rgba(255,110,199,.55), transparent 70%);
+  filter: blur(22px);
+  animation: m-stagepulse 3.2s ease-in-out infinite;
+}
+@keyframes m-stagepulse { 0%,100% { opacity:.4;} 50% { opacity:.95;} }
+.m-phones { position: absolute; inset: 0; display: grid;
+  grid-template-columns: repeat(8, 1fr); align-content: end; gap: clamp(4px, 1.2vw, 9px);
+  padding: 0 clamp(14px, 3vw, 28px) clamp(18px, 4vw, 34px); }
+.m-phone {
+  aspect-ratio: 9/19; border-radius: 4px; background: #1a2030;
+  box-shadow: 0 0 0 1px rgba(255,255,255,.05);
+  position: relative; align-self: end;
+}
+.m-phone::after {
+  content: ""; position: absolute; inset: 2px; border-radius: 3px;
+  background: var(--pc, #2a3344);
+  box-shadow: 0 0 8px var(--pc, transparent);
+  animation: m-flash 1.4s steps(1,end) infinite; animation-delay: var(--d, 0s);
+}
+@keyframes m-flash { 0%, 60% { opacity: .25; } 61%, 100% { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  .m-blob, .m-stage-glow, .m-brand .m-dot { animation: none; }
+  .m-phone::after { animation: none; opacity: 1; }
+}
+
+/* ---------- Generic section ---------- */
+.m-section { padding: clamp(48px, 8vw, 88px) 0; position: relative; }
+.m-section.alt { background:
+  radial-gradient(1200px 400px at 50% -10%, rgba(90,160,255,.07), transparent 60%),
+  var(--m-bg2); }
+.m-section-head { max-width: 640px; margin: 0 auto clamp(28px, 5vw, 48px); text-align: center; }
+.m-kicker { font-size: .8rem; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; color: var(--m-accent); margin: 0 0 10px; }
+.m-section h2 { font-size: clamp(1.5rem, 4vw, 2.4rem); line-height: 1.12; letter-spacing: -.01em; margin: 0 0 12px; font-weight: 800; }
+.m-section .m-lead { font-size: clamp(1rem, 1.8vw, 1.12rem); color: var(--m-muted); line-height: 1.55; margin: 0; }
+
+/* ---------- Grids & cards ---------- */
+.m-grid { display: grid; gap: clamp(12px, 2vw, 18px); }
+.m-grid.cols-2 { grid-template-columns: 1fr; }
+.m-grid.cols-3 { grid-template-columns: 1fr; }
+.m-grid.cols-4 { grid-template-columns: 1fr 1fr; }
+@media (min-width: 560px) { .m-grid.cols-2 { grid-template-columns: 1fr 1fr; } .m-grid.cols-3 { grid-template-columns: 1fr 1fr; } }
+@media (min-width: 820px) {
+  .m-grid.cols-3 { grid-template-columns: repeat(3, 1fr); }
+  .m-grid.cols-4 { grid-template-columns: repeat(4, 1fr); }
+}
+
+.m-card {
+  background: linear-gradient(165deg, var(--m-card), #0c1019);
+  border: 1px solid var(--m-line); border-radius: 16px;
+  padding: clamp(16px, 2.4vw, 22px);
+  transition: transform .15s ease, border-color .2s ease, box-shadow .2s ease;
+}
+.m-card:hover { transform: translateY(-3px); border-color: rgba(90,160,255,.4); box-shadow: 0 14px 34px rgba(0,0,0,.4); }
+.m-card .m-ico { font-size: 1.7rem; line-height: 1; margin-bottom: 12px; display: block; }
+.m-card h3 { font-size: 1.04rem; margin: 0 0 6px; font-weight: 700; }
+.m-card p { font-size: .92rem; color: var(--m-muted); margin: 0; line-height: 1.5; }
+
+/* benefits use a check-style list */
+.m-benefit .m-ico {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 42px; height: 42px; border-radius: 12px; font-size: 1.3rem; margin-bottom: 14px;
+  background: linear-gradient(135deg, rgba(90,160,255,.18), rgba(177,92,255,.18));
+  border: 1px solid rgba(90,160,255,.25);
+}
+
+/* ---------- Use cases ---------- */
+.m-cases { display: grid; gap: clamp(12px, 2vw, 18px); grid-template-columns: 1fr; }
+@media (min-width: 720px) { .m-cases { grid-template-columns: 1fr 1fr; } }
+.m-case {
+  position: relative; border-radius: 16px; padding: clamp(20px, 3vw, 28px);
+  border: 1px solid var(--m-line); overflow: hidden;
+  background: linear-gradient(160deg, var(--m-card), #0a0d15);
+}
+.m-case::before {
+  content: ""; position: absolute; inset: 0; opacity: .14; pointer-events: none;
+  background: var(--cg, radial-gradient(circle at 80% 0%, var(--m-glow1), transparent 60%));
+}
+.m-case.feature { grid-column: 1 / -1; }
+.m-case h3 { position: relative; margin: 0 0 8px; font-size: clamp(1.1rem, 2.4vw, 1.4rem); }
+.m-case p { position: relative; margin: 0; color: var(--m-muted); line-height: 1.6; font-size: clamp(.94rem, 1.6vw, 1.04rem); }
+.m-case .m-tag { position: relative; display: inline-block; font-size: .72rem; font-weight: 700; letter-spacing: .08em;
+  text-transform: uppercase; color: var(--m-gold); margin-bottom: 10px; }
+
+/* ---------- How it works ---------- */
+.m-steps { display: grid; gap: clamp(14px, 2.4vw, 22px); grid-template-columns: 1fr; counter-reset: step; }
+@media (min-width: 820px) { .m-steps { grid-template-columns: repeat(3, 1fr); } }
+.m-step { position: relative; padding: clamp(20px, 3vw, 28px); border-radius: 16px;
+  background: linear-gradient(165deg, var(--m-card), #0c1019); border: 1px solid var(--m-line); }
+.m-step-num {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 40px; height: 40px; border-radius: 50%; font-weight: 800; font-size: 1.1rem; margin-bottom: 14px;
+  color: #06122b; background: linear-gradient(135deg, var(--m-glow1), var(--m-glow2));
+  box-shadow: 0 4px 16px rgba(90,160,255,.4);
+}
+.m-step h3 { margin: 0 0 6px; font-size: 1.08rem; }
+.m-step p { margin: 0; color: var(--m-muted); font-size: .94rem; line-height: 1.55; }
+
+/* ---------- Try band ---------- */
+.m-tryband { text-align: center; }
+.m-tryband-inner {
+  position: relative; overflow: hidden;
+  border-radius: 24px; padding: clamp(34px, 6vw, 60px) clamp(20px, 4vw, 48px);
+  background: linear-gradient(135deg, rgba(90,160,255,.14), rgba(177,92,255,.14) 60%, rgba(255,110,199,.14));
+  border: 1px solid rgba(90,160,255,.3);
+}
+.m-tryband-inner h2 { font-size: clamp(1.5rem, 4vw, 2.3rem); margin: 0 0 10px; }
+.m-tryband-inner p { color: var(--m-muted); margin: 0 0 24px; font-size: clamp(1rem, 1.8vw, 1.1rem); }
+
+/* ---------- Contact / form ---------- */
+.m-form-wrap { display: grid; gap: clamp(24px, 4vw, 44px); grid-template-columns: 1fr; }
+@media (min-width: 900px) { .m-form-wrap { grid-template-columns: 1.15fr .85fr; align-items: start; } }
+
+.m-form {
+  background: linear-gradient(165deg, var(--m-card), #0b0e16);
+  border: 1px solid var(--m-line); border-radius: 18px; padding: clamp(20px, 3vw, 30px);
+}
+.m-field { margin-bottom: 16px; }
+.m-field label { display: block; font-size: .88rem; font-weight: 600; margin-bottom: 7px; color: var(--m-fg); }
+.m-field .m-req { color: var(--m-accent); }
+.m-form input[type=text], .m-form select, .m-form textarea {
+  width: 100%; padding: 12px 14px; border-radius: 11px;
+  border: 1px solid var(--m-line); background: #0a0e16; color: var(--m-fg);
+  font: inherit; font-size: .96rem;
+}
+.m-form textarea { min-height: 96px; resize: vertical; }
+.m-form input:focus, .m-form select:focus, .m-form textarea:focus {
+  outline: none; border-color: var(--m-accent); box-shadow: 0 0 0 3px rgba(90,160,255,.2);
+}
+.m-form select { appearance: none; -webkit-appearance: none;
+  background-image: linear-gradient(45deg, transparent 50%, var(--m-muted) 50%), linear-gradient(135deg, var(--m-muted) 50%, transparent 50%);
+  background-position: calc(100% - 18px) 50%, calc(100% - 13px) 50%; background-size: 5px 5px, 5px 5px; background-repeat: no-repeat; }
+.m-hp { position: absolute; left: -9999px; width: 1px; height: 1px; overflow: hidden; }
+.m-form .m-btn { width: 100%; margin-top: 6px; }
+.m-form-msg { margin-top: 14px; font-size: .94rem; line-height: 1.5; min-height: 1.2em; }
+.m-form-msg.ok { color: #6ee7a8; }
+.m-form-msg.err { color: var(--danger, #ff5d5d); }
+
+.m-contact-card {
+  background: linear-gradient(165deg, var(--m-card), #0b0e16);
+  border: 1px solid var(--m-line); border-radius: 18px; padding: clamp(20px, 3vw, 28px);
+}
+.m-contact-card h3 { margin: 0 0 4px; font-size: 1.1rem; }
+.m-contact-card p.m-sub { color: var(--m-muted); font-size: .92rem; margin: 0 0 18px; }
+.m-contact-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
+.m-contact-list a {
+  display: flex; align-items: center; gap: 12px; text-decoration: none;
+  color: var(--m-fg); padding: 12px 14px; border-radius: 12px;
+  border: 1px solid var(--m-line); background: rgba(255,255,255,.02);
+  transition: border-color .15s, background .15s, transform .12s;
+}
+.m-contact-list a:hover, .m-contact-list a:focus-visible { border-color: var(--m-accent); background: rgba(90,160,255,.08); transform: translateX(2px); outline: none; }
+.m-contact-list .ci { font-size: 1.25rem; width: 24px; text-align: center; flex: none; }
+.m-contact-list .ct { display: flex; flex-direction: column; line-height: 1.25; }
+.m-contact-list .ct small { color: var(--m-muted); font-size: .78rem; }
+
+/* ---------- Footer ---------- */
+.m-footer { border-top: 1px solid var(--m-line); padding: clamp(36px, 6vw, 56px) 0; background: var(--m-bg2); }
+.m-footer-inner { display: grid; gap: 18px; }
+.m-footer-links { display: flex; flex-wrap: wrap; gap: 8px 18px; }
+.m-footer-links a { color: var(--m-muted); text-decoration: none; font-size: .92rem; }
+.m-footer-links a:hover { color: var(--m-fg); }
+.m-footer-note { color: var(--m-muted); font-size: .88rem; line-height: 1.6; max-width: 60ch; margin: 0; }
+.m-footer-note a { color: var(--m-accent); }
+.m-footer-brand { font-weight: 800; display: flex; align-items: center; gap: 8px; }
+
+/* utility */
+.m-center { text-align: center; }
+</style>
 </head>
-<body>
-<div class="wrap">
-  <h1>Crowd Light Show</h1>
-  <p>Turn a whole crowd's phones into <b>one synchronized light show</b>, in time with the music. The audience scans a QR code, and every phone flashes together — a wave of light across the room. Works on any phone, no app to install.</p>
+<body class="m-page">
 
-  <div class="card" style="text-align:center">
-    <p class="muted">Scanned a QR at an event?</p>
-    <a class="btn primary" href="/join" style="display:block;text-decoration:none">Join a light show →</a>
+<!-- ===================== NAV ===================== -->
+<header class="m-nav">
+  <nav class="m-nav-inner" aria-label="Primary">
+    <a class="m-brand" href="/" aria-label="Crowd Light Show home">
+      <span class="m-dot" aria-hidden="true"></span>Crowd Light Show
+    </a>
+    <div class="m-nav-links">
+      <a href="#how">How it works</a>
+      <a href="#use-cases">Use cases</a>
+      <a href="/try">Try it</a>
+      <a href="#contact">Contact</a>
+    </div>
+    <a class="m-btn m-btn-primary m-btn-sm" href="#contact">Request access / Get a quote</a>
+  </nav>
+</header>
+
+<main>
+<!-- ===================== HERO ===================== -->
+<section class="m-hero">
+  <div class="m-hero-bg" aria-hidden="true">
+    <span class="m-blob b1"></span>
+    <span class="m-blob b2"></span>
+    <span class="m-blob b3"></span>
   </div>
-
-  <h2>How it works</h2>
-  <p class="muted">An operator builds a playlist and projects a QR. Each phone syncs its clock to the server and runs a pre-computed light timeline locally, so the whole crowd flashes together even on a busy network. The phone screen is the light on every device; on Android the real flashlight can be used too.</p>
-
-  <h2>For organizers &amp; developers</h2>
-  <p class="muted">It's free and open-source (Apache-2.0). Run your own: <a href="https://github.com/AndriiShramko/crowd-light-show" target="_blank" rel="noopener">github.com/AndriiShramko/crowd-light-show</a>. Operator console: <a href="/operator">/operator</a>.</p>
-  <p class="muted">Want it customized, integrated, or extended for your venue or event? <a href="https://www.linkedin.com/in/andrii-shramko/" target="_blank" rel="noopener">Get in touch — let's talk.</a></p>
-
-  <div class="credit">
-    Made by <b>Andrii Shramko</b> ·
-    <a href="https://www.linkedin.com/in/andrii-shramko/" target="_blank" rel="noopener">LinkedIn</a> ·
-    <a href="/about">About &amp; safety</a> ·
-    <a href="https://github.com/AndriiShramko/crowd-light-show" target="_blank" rel="noopener">Source</a>
+  <div class="m-container m-hero-inner">
+    <div>
+      <span class="m-eyebrow"><span class="m-dot" aria-hidden="true" style="width:8px;height:8px"></span>Live, synced light show — from any laptop</span>
+      <h1>Turn every phone in the crowd into <span class="m-grad-text">one giant light show</span></h1>
+      <p class="m-hero-sub">Synced to your music, with no app to install — it works on any phone. The audience just scans a QR, and the whole room lights up together on the beat.</p>
+      <div class="m-hero-cta">
+        <a class="m-btn m-btn-primary" href="/try">Try the live demo →</a>
+        <a class="m-btn m-btn-ghost" href="#contact">Get it for your event</a>
+      </div>
+      <div class="m-hero-meta">
+        <span>✓ No app install</span>
+        <span>✓ Works on any phone</span>
+        <span>✓ Set up in minutes</span>
+        <span>✓ Free &amp; open-source</span>
+      </div>
+    </div>
+    <div class="m-hero-visual" role="img" aria-label="Illustration of a crowd of phones flashing in sync to make one big light show">
+      <span class="m-stage-glow" aria-hidden="true"></span>
+      <div class="m-phones" aria-hidden="true">
+        <!-- a wave of phones with staggered flash timing & colors -->
+        <span class="m-phone" style="--pc:#5aa0ff;--d:0s;height:42%"></span>
+        <span class="m-phone" style="--pc:#7c5cff;--d:.1s;height:58%"></span>
+        <span class="m-phone" style="--pc:#ff6ec7;--d:.2s;height:70%"></span>
+        <span class="m-phone" style="--pc:#ffcf57;--d:.3s;height:84%"></span>
+        <span class="m-phone" style="--pc:#ffcf57;--d:.4s;height:88%"></span>
+        <span class="m-phone" style="--pc:#ff6ec7;--d:.5s;height:72%"></span>
+        <span class="m-phone" style="--pc:#7c5cff;--d:.6s;height:60%"></span>
+        <span class="m-phone" style="--pc:#5aa0ff;--d:.7s;height:46%"></span>
+        <span class="m-phone" style="--pc:#7c5cff;--d:.15s;height:52%"></span>
+        <span class="m-phone" style="--pc:#5aa0ff;--d:.25s;height:64%"></span>
+        <span class="m-phone" style="--pc:#ff6ec7;--d:.35s;height:78%"></span>
+        <span class="m-phone" style="--pc:#ffffff;--d:.45s;height:92%"></span>
+        <span class="m-phone" style="--pc:#ffffff;--d:.55s;height:96%"></span>
+        <span class="m-phone" style="--pc:#ff6ec7;--d:.65s;height:80%"></span>
+        <span class="m-phone" style="--pc:#7c5cff;--d:.75s;height:56%"></span>
+        <span class="m-phone" style="--pc:#5aa0ff;--d:.85s;height:48%"></span>
+      </div>
+    </div>
   </div>
-</div>
+</section>
+
+<!-- ===================== WHO IT'S FOR ===================== -->
+<section class="m-section alt" id="who">
+  <div class="m-container">
+    <div class="m-section-head">
+      <p class="m-kicker">Who it's for</p>
+      <h2>Built for anyone who fills a room</h2>
+      <p class="m-lead">From an intimate first dance to a packed stadium — if you have a crowd and a song, you have a light show.</p>
+    </div>
+    <div class="m-grid cols-4">
+      <article class="m-card"><span class="m-ico" aria-hidden="true">🎉</span><h3>Event &amp; party organizers</h3><p>Give every guest a glowing role in the night.</p></article>
+      <article class="m-card"><span class="m-ico" aria-hidden="true">🎤</span><h3>Concert &amp; festival promoters</h3><p>Turn the whole field into your stage lighting.</p></article>
+      <article class="m-card"><span class="m-ico" aria-hidden="true">🎧</span><h3>Clubs &amp; DJs</h3><p>Drop the beat and the whole floor flashes with it.</p></article>
+      <article class="m-card"><span class="m-ico" aria-hidden="true">💍</span><h3>Wedding &amp; celebration planners</h3><p>A shimmer of light wrapped around the first dance.</p></article>
+      <article class="m-card"><span class="m-ico" aria-hidden="true">🏢</span><h3>Corporate events &amp; conferences</h3><p>Light the room in your brand colors on cue.</p></article>
+      <article class="m-card"><span class="m-ico" aria-hidden="true">🏟️</span><h3>Sports arenas &amp; stadiums</h3><p>Erupt the stands in color on every goal.</p></article>
+      <article class="m-card"><span class="m-ico" aria-hidden="true">⛪</span><h3>Churches &amp; worship events</h3><p>Unite the congregation in one moving moment.</p></article>
+      <article class="m-card"><span class="m-ico" aria-hidden="true">🎓</span><h3>Schools, universities &amp; proms</h3><p>The whole hall lights up for the big night.</p></article>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== WHY / BENEFITS ===================== -->
+<section class="m-section" id="why">
+  <div class="m-container">
+    <div class="m-section-head">
+      <p class="m-kicker">Why it works</p>
+      <h2>Stadium-grade moments, zero hardware</h2>
+      <p class="m-lead">No wristbands to buy, ship, charge or collect. The lights are already in the crowd's hands.</p>
+    </div>
+    <div class="m-grid cols-3">
+      <article class="m-card m-benefit"><span class="m-ico" aria-hidden="true">✨</span><h3>Unforgettable shared moment</h3><p>One synchronized wave of light the whole crowd creates together — the kind of moment people film and remember.</p></article>
+      <article class="m-card m-benefit"><span class="m-ico" aria-hidden="true">📦</span><h3>Zero hardware</h3><p>No wristbands or LEDs to buy. It uses the phones people are already holding.</p></article>
+      <article class="m-card m-benefit"><span class="m-ico" aria-hidden="true">📲</span><h3>No app install</h3><p>Guests just scan a QR and join in their browser. Nothing to download, nothing to sign up for.</p></article>
+      <article class="m-card m-benefit"><span class="m-ico" aria-hidden="true">📱</span><h3>Works on any phone</h3><p>Screen light works everywhere; on Android the real flashlight fires too — for an extra-bright wave.</p></article>
+      <article class="m-card m-benefit"><span class="m-ico" aria-hidden="true">🎵</span><h3>Synced to your playlist</h3><p>Build the show around your music. Every flash lands exactly on the beat, in perfect sync.</p></article>
+      <article class="m-card m-benefit"><span class="m-ico" aria-hidden="true">⚡</span><h3>Set up in minutes</h3><p>Run the whole thing from a laptop. Build the playlist, project the QR, press GO.</p></article>
+      <article class="m-card m-benefit"><span class="m-ico" aria-hidden="true">🛡️</span><h3>Safe by design</h3><p>Flash-rate limited with a photosensitivity warning and consent, so the show stays fun for everyone.</p></article>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== USE CASES ===================== -->
+<section class="m-section alt" id="use-cases">
+  <div class="m-container">
+    <div class="m-section-head">
+      <p class="m-kicker">Use cases</p>
+      <h2>Picture the moment</h2>
+      <p class="m-lead">A few ways people turn a crowd's phones into something unforgettable.</p>
+    </div>
+    <div class="m-cases">
+      <article class="m-case feature" style="--cg:radial-gradient(circle at 85% 0%, var(--m-gold), transparent 60%)">
+        <span class="m-tag">The chorus drop</span>
+        <h3>500 phones flash gold on the beat</h3>
+        <p>The chorus hits, you press GO, and in an instant five hundred phones flash gold in perfect unison — a single golden pulse rolling across the whole crowd, right on the downbeat.</p>
+      </article>
+      <article class="m-case" style="--cg:radial-gradient(circle at 80% 0%, var(--m-glow3), transparent 60%)">
+        <span class="m-tag">Weddings</span>
+        <h3>A first-dance shimmer</h3>
+        <p>As the couple steps onto the floor, every guest's phone breathes a soft warm shimmer around them — a glow that wraps the room without a single spotlight rig.</p>
+      </article>
+      <article class="m-case" style="--cg:radial-gradient(circle at 80% 0%, var(--m-glow1), transparent 60%)">
+        <span class="m-tag">Countdown</span>
+        <h3>A countdown finale</h3>
+        <p>Three… two… one — the whole venue strobes brighter with every number, then explodes into a full-color burst as the clock hits zero.</p>
+      </article>
+      <article class="m-case" style="--cg:radial-gradient(circle at 80% 0%, var(--m-glow2), transparent 60%)">
+        <span class="m-tag">Sports arenas</span>
+        <h3>A goal celebration</h3>
+        <p>The ball hits the net and the stands ignite — thousands of phones flashing your team's colors in a wave that circles the whole arena.</p>
+      </article>
+      <article class="m-case" style="--cg:radial-gradient(circle at 80% 0%, var(--m-glow1), transparent 60%)">
+        <span class="m-tag">Product launch</span>
+        <h3>A brand-color moment</h3>
+        <p>At the reveal, the entire room turns your exact brand color on cue — a launch image that lands in every attendee's camera roll.</p>
+      </article>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== HOW IT WORKS ===================== -->
+<section class="m-section" id="how">
+  <div class="m-container">
+    <div class="m-section-head">
+      <p class="m-kicker">How it works</p>
+      <h2>Three steps to a synced crowd</h2>
+      <p class="m-lead">No rigging, no installs, no rehearsal. From laptop to lit-up room in minutes.</p>
+    </div>
+    <div class="m-steps">
+      <article class="m-step">
+        <span class="m-step-num">1</span>
+        <h3>Upload &amp; project</h3>
+        <p>You upload your playlist on a laptop and project a QR code on screen — or print it on the tickets.</p>
+      </article>
+      <article class="m-step">
+        <span class="m-step-num">2</span>
+        <h3>The crowd scans &amp; joins</h3>
+        <p>People point their phone camera at the QR and join in seconds — straight in the browser, no app needed.</p>
+      </article>
+      <article class="m-step">
+        <span class="m-step-num">3</span>
+        <h3>You press GO</h3>
+        <p>Hit GO and every phone flashes to the music, perfectly in sync — one light show across the whole room.</p>
+      </article>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== TRY BAND ===================== -->
+<section class="m-section" id="try">
+  <div class="m-container m-tryband">
+    <div class="m-tryband-inner">
+      <h2>See it yourself in 10 seconds</h2>
+      <p>Open the live demo, scan the QR with your phone, and watch your own screen join the show. Grab a few phones for the full effect.</p>
+      <a class="m-btn m-btn-primary" href="/try">Open the live demo →</a>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== CONTACT / FORM ===================== -->
+<section class="m-section alt" id="contact">
+  <div class="m-container">
+    <div class="m-section-head">
+      <p class="m-kicker">Request access</p>
+      <h2>Bring it to your event</h2>
+      <p class="m-lead">Tell us a little about your event and we'll get you set up — or get you a quote for custom work.</p>
+    </div>
+    <div class="m-form-wrap">
+      <form class="m-form" id="applyForm" novalidate>
+        <div class="m-field">
+          <label for="f-name">Name <span class="m-req" aria-hidden="true">*</span></label>
+          <input type="text" id="f-name" name="name" autocomplete="name" required aria-required="true">
+        </div>
+        <div class="m-field">
+          <label for="f-contact">Email, phone or Telegram <span class="m-req" aria-hidden="true">*</span></label>
+          <input type="text" id="f-contact" name="contact" autocomplete="email" required aria-required="true" placeholder="How should we reach you?">
+        </div>
+        <div class="m-field">
+          <label for="f-type">Event type</label>
+          <select id="f-type" name="eventType">
+            <option value="Party">Party</option>
+            <option value="Concert/Festival">Concert / Festival</option>
+            <option value="Club/DJ">Club / DJ</option>
+            <option value="Wedding">Wedding</option>
+            <option value="Corporate/Conference">Corporate / Conference</option>
+            <option value="Sports/Arena">Sports / Arena</option>
+            <option value="Church/Worship">Church / Worship</option>
+            <option value="Other">Other</option>
+          </select>
+        </div>
+        <div class="m-field">
+          <label for="f-message">Tell us about your event</label>
+          <textarea id="f-message" name="message" placeholder="Date, venue, crowd size — anything that helps."></textarea>
+        </div>
+        <!-- honeypot: hidden from real users, catches bots -->
+        <div class="m-hp" aria-hidden="true">
+          <label for="f-website">Leave this empty</label>
+          <input type="text" id="f-website" name="website" tabindex="-1" autocomplete="off">
+        </div>
+        <button type="submit" class="m-btn m-btn-primary" id="applyBtn">Send request</button>
+        <p class="m-form-msg" id="applyMsg" role="status" aria-live="polite"></p>
+      </form>
+
+      <aside class="m-contact-card">
+        <h3>Or reach Andrii Shramko directly:</h3>
+        <p class="m-sub">Happy to talk through your event, integrations or custom work.</p>
+        <ul class="m-contact-list">
+          <li><a href="https://www.linkedin.com/in/andrii-shramko/" target="_blank" rel="noopener">
+            <span class="ci" aria-hidden="true">in</span><span class="ct">LinkedIn<small>andrii-shramko</small></span></a></li>
+          <li><a href="mailto:zmei116@gmail.com">
+            <span class="ci" aria-hidden="true">✉️</span><span class="ct">Email<small>zmei116@gmail.com</small></span></a></li>
+          <li><a href="https://calendar.app.google/Ff729HqGk4RpzPNDA" target="_blank" rel="noopener">
+            <span class="ci" aria-hidden="true">📅</span><span class="ct">Book a call<small>Pick a time that suits you</small></span></a></li>
+          <li><a href="tel:+48729361054">
+            <span class="ci" aria-hidden="true">📞</span><span class="ct">Phone<small>+48 729 361 054</small></span></a></li>
+        </ul>
+      </aside>
+    </div>
+  </div>
+</section>
+</main>
+
+<!-- ===================== FOOTER ===================== -->
+<footer class="m-footer">
+  <div class="m-container m-footer-inner">
+    <div class="m-footer-brand"><span class="m-dot" aria-hidden="true"></span>Crowd Light Show</div>
+    <div class="m-footer-links">
+      <a href="https://www.linkedin.com/in/andrii-shramko/" target="_blank" rel="noopener">LinkedIn</a>
+      <a href="/about">About &amp; safety</a>
+      <a href="https://github.com/AndriiShramko/crowd-light-show" target="_blank" rel="noopener">Source</a>
+      <a href="/try">Try the demo</a>
+    </div>
+    <p class="m-footer-note">
+      Made by <strong>Andrii Shramko</strong>. Free &amp; open-source (Apache-2.0).
+      Need custom work or integration? <a href="#contact">Get in touch.</a>
+    </p>
+  </div>
+</footer>
+
+<script>
+(function () {
+  var form = document.getElementById('applyForm');
+  var btn = document.getElementById('applyBtn');
+  var msg = document.getElementById('applyMsg');
+  if (!form) return;
+
+  form.addEventListener('submit', function (e) {
+    e.preventDefault();
+    msg.className = 'm-form-msg';
+    msg.textContent = '';
+
+    var name = form.name.value.trim();
+    var contact = form.contact.value.trim();
+    var eventType = form.eventType.value;
+    var message = form.message.value.trim();
+    var website = form.website.value; // honeypot
+
+    if (!name || !contact) {
+      msg.className = 'm-form-msg err';
+      msg.textContent = 'Please fill in your name and a way to reach you.';
+      return;
+    }
+
+    btn.disabled = true;
+    var original = btn.textContent;
+    btn.textContent = 'Sending…';
+
+    fetch('/api/apply', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: name, contact: contact, eventType: eventType, message: message, website: website })
+    })
+      .then(function (res) {
+        if (!res.ok) throw new Error('bad status');
+        msg.className = 'm-form-msg ok';
+        msg.textContent = "Thanks! We'll get back to you shortly.";
+        form.reset();
+      })
+      .catch(function () {
+        msg.className = 'm-form-msg err';
+        msg.textContent = "Something went wrong sending that. Please try again, or email zmei116@gmail.com.";
+      })
+      .finally(function () {
+        btn.disabled = false;
+        btn.textContent = original;
+      });
+  });
+})();
+</script>
 </body>
 </html>

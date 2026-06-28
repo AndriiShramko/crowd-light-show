@@ -13,6 +13,25 @@ import { issueToken, verifyToken } from './auth.js';
 import { analyze } from './audio.js';
 import { compileFromEnvelope } from './compiler.js';
 import { hub, serverClock } from './show.js';
+import { notifyTelegram } from './notify.js';
+
+// A built-in, always-looping demo light show so anyone can try it with zero setup
+// (the "Try it" QR / /join?demo=1). Synthetic, safety-clamped, ~24s loop.
+function buildDemoTimeline() {
+  const durationMs = 24000;
+  const env = [];
+  for (let t = 0; t < durationMs; t += 40) {
+    const swell = 0.45 + 0.35 * Math.sin((2 * Math.PI * t) / 12000);
+    const beat = Math.pow(Math.max(0, Math.sin((2 * Math.PI * t) / 1000)), 8);
+    const build = t > 17000 ? 1.0 : 0.72;
+    env.push({ t, rms: Math.min(1, (swell * 0.55 + beat * 0.75) * build) });
+  }
+  const beats = [];
+  for (let t = 0; t < durationMs; t += 1000) beats.push(t);
+  return { version: 1, fps: 25, durationMs, cues: compileFromEnvelope(env, { durationMs, beats }), beats };
+}
+const DEMO = buildDemoTimeline();
+const DEMO_T0 = serverClock();
 
 // Detect the actual audio format from magic bytes. The filename/extension is
 // intentionally ignored — users routinely have misnamed files (e.g. an MP4/AAC
@@ -67,8 +86,35 @@ function joinUrl(show) {
 app.get('/', (req, reply) => reply.type('text/html').send(fs.readFileSync(path.join(config.publicDir, 'index.html'))));
 app.get('/join', (req, reply) => reply.type('text/html').send(fs.readFileSync(path.join(config.publicDir, 'audience.html'))));
 app.get('/about', (req, reply) => reply.type('text/html').send(fs.readFileSync(path.join(config.publicDir, 'about.html'))));
+app.get('/try', (req, reply) => reply.type('text/html').send(fs.readFileSync(path.join(config.publicDir, 'try.html'))));
 app.get('/healthz', () => ({ ok: true, freeDiskBytes: freeDiskBytes(), audience: hub.audience.size, status: hub.state.status }));
 app.get('/api/public/show', () => { const s = getOrCreateDefaultShow(); return { code: s.join_code, status: hub.state.status }; });
+
+const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+// ---- demo: a zero-setup, always-looping show anyone can join (the "Try it" QR) ----
+app.get('/api/demo', () => ({ timeline: DEMO, T0: DEMO_T0, duration: DEMO.durationMs, loop: true, serverTime: serverClock() }));
+app.get('/api/demo/qr', async (req, reply) => {
+  const png = await QRCode.toBuffer(`${config.publicBaseUrl || ''}/join?demo=1`, { width: 600, margin: 2 });
+  return reply.type('image/png').send(png);
+});
+
+// ---- lead capture from the landing (public, rate-limited, honeypot) ----
+app.post('/api/apply', async (req, reply) => {
+  const b = req.body || {};
+  if (b.website) return { ok: true }; // honeypot — silently drop bots
+  const name = String(b.name || '').trim().slice(0, 200);
+  const contact = String(b.contact || '').trim().slice(0, 200);
+  const eventType = String(b.eventType || '').trim().slice(0, 80);
+  const message = String(b.message || '').trim().slice(0, 2000);
+  if (!name || !contact) return reply.code(400).send({ error: 'name and contact are required' });
+  const ip = String(req.headers['x-real-ip'] || req.ip || '').slice(0, 64);
+  const info = db.prepare(`INSERT INTO application (name, contact, event_type, message, ip, created_at) VALUES (?,?,?,?,?,?)`)
+    .run(name, contact, eventType, message, ip, now());
+  const text = `🎆 <b>New Crowd Light Show lead</b>\n<b>Name:</b> ${esc(name)}\n<b>Contact:</b> ${esc(contact)}\n<b>Event:</b> ${esc(eventType) || '—'}\n<b>Message:</b> ${esc(message) || '—'}`;
+  notifyTelegram(text).then((ok) => { if (ok) db.prepare('UPDATE application SET notified=1 WHERE id=?').run(info.lastInsertRowid); });
+  return { ok: true };
+});
 
 // ---------- operator console (HTTP Basic gate -> serves console + token) ----------
 app.get('/operator', (req, reply) => {
@@ -193,6 +239,16 @@ app.post('/api/operator/go', (req, reply) => { if (!requireOperator(req, reply))
 app.post('/api/operator/pause', (req, reply) => { if (!requireOperator(req, reply)) return; return hub.pause(); });
 app.post('/api/operator/stop', (req, reply) => { if (!requireOperator(req, reply)) return; return hub.stop(); });
 app.post('/api/operator/blackout', (req, reply) => { if (!requireOperator(req, reply)) return; return hub.blackout(); });
+
+app.get('/api/operator/applications', (req, reply) => {
+  if (!requireOperator(req, reply)) return;
+  return { applications: db.prepare('SELECT * FROM application ORDER BY created_at DESC LIMIT 200').all() };
+});
+app.delete('/api/operator/application/:id', (req, reply) => {
+  if (!requireOperator(req, reply)) return;
+  db.prepare('DELETE FROM application WHERE id=?').run(Number(req.params.id));
+  return { ok: true };
+});
 
 await app.ready();
 

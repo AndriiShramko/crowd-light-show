@@ -37,7 +37,13 @@
     </div>
     <button id="blackout">⬛ BLACKOUT ALL</button>
     <div class="nudge"><span>Nudge</span><input type="range" id="nudge" min="-500" max="500" value="0" step="5"><span id="nudgeVal">0 ms</span></div>
-    <audio id="player" class="hidden"></audio>
+    <audio id="player" controls preload="auto" style="width:100%;margin-top:12px"></audio>
+  </div>
+
+  <div class="card">
+    <h2>4 · Applications <button id="refreshApps" style="width:auto;float:right;margin:0">↻ Refresh</button></h2>
+    <p class="muted" id="appsMsg">Leads from the landing page form appear here.</p>
+    <table id="apps"><tbody></tbody></table>
   </div>
 
   <div class="credit">
