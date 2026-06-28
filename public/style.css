@@ -30,8 +30,10 @@ button:disabled { opacity: .5; cursor: default; }
 
 /* full-screen flash layer for the audience */
 #flash { position: fixed; inset: 0; background: #000; z-index: 1; transition: none; }
-#stage { position: fixed; inset: 0; z-index: 2; pointer-events: none; }
-#stage > * { pointer-events: auto; }
+/* #stage scrolls so the consent screen is fully reachable on short/phone viewports;
+   it is transparent, so the fixed #flash layer shows through behind it. */
+#stage { position: fixed; inset: 0; z-index: 2; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+#stage .wrap { min-height: 0; padding-bottom: 40px; }
 #stopbtn { position: fixed; top: 12px; right: 12px; z-index: 3; width: auto; margin: 0;
   pointer-events: auto; background: rgba(0,0,0,.55); border-color: rgba(255,255,255,.4); color: #fff; padding: 10px 14px; }
 #statuspill { position: fixed; bottom: 12px; left: 50%; transform: translateX(-50%); z-index: 3;
