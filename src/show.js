@@ -101,7 +101,19 @@ export class ShowHub {
     this.state.status = 'paused';
     this.broadcastAudience({ t: 'pause', epoch: this.state.epoch, pos: this.state.pausePos });
     this.broadcastState();
-    return { ok: true };
+    return { ok: true, pos: this.state.pausePos };
+  }
+
+  // Resume from where we paused (continue, not restart): pick a new T0 so the show
+  // position picks up at pausePos and counts forward.
+  resume() {
+    if (this.state.status !== 'paused') return { ok: false, error: 'not paused' };
+    this.state.epoch++;
+    this.state.status = 'running';
+    this.state.T0 = serverClock() - this.state.pausePos;
+    this.broadcastAudience({ t: 'start', epoch: this.state.epoch, trackId: this.state.trackId, T0: this.state.T0 });
+    this.broadcastState();
+    return { ok: true, pos: this.state.pausePos };
   }
 
   stop() {

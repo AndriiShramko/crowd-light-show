@@ -1,8 +1,8 @@
 (function () {
   'use strict';
   var TOKEN = window.__TOKEN__;
-  var LEAD_MS = 900;
-  var ws = null, clock = null, armedId = null, audioReady = false, nudge = 0;
+  var LEAD_MS = 600;
+  var ws = null, clock = null, armedId = null, audioReady = false, nudge = 0, curState = 'idle';
   var player = document.getElementById('player');
 
   var $ = function (id) { return document.getElementById(id); };
@@ -20,10 +20,12 @@
       renderState(s.state);
       var tb = $('tracks').querySelector('tbody'); tb.innerHTML = '';
       s.tracks.forEach(function (t) {
+        var isArmed = t.id === armedId;
         var tr = document.createElement('tr');
-        tr.innerHTML = '<td><b>' + esc(t.title) + '</b><br><span class="muted">' + (t.analysis_status) + (t.cue_count ? ' · ' + t.cue_count + ' cues · ' + Math.round((t.duration_ms || 0) / 1000) + 's' : '') + '</span>'
+        if (isArmed) tr.style.background = 'rgba(90,160,255,.15)';
+        tr.innerHTML = '<td><b>' + esc(t.title) + '</b>' + (isArmed ? ' <span style="color:#5aa0ff">● ARMED</span>' : '') + '<br><span class="muted">' + (t.analysis_status) + (t.cue_count ? ' · ' + t.cue_count + ' cues · ' + Math.round((t.duration_ms || 0) / 1000) + 's' : '') + '</span>'
           + '<br><label class="muted"><input type="checkbox" ' + (t.license_attested ? 'checked' : '') + ' data-attest="' + t.id + '"> I hold rights/licence (ZAiKS) to play this publicly</label></td>'
-          + '<td style="text-align:right"><button data-arm="' + t.id + '" ' + (t.analysis_status !== 'done' ? 'disabled' : '') + ' style="width:auto">Arm</button> '
+          + '<td style="text-align:right"><button data-arm="' + t.id + '" ' + (t.analysis_status !== 'done' ? 'disabled' : '') + ' class="' + (isArmed ? 'primary' : '') + '" style="width:auto">' + (isArmed ? '✓ Armed' : 'Arm') + '</button> '
           + '<button data-del="' + t.id + '" class="ghost" style="width:auto">✕</button></td>';
         tb.appendChild(tr);
       });
@@ -31,7 +33,11 @@
     api('/api/operator/qr').then(function (r) { return r.blob(); }).then(function (b) { var u = URL.createObjectURL(b); $('qr').src = u; $('qrBig').src = u; });
   }
   function esc(s) { return String(s).replace(/[<>&]/g, function (c) { return ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' })[c]; }); }
-  function renderState(st) { $('state').textContent = st.status; }
+  function renderState(st) {
+    curState = st.status;
+    $('state').textContent = st.status;
+    $('go').textContent = st.status === 'paused' ? '▶ RESUME' : (st.status === 'running' ? '● LIVE' : '▶ GO');
+  }
 
   $('tracks').addEventListener('click', function (e) {
     var arm = e.target.getAttribute('data-arm'); var del = e.target.getAttribute('data-del');
@@ -57,6 +63,7 @@
     // Arm the LIGHTS immediately (distribute the timeline) — independent of audio.
     if (ws && ws.readyState === 1) ws.send(JSON.stringify({ t: 'op', cmd: 'arm', trackId: id }));
     $('armed').textContent = 'track #' + id + ' (lights ready, loading audio…)';
+    loadState(); // instant feedback: highlight the armed row now
     // Stream the audio into an <audio> element via a Blob URL (the original ~3 MB
     // file, NOT a giant decoded buffer): low memory, robust, decoded on the fly.
     api('/api/operator/audio/' + id).then(function (r) { return r.ok ? r.blob() : null; })
@@ -70,10 +77,19 @@
       .catch(function () { if (armedId === id) $('armed').textContent = 'track #' + id + ' (lights only — play music separately)'; });
   }
 
+  function flashBtn(el) { el.style.boxShadow = '0 0 0 3px #fff'; setTimeout(function () { el.style.boxShadow = ''; }, 300); }
+
   $('go').addEventListener('click', function () {
     if (armedId == null) { alert('Arm a track first.'); return; }
-    // Lights start at T0 = now + lead (server clock via offset + nudge). The audio
-    // element is scheduled to start at the same instant; nudge fine-tunes PA latency.
+    flashBtn($('go'));
+    if (curState === 'paused') {              // RESUME from the pause point (continue, not restart)
+      if (audioReady && player.src) { var pr = player.play(); if (pr && pr.catch) pr.catch(function () {}); }
+      if (ws && ws.readyState === 1) ws.send(JSON.stringify({ t: 'op', cmd: 'resume' }));
+      return;
+    }
+    $('go').textContent = '● starting…';      // instant feedback (there is a ~0.6s lead before the drop)
+    // Lights start at T0 = now + lead (server clock via offset + nudge); audio is
+    // scheduled to the same instant. nudge fine-tunes PA latency.
     var T0 = performance.now() + LEAD_MS + (clock ? clock.offset : 0) + nudge;
     if (audioReady && player.src) {
       try { player.pause(); player.currentTime = 0; } catch (e) {}
@@ -81,9 +97,9 @@
     }
     if (ws && ws.readyState === 1) ws.send(JSON.stringify({ t: 'op', cmd: 'go', T0: T0 }));
   });
-  $('pause').addEventListener('click', function () { try { player.pause(); } catch (e) {} if (ws) ws.send(JSON.stringify({ t: 'op', cmd: 'pause' })); });
-  $('stop').addEventListener('click', function () { try { player.pause(); player.currentTime = 0; } catch (e) {} if (ws) ws.send(JSON.stringify({ t: 'op', cmd: 'stop' })); });
-  $('blackout').addEventListener('click', function () { if (ws) ws.send(JSON.stringify({ t: 'op', cmd: 'blackout' })); });
+  $('pause').addEventListener('click', function () { flashBtn($('pause')); try { player.pause(); } catch (e) {} if (ws) ws.send(JSON.stringify({ t: 'op', cmd: 'pause' })); });
+  $('stop').addEventListener('click', function () { flashBtn($('stop')); try { player.pause(); player.currentTime = 0; } catch (e) {} if (ws) ws.send(JSON.stringify({ t: 'op', cmd: 'stop' })); });
+  $('blackout').addEventListener('click', function () { flashBtn($('blackout')); if (ws) ws.send(JSON.stringify({ t: 'op', cmd: 'blackout' })); });
 
   $('nudge').addEventListener('input', function () { nudge = Number($('nudge').value); $('nudgeVal').textContent = nudge + ' ms'; });
   $('nudge').addEventListener('change', function () { api('/api/operator/nudge', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ms: nudge }) }); });

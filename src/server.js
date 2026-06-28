@@ -237,6 +237,7 @@ app.post('/api/operator/nudge', (req, reply) => {
 app.post('/api/operator/arm', (req, reply) => { if (!requireOperator(req, reply)) return; return hub.arm(Number(req.body.trackId)); });
 app.post('/api/operator/go', (req, reply) => { if (!requireOperator(req, reply)) return; return hub.go(serverClock() + config.startLeadMs); });
 app.post('/api/operator/pause', (req, reply) => { if (!requireOperator(req, reply)) return; return hub.pause(); });
+app.post('/api/operator/resume', (req, reply) => { if (!requireOperator(req, reply)) return; return hub.resume(); });
 app.post('/api/operator/stop', (req, reply) => { if (!requireOperator(req, reply)) return; return hub.stop(); });
 app.post('/api/operator/blackout', (req, reply) => { if (!requireOperator(req, reply)) return; return hub.blackout(); });
 
@@ -284,6 +285,7 @@ wss.on('connection', (ws) => {
       if (c === 'arm') hub.arm(Number(m.trackId));
       else if (c === 'go') hub.go(Number(m.T0));
       else if (c === 'pause') hub.pause();
+      else if (c === 'resume') hub.resume();
       else if (c === 'stop') hub.stop();
       else if (c === 'blackout') hub.blackout();
     }

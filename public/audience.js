@@ -3,7 +3,9 @@
   var params = new URLSearchParams(location.search);
   var AUTO = params.get('auto') === '1';        // headless auto-join (sync harness)
   var DEMO = params.get('demo') === '1';        // zero-setup looping demo (Try it)
+  var DIAG = params.get('diag') === '1';        // show clock-sync diagnostics
   var JITTER = Math.max(0, Number(params.get('jitter') || 0)); // simulated inbound delay (ms)
+  var env = null, waveEl = null, waveCtx = null, waveTick = 0; // music waveform + playhead
 
   var flashEl = document.getElementById('flash');
   var stopBtn = document.getElementById('stopbtn');
@@ -42,7 +44,8 @@
     if (!document.hidden && window.__cls.started) { acquireWake(); }
   });
 
-  function setStatus(key) { pill.classList.remove('hidden'); pill.textContent = i18n.t(key); }
+  var lastStatusKey = '';
+  function setStatus(key) { if (key === lastStatusKey) return; lastStatusKey = key; pill.classList.remove('hidden'); pill.textContent = i18n.t(key); }
 
   function join(withTorch) {
     if (!agree.checked) return;
@@ -55,6 +58,7 @@
     requestFullscreen();
     acquireWake();
     if (withTorch) startTorch();
+    initWave();
     connect();
     requestAnimationFrame(render);
   }
@@ -67,11 +71,11 @@
       ws.send(JSON.stringify({ t: 'hello', role: 'audience', platform: isAndroid ? 'android' : (/iPhone|iPad|iPod/i.test(navigator.userAgent) ? 'ios' : 'other') }));
       setStatus('st_sync');
       var n = 0;
-      var pinger = setInterval(function () { if (ws.readyState === 1) { clock.ping(); if (++n >= 12) { clearInterval(pinger); } } }, 120);
-      setInterval(function () { if (ws.readyState === 1) clock.ping(); }, 25000); // periodic re-sync
+      var pinger = setInterval(function () { if (ws.readyState === 1) { clock.ping(); if (++n >= 40) clearInterval(pinger); } }, 70); // ~2.8s rapid sync
+      setInterval(function () { if (ws.readyState === 1) clock.ping(); }, 3000); // continuous re-sync (drift + late convergence)
       if (DEMO) {
         fetch('/api/demo').then(function (r) { return r.json(); }).then(function (d) {
-          timeline = d.timeline; demoT0 = d.T0; demoMode = true; setStatus('st_play');
+          timeline = d.timeline; demoT0 = d.T0; demoMode = true; buildEnvelope(); setStatus('st_play');
         }).catch(function () {});
       }
     };
@@ -91,7 +95,7 @@
     var m; try { m = JSON.parse(raw); } catch (e) { return; }
     if (m.t === 'sync') { clock.onReply(m.c0, m.s1); window.__cls.offset = clock.offset; window.__cls.synced = clock.ready; window.__cls.rtt = clock.rtt; if (clock.ready && runState.status === 'idle') setStatus('st_wait'); return; }
     if (m.t === 'welcome' || m.t === 'state') { if (m.state) applyState(m.state); return; }
-    if (m.t === 'timeline') { timeline = m.data; window.__cls.gotTimeline = (timeline && timeline.cues || []).length; return; }
+    if (m.t === 'timeline') { timeline = m.data; window.__cls.gotTimeline = (timeline && timeline.cues || []).length; buildEnvelope(); return; }
     if (m.t === 'start') { runState = { status: 'running', T0: m.T0, epoch: m.epoch, pausePos: 0 }; window.__cls.status = 'running'; window.__cls.gotStart = m.T0; prevLum = 0; flashArmed = true; setStatus('st_play'); return; }
     if (m.t === 'pause') { runState.status = 'paused'; runState.pausePos = m.pos; window.__cls.status = 'paused'; setStatus('st_paused'); return; }
     if (m.t === 'stop') { runState = { status: 'idle', T0: null, epoch: m.epoch, pausePos: 0 }; window.__cls.status = 'idle'; setStatus('st_wait'); return; }
@@ -116,31 +120,62 @@
   function render() {
     requestAnimationFrame(render);
     window.__cls.ticks = (window.__cls.ticks || 0) + 1;
-    var lum = 0, rgb = [0, 0, 0], pos = -1;
-    if (demoMode && timeline) {
+    var synced = !!(clock && clock.ready); window.__cls.synced = synced;
+    var lum = 0, rgb = [0, 0, 0], pos = -1, playing = false;
+    if (timeline && runState.status === 'paused') {
+      pos = runState.pausePos; var cp = sampleCue(pos); lum = cp.b; rgb = cp.rgb; playing = true;
+    } else if (synced && demoMode && timeline) {
       var d = timeline.durationMs; pos = ((clock.serverNow() - demoT0) % d + d) % d; // loop forever
-      var cd = sampleCue(pos); lum = cd.b; rgb = cd.rgb;
-    } else if (timeline && (runState.status === 'running' || runState.status === 'paused')) {
-      pos = runState.status === 'paused' ? runState.pausePos : (clock.serverNow() - runState.T0);
-      if (pos >= 0 && pos <= timeline.durationMs + 250) { var c = sampleCue(pos); lum = c.b; rgb = c.rgb; }
+      var cd = sampleCue(pos); lum = cd.b; rgb = cd.rgb; playing = true;
+    } else if (synced && timeline && runState.status === 'running') {
+      pos = clock.serverNow() - runState.T0;
+      if (pos >= 0 && pos <= timeline.durationMs + 250) { var c = sampleCue(pos); lum = c.b; rgb = c.rgb; playing = true; }
+      setStatus('st_play');
+    } else if (!synced && (demoMode || runState.status === 'running')) {
+      setStatus('st_sync'); // clock not converged yet → stay dark, don't flash out of sync
     }
     var bg = 'rgb(' + Math.round(rgb[0] * lum) + ',' + Math.round(rgb[1] * lum) + ',' + Math.round(rgb[2] * lum) + ')';
     if (bg !== lastBg) {
       flashEl.style.backgroundColor = bg; lastBg = bg; window.__cls.lastBg = bg;
       if (bg !== 'rgb(0,0,0)') { window.__cls.everLit = true; if (window.__cls.colors.indexOf(bg) < 0 && window.__cls.colors.length < 40) window.__cls.colors.push(bg); }
     }
-    // flash-onset detection (for the sync harness): hysteresis low->high crossing,
-    // robust to the multi-frame ramp (same logic as the server compiler).
     if (demoMode || runState.status === 'running') {
       if (lum < 0.25) flashArmed = true;
-      else if (lum >= 0.6 && flashArmed) {
-        flashArmed = false;
-        window.__cls.flashes.push({ epoch: runState.epoch, pos: Math.round(pos), wall: performance.timeOrigin + performance.now() });
-      }
+      else if (lum >= 0.6 && flashArmed) { flashArmed = false; window.__cls.flashes.push({ epoch: runState.epoch, pos: Math.round(pos), wall: performance.timeOrigin + performance.now() }); }
     }
     prevLum = lum;
     window.__cls.lastPos = Math.round(pos); window.__cls.maxLum = Math.max(window.__cls.maxLum || 0, lum);
     driveTorch(lum);
+    if ((++waveTick % 5) === 0) { drawWave(playing ? pos : -1); if (DIAG) updateDiag(pos); }
+  }
+
+  // Small per-device waveform of the track's loudness envelope + a moving playhead,
+  // so it's visible that the flashing follows THIS music at THIS moment.
+  function buildEnvelope() {
+    env = null;
+    if (!timeline || !timeline.cues || !timeline.durationMs) return;
+    var N = 200, dur = timeline.durationMs, a = new Array(N);
+    for (var i = 0; i < N; i++) a[i] = sampleCue(i / N * dur).b;
+    env = a; if (waveEl) waveEl.classList.remove('hidden');
+  }
+  function initWave() { waveEl = document.getElementById('wave'); if (waveEl) waveCtx = waveEl.getContext('2d'); }
+  function drawWave(pos) {
+    if (!waveCtx || !env) return;
+    var cw = waveEl.clientWidth || 320, ch = waveEl.clientHeight || 44;
+    if (waveEl.width !== cw) waveEl.width = cw; if (waveEl.height !== ch) waveEl.height = ch;
+    var ctx = waveCtx; ctx.clearRect(0, 0, cw, ch);
+    var n = env.length, bw = cw / n, dur = timeline.durationMs, ph = pos >= 0 ? Math.max(0, Math.min(1, pos / dur)) : -1;
+    for (var i = 0; i < n; i++) {
+      var h = Math.max(1, env[i] * (ch - 4)), past = ph >= 0 && (i / n) <= ph;
+      ctx.fillStyle = past ? 'rgba(90,160,255,.95)' : 'rgba(150,160,180,.35)';
+      ctx.fillRect(i * bw, (ch - h) / 2, Math.max(1, bw - 0.5), h);
+    }
+    if (ph >= 0) { ctx.fillStyle = '#fff'; ctx.fillRect(ph * cw - 1, 0, 2, ch); }
+  }
+  function updateDiag(pos) {
+    var el = document.getElementById('diag'); if (!el) return;
+    el.classList.remove('hidden');
+    el.textContent = 'offset ' + Math.round(clock ? clock.offset : 0) + 'ms · rtt ' + (clock ? Math.round(clock.rtt) : '?') + 'ms · n' + (clock ? clock.count : 0) + ' · pos ' + Math.round(pos) + 'ms';
   }
 
   // --- torch (Android only, slow: only toggle on threshold crossing, throttled) ---
