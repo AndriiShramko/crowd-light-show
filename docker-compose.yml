@@ -1,0 +1,43 @@
+services:
+  app:
+    build: .
+    image: lightshow-app:latest
+    container_name: lightshow-app
+    restart: unless-stopped
+    env_file: ./config.env            # OPERATOR_PASS_HASH, SESSION_SECRET (not in git/image)
+    environment:
+      - PUBLIC_BASE_URL=https://lightshow.flyreelstudio.eu
+      - VIRTUAL_HOST=lightshow.flyreelstudio.eu
+      - VIRTUAL_PORT=3000
+      - LETSENCRYPT_HOST=lightshow.flyreelstudio.eu
+      - LETSENCRYPT_EMAIL=zmei116@gmail.com
+    expose:
+      - "3000"                        # internal only — reached via nginx-proxy, no host port
+    networks:
+      - lightshow-net
+      - web-proxy
+    volumes:
+      - lightshow-data:/data
+    read_only: true
+    tmpfs:
+      - /tmp:size=256m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 512m
+    pids_limit: 256
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  lightshow-net:
+    driver: bridge
+  web-proxy:
+    external: true
+
+volumes:
+  lightshow-data:

@@ -1,0 +1,17 @@
+node_modules/
+dist/
+*.log
+.env
+config.env
+data/
+*.sqlite
+*.sqlite-*
+fixtures/*.wav
+fixtures/*.mp3
+test-results/
+playwright-report/
+.DS_Store
+vendor/ffmpeg
+*.bak-*
+tmp/
+sync_report.json

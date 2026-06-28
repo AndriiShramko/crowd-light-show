@@ -1,0 +1,54 @@
+{
+  "name": "crowd-light-show",
+  "version": "0.1.0",
+  "description": "Turn a crowd's phones into one synchronized light show, in time with the music. Open-source web app — scan a QR, the whole audience flashes together. Concerts, clubs, stadiums, parties.",
+  "type": "module",
+  "license": "Apache-2.0",
+  "author": "Andrii Shramko <zmei116@gmail.com> (https://www.linkedin.com/in/andrii-shramko/)",
+  "homepage": "https://github.com/AndriiShramko/crowd-light-show",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/AndriiShramko/crowd-light-show.git"
+  },
+  "bugs": {
+    "url": "https://github.com/AndriiShramko/crowd-light-show/issues"
+  },
+  "keywords": [
+    "crowd-light-show",
+    "light-show",
+    "phone-flashlight",
+    "screen-flash",
+    "websocket",
+    "web-audio",
+    "clock-synchronization",
+    "qr-code",
+    "concert",
+    "stadium",
+    "party",
+    "audience-engagement",
+    "real-time",
+    "light-sync"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "test:safety": "node --test test/safety.test.mjs",
+    "test:sync": "node test/sync_harness.mjs",
+    "make:fixtures": "node scripts/make_fixtures.mjs"
+  },
+  "dependencies": {
+    "@fastify/multipart": "^8.3.0",
+    "@fastify/rate-limit": "^9.1.0",
+    "@fastify/static": "^7.0.4",
+    "better-sqlite3": "^11.3.0",
+    "fastify": "^4.28.1",
+    "qrcode": "^1.5.4",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "playwright": "^1.47.0"
+  }
+}

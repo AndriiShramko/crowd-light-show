@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<title>Crowd Light Show</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div id="flash"></div>
+<div id="stage">
+  <div class="lang"><a data-lang="pl">PL</a><a data-lang="en">EN</a></div>
+
+  <!-- CONSENT GATE: nothing flashes until the user joins here -->
+  <div id="consent" class="wrap">
+    <h1 data-t="title">Światło z tłumu</h1>
+    <p class="muted" data-t="sub">Twój telefon stanie się częścią wspólnego pokazu świateł zsynchronizowanego z muzyką.</p>
+
+    <div class="card warn">
+      <b data-t="epi_h">⚠️ Ostrzeżenie: błyski światła</b>
+      <p data-t="epi_b">Ten pokaz miga jasnym światłem. Nie dołączaj, jeśli masz padaczkę światłoczułą lub źle reagujesz na migające światło. Możesz wyjść w każdej chwili przyciskiem „Stop”.</p>
+    </div>
+
+    <div class="card">
+      <p data-t="how">Domyślnie świeci <b>ekran telefonu</b> (działa na każdym telefonie). Na Androidzie możesz dodatkowo włączyć <b>prawdziwą latarkę</b> — przeglądarka poprosi wtedy o dostęp do kamery. <b>Nie nagrywamy ani nie wysyłamy żadnego obrazu</b> — kamera służy wyłącznie do włączania diody.</p>
+      <p class="muted" data-t="batt">Pokaz zużywa baterię, telefon może się nagrzać, a ekran pozostaje włączony. Trzymaj telefon ekranem do sceny i nie blokuj go.</p>
+      <label class="muted" style="display:flex;gap:8px;align-items:flex-start;margin-top:8px">
+        <input type="checkbox" id="agree"><span data-t="agree">Rozumiem ostrzeżenie o błyskach i zgadzam się dołączyć.</span>
+      </label>
+      <button id="joinScreen" class="primary" disabled data-t="join">Dołącz — użyj ekranu</button>
+      <button id="joinTorch" class="ghost hidden" disabled data-t="join_torch">Dołącz + latarka (Android, używa kamery)</button>
+    </div>
+
+    <div class="credit">
+      <span data-t="made">Stworzone przez</span> <b>Andrii Shramko</b> ·
+      <a href="https://www.linkedin.com/in/andrii-shramko/" target="_blank" rel="noopener">LinkedIn</a> ·
+      <a href="/about" target="_blank">About</a>
+    </div>
+  </div>
+
+  <!-- LIVE -->
+  <div id="live" class="wrap hidden" style="text-align:center">
+    <h1 data-t="live_h">Jesteś światłem ✨</h1>
+    <p class="muted" data-t="live_b">Trzymaj telefon ekranem do sceny. Nie blokuj ekranu.</p>
+    <p class="muted" id="resume" class="hidden"></p>
+  </div>
+
+  <!-- LEFT -->
+  <div id="left" class="wrap hidden" style="text-align:center">
+    <h1 data-t="left_h">Wyszedłeś z pokazu</h1>
+    <button id="rejoin" class="primary" data-t="rejoin">Dołącz ponownie</button>
+  </div>
+</div>
+
+<button id="stopbtn" class="hidden">Stop</button>
+<div id="statuspill" class="hidden"></div>
+
+<script src="/static/clocksync.js"></script>
+<script src="/static/i18n.js"></script>
+<script src="/static/audience.js"></script>
+</body>
+</html>

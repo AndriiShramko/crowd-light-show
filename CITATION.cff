@@ -1,0 +1,26 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+title: "Crowd Light Show"
+abstract: >-
+  An open-source web app that turns a crowd's phones into one synchronized
+  light show in time with the music, for concerts, clubs, parties, and
+  stadiums. The audience scans a QR code to join from their phone browser with
+  no app install.
+type: software
+authors:
+  - family-names: "Shramko"
+    given-names: "Andrii"
+url: "https://github.com/AndriiShramko/crowd-light-show"
+repository-code: "https://github.com/AndriiShramko/crowd-light-show"
+license: Apache-2.0
+version: "0.1.0"
+date-released: "2026-06-28"
+year: 2026
+keywords:
+  - "crowd light show"
+  - "synchronized lights"
+  - "phone flashlight"
+  - "concert"
+  - "stadium"
+  - "WebSocket"
+  - "clock synchronization"

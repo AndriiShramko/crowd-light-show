@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Operator · Crowd Light Show</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div class="wrap">
+  <h1>Operator console</h1>
+  <p class="muted">Connected: <span id="conn">…</span> · Audience: <b id="count">0</b> · Free disk: <span id="disk">–</span></p>
+
+  <div class="card">
+    <h2>1 · Playlist</h2>
+    <input type="file" id="file" accept="audio/*">
+    <button id="upload" class="primary">Upload &amp; analyze</button>
+    <div id="uploadMsg" class="muted"></div>
+    <table id="tracks"><tbody></tbody></table>
+  </div>
+
+  <div class="card">
+    <h2>2 · Join QR <button id="projector" style="width:auto;float:right;margin:0">Projector ⤢</button></h2>
+    <div class="qrbox"><img id="qr" alt="Join QR"></div>
+    <p class="muted">Join URL: <a id="joinurl" target="_blank"></a></p>
+  </div>
+
+  <div class="card">
+    <h2>3 · Show control</h2>
+    <p>Armed: <b id="armed">—</b> · State: <span class="pill" id="state">idle</span></p>
+    <p class="muted">The console is the audio source. On GO it plays the track and the lights lock to it. Tune sync with nudge at soundcheck.</p>
+    <div class="row transport">
+      <button id="go" class="primary">▶ GO</button>
+      <button id="pause">⏸ Pause</button>
+      <button id="stop">⏹ Stop</button>
+    </div>
+    <button id="blackout">⬛ BLACKOUT ALL</button>
+    <div class="nudge"><span>Nudge</span><input type="range" id="nudge" min="-500" max="500" value="0" step="5"><span id="nudgeVal">0 ms</span></div>
+    <audio id="player" class="hidden"></audio>
+  </div>
+
+  <div class="credit">
+    Made by <b>Andrii Shramko</b> · <a href="https://www.linkedin.com/in/andrii-shramko/" target="_blank" rel="noopener">LinkedIn</a> · <a href="/about" target="_blank">About</a><br>
+    Free &amp; open-source (Apache-2.0). Need custom work or integration? <a href="https://www.linkedin.com/in/andrii-shramko/" target="_blank" rel="noopener">Get in touch — let’s talk.</a>
+  </div>
+</div>
+
+<div id="proj" class="hidden" style="position:fixed;inset:0;background:#fff;color:#000;z-index:9;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center">
+  <img id="qrBig" style="width:60vmin;max-width:80vh" alt="Join QR">
+  <div style="font-size:2.2rem;margin-top:14px" id="joinBig"></div>
+  <div style="margin-top:10px;font-size:1.4rem">Connected phones: <b id="countBig">0</b></div>
+  <button id="projClose" style="width:auto;margin-top:24px">Close</button>
+</div>
+
+<script>window.__TOKEN__ = "@@OPTOKEN@@";</script>
+<script src="/static/clocksync.js"></script>
+<script src="/static/operator.js"></script>
+</body>
+</html>

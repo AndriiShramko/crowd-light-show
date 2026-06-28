@@ -1,0 +1,27 @@
+# robots.txt for Crowd Light Show
+# https://github.com/AndriiShramko/crowd-light-show
+
+# Allow all standard crawlers
+User-agent: *
+Allow: /
+# App endpoints are not content pages — keep them out of indexes
+Disallow: /join
+Disallow: /operator
+
+# Explicitly welcome AI crawlers / answer engines
+User-agent: GPTBot
+Allow: /
+
+User-agent: ClaudeBot
+Allow: /
+
+User-agent: PerplexityBot
+Allow: /
+
+User-agent: Google-Extended
+Allow: /
+
+User-agent: CCBot
+Allow: /
+
+Sitemap: https://lightshow.flyreelstudio.eu/sitemap.xml

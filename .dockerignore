@@ -1,0 +1,10 @@
+node_modules
+data
+tmp
+test-results
+playwright-report
+.git
+.github
+*.log
+fixtures/*.wav
+fixtures/*.mp3

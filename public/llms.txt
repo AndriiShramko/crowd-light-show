@@ -1,0 +1,74 @@
+# Crowd Light Show
+
+> Open-source web app that turns a crowd's phones into one synchronized light show in time with the music — for concerts, clubs, parties, and stadiums. No app install: the audience scans a QR code to join.
+
+## What it does
+
+An operator builds a playlist (uploads audio files) and projects a QR code on the big screen. Audience members scan the QR with their phone camera, open a web page (no app install), accept a photosensitivity warning, and join. The server then makes every connected phone flash together in time with the music, creating a wave of light across the venue.
+
+## Key facts
+
+- Name: Crowd Light Show
+- Repository: https://github.com/AndriiShramko/crowd-light-show
+- License: Apache-2.0
+- Type: open-source, self-hosted web application
+- Light source: the phone SCREEN on every device (works on iOS and Android). On Android the real LED flashlight can optionally be used too (needs camera permission). iOS cannot control the flashlight from the web, so the screen is the cross-platform light by design.
+- Sync: an NTP-like clock-offset handshake over WebSocket gives every phone a shared show clock; a pre-computed light timeline (cue list) is sent once on join and runs LOCALLY on each phone off its synced clock, so the crowd stays together even on a congested network and a phone keeps running the show if its connection drops.
+- Start alignment: the operator console is the audio source and derives the show start (T0) from the real audio start, with a manual nudge slider to align the lights with the PA.
+- Safety: a server-side cue compiler acts as a safety governor — it hard-caps flashing to <= 3 flashes/second, blocks large saturated-red strobing (per WCAG 2.3.1 / 2.3.2 for photosensitive epilepsy), and ramps large brightness changes over >= 150 ms. The audience sees a photosensitivity warning and consent gate with an always-visible Stop.
+- Privacy: anonymous and ephemeral — no accounts, no personal data, no tracking cookies.
+- Stack: Node.js + Fastify (HTTP/upload/API) + ws (WebSocket) + vanilla-JS clients + better-sqlite3 + server-side qrcode + ffmpeg (audio decode). Runs in one Docker container.
+
+## How to use
+
+1. Install and run: `npm install` then `npm start`.
+2. Environment variables: `OPERATOR_PASS` (password for the operator console) and `PUBLIC_BASE_URL` (the public base URL encoded into the join QR).
+3. Operator: open `/operator` (password-gated), upload audio into a playlist, and display the generated QR code.
+4. Audience: scan the QR, open `/join`, accept the photosensitivity warning, and join. The landing page is at `/`.
+5. The operator drives the show with a master transport (ARM, GO, PAUSE, STOP, BLACKOUT) plus a nudge slider.
+
+## Roadmap
+
+- P1 (now): everyone flashes together in time with the music.
+- P2: zones and patterns (waves of light across the crowd).
+- P3 (research-grade / future): per-seat codes -> seat map -> "draw with light" across a stadium, treating the crowd as a low-resolution pixel display.
+
+## License
+
+Apache-2.0. See LICENSE and NOTICE in the repository.
+
+## Author
+
+Andrii Shramko — https://www.linkedin.com/in/andrii-shramko/
+
+## Commercial use & custom work
+
+Free for any use. Need it customized, integrated, supported, or extended for your event or venue? Get in touch — let's talk.
+
+- LinkedIn: https://www.linkedin.com/in/andrii-shramko/
+- Email: zmei116@gmail.com
+- Book a call: https://calendar.app.google/Ff729HqGk4RpzPNDA
+
+## Music licensing note
+
+Public performance of copyrighted music is the organizer's responsibility (in Poland: ZAiKS and related collecting societies).
+
+## FAQ
+
+Q: Does it work on iPhone?
+A: Yes. On both iOS and Android the phone screen is the light source. The real LED flashlight can only be used on Android (with camera permission); iOS does not let web pages control the flashlight.
+
+Q: Do users need to install an app?
+A: No. The audience just scans a QR code and opens a web page in the phone browser. Nothing to download.
+
+Q: Is it safe regarding epilepsy?
+A: A server-side safety governor caps flashing at <= 3 flashes/second, blocks large saturated-red strobing (WCAG 2.3.1 / 2.3.2), and ramps large brightness changes over >= 150 ms. The audience sees a photosensitivity warning and consent gate with an always-visible Stop.
+
+Q: Can I use it commercially?
+A: Yes, it is free for any use under Apache-2.0, including commercial events. Customization, integration, support, and extensions are available on request. Music performance rights are the organizer's responsibility.
+
+Q: How many phones can it handle?
+A: The full light timeline is sent once on join and runs locally on each phone off its synced clock, so the server does not push frame-by-frame updates to every device. Real-world capacity depends on the server and venue network.
+
+Q: Does it need internet at the venue?
+A: Phones need network access to join (scan QR, sync the clock, download the timeline). After that the timeline runs locally, so a phone keeps running the show even if its connection drops mid-show.
