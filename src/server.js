@@ -150,6 +150,7 @@ function renderConsole(session) {
   html = html.replace('@@SESSION@@', JSON.stringify(session));
   html = html.replaceAll('@@LEAD@@', String(config.startLeadMs));
   html = html.replaceAll('@@SHARE@@', SHARE_PARTIAL);
+  html = html.replaceAll('@@GA@@', GA_PARTIAL);
   return html;
 }
 
@@ -167,12 +168,16 @@ const CONTACT_PARTIAL = fs.readFileSync(path.join(config.publicDir, 'partials', 
 // Share block (round 9) — injected into the consoles + /join via @@SHARE@@. Defensive read
 // so the server still boots before the partial is added.
 const SHARE_PARTIAL = (() => { try { return fs.readFileSync(path.join(config.publicDir, 'partials', 'share.html'), 'utf8'); } catch { return ''; } })();
+// Google Analytics + cookie-consent (round 10) — injected into <head> via @@GA@@ on every page
+// EXCEPT /join (the epilepsy consent gate). Defensive read.
+const GA_PARTIAL = (() => { try { return fs.readFileSync(path.join(config.publicDir, 'partials', 'ga.html'), 'utf8'); } catch { return ''; } })();
 function renderPage(file, extra) {
   let html = fs.readFileSync(path.join(config.publicDir, file), 'utf8');
   const tokens = Object.assign({
     '@@STUDIO@@': config.studioEnabled ? 'true' : 'false',
     '@@CONTACT@@': CONTACT_PARTIAL,
     '@@SHARE@@': SHARE_PARTIAL,
+    '@@GA@@': GA_PARTIAL,
   }, extra || {});
   for (const [k, v] of Object.entries(tokens)) html = html.replaceAll(k, String(v));
   return html;

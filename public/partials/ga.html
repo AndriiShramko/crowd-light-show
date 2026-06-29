@@ -1,0 +1,60 @@
+<!-- ROUND 10 — Google Analytics 4 (G-46C2GKVHPR) with Consent Mode v2, DEFAULT DENIED.
+     Injected by the server into the <head> of every page EXCEPT /join (the epilepsy consent
+     gate — a fixed banner there could intercept the join tap, round-8C lesson). The tag loads
+     but writes NO cookies and sends only cookieless pings until the visitor accepts via the
+     banner. IP is anonymized; no advertising signals. window.clsGA(ev, params) is the event seam. -->
+<style>
+  .cls-cookie { position: fixed; left: 0; right: 0; bottom: 0; z-index: 9999; background: #0f131b; color: #eef1f6;
+    border-top: 1px solid #2a3140; padding: 14px 16px; display: flex; gap: 12px; flex-wrap: wrap; align-items: center;
+    justify-content: center; font: 14px/1.45 system-ui, -apple-system, sans-serif; box-shadow: 0 -6px 22px rgba(0,0,0,.45); }
+  .cls-cookie p { margin: 0; max-width: 620px; color: #c8d0dd; }
+  .cls-cookie a { color: #8fc6ff; }
+  .cls-cookie button { font: inherit; cursor: pointer; border-radius: 10px; padding: 9px 20px; border: 1px solid #3a4252; }
+  .cls-cookie .cls-acc { background: #5aa0ff; color: #04122b; border-color: #5aa0ff; font-weight: 700; }
+  .cls-cookie .cls-rej { background: #1d2330; color: #eef1f6; border-color: #3a4252; }
+  #clsCookieSettings { display: block; text-align: center; margin-top: 10px; font-size: .8rem; color: #9aa3b2; cursor: pointer; }
+</style>
+<script>
+(function () {
+  window.dataLayer = window.dataLayer || [];
+  function gtag() { dataLayer.push(arguments); }
+  window.gtag = gtag;
+  // 1) default DENIED before anything loads (EU ePrivacy: no analytics cookies without consent)
+  gtag('consent', 'default', { ad_storage: 'denied', ad_user_data: 'denied', ad_personalization: 'denied', analytics_storage: 'denied', wait_for_update: 500 });
+  var stored = null; try { stored = localStorage.getItem('cls_consent'); } catch (e) {}
+  if (stored === 'granted') gtag('consent', 'update', { analytics_storage: 'granted' });
+  gtag('js', new Date());
+  gtag('config', 'G-46C2GKVHPR', { anonymize_ip: true });
+  // event seam used across the app; no-ops if gtag is somehow unavailable
+  window.clsGA = function (ev, p) { try { if (window.gtag) gtag('event', ev, p || {}); } catch (e) {} };
+  // load the GA library
+  var s = document.createElement('script'); s.async = true; s.src = 'https://www.googletagmanager.com/gtag/js?id=G-46C2GKVHPR';
+  (document.head || document.documentElement).appendChild(s);
+
+  function t(key, fallback) { try { return (window.CLSI18N && window.CLSI18N.t && window.CLSI18N.t(key)) || fallback; } catch (e) { return fallback; } }
+  function grant() { gtag('consent', 'update', { analytics_storage: 'granted', ad_user_data: 'denied', ad_personalization: 'denied', ad_storage: 'denied' }); try { localStorage.setItem('cls_consent', 'granted'); } catch (e) {} stored = 'granted'; }
+  function deny() { try { localStorage.setItem('cls_consent', 'denied'); } catch (e) {} stored = 'denied'; }
+  function removeBanner() { var b = document.getElementById('clsCookie'); if (b) b.remove(); }
+  function addSettingsLink() {
+    if (document.getElementById('clsCookieSettings')) return;
+    var a = document.createElement('a'); a.id = 'clsCookieSettings'; a.href = 'javascript:void 0';
+    a.textContent = t('cookie.settings', 'Cookie settings');
+    a.onclick = function () { try { localStorage.removeItem('cls_consent'); } catch (e) {} stored = null; var ex = document.getElementById('clsCookieSettings'); if (ex) ex.remove(); buildBanner(); };
+    var foot = document.querySelector('.credit') || document.querySelector('footer') || document.body;
+    (foot.parentNode || document.body).appendChild(a);
+  }
+  function buildBanner() {
+    if (stored === 'granted' || stored === 'denied') { addSettingsLink(); return; }
+    var bar = document.createElement('div'); bar.className = 'cls-cookie'; bar.id = 'clsCookie';
+    var p = document.createElement('p');
+    p.innerHTML = t('cookie.text', 'We use Google Analytics — only with your consent — to understand in aggregate how the app is used (IP-anonymized, no advertising). It does not run until you accept.') + ' <a href="/privacy">' + t('cookie.more', 'Privacy & cookies') + '</a>';
+    var acc = document.createElement('button'); acc.className = 'cls-acc'; acc.textContent = t('cookie.accept', 'Accept');
+    var rej = document.createElement('button'); rej.className = 'cls-rej'; rej.textContent = t('cookie.reject', 'Reject');
+    acc.onclick = function () { grant(); removeBanner(); addSettingsLink(); };
+    rej.onclick = function () { deny(); removeBanner(); addSettingsLink(); };
+    bar.appendChild(p); bar.appendChild(acc); bar.appendChild(rej);
+    document.body.appendChild(bar);
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', buildBanner); else buildBanner();
+})();
+</script>

@@ -51,6 +51,13 @@
     block.hidden = false;
   }
 
+  // GA (round 10): which share channel was used. clsGA is a no-op until cookie consent.
+  var CH = { shWa: 'whatsapp', shTg: 'telegram', shX: 'x', shFb: 'facebook', shMail: 'email', shCopy: 'copy', shNative: 'native', shOwn: 'own_site' };
+  block.addEventListener('click', function (e) {
+    var t = e.target.closest && e.target.closest('[id]'); if (!t) return;
+    var ch = CH[t.id]; if (ch && window.clsGA) window.clsGA('share_clicked', { channel: ch });
+  });
+
   refresh();
   // personal console fills #joinurl asynchronously — refresh once it lands.
   setTimeout(refresh, 2000);

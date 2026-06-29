@@ -58,6 +58,14 @@
   }
   function esc(s) { return String(s).replace(/[<>&]/g, function (c) { return ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' })[c]; }); }
 
+  // ---- GA4 events (round 10): answer the owner's "how many tests / how many people per session
+  // / how long is a session". window.clsGA is a no-op until the visitor accepts the cookie banner.
+  var gaRoom = ROOM || 'main', gaPeak = 0, gaT0 = null;
+  function ga(ev, p) { try { if (window.clsGA) window.clsGA(ev, Object.assign({ room_id: gaRoom, operator_mode: MODE }, p || {})); } catch (e) {} }
+  function gaPeakUpdate(n) { n = n | 0; if (n > gaPeak) gaPeak = n; }
+  function gaShowStarted(trackId) { gaT0 = Date.now(); ga('show_started', { track_id: trackId == null ? '' : trackId, preset_type: activeType || '' }); }
+  function gaShowStopped() { if (gaT0 == null) return; ga('show_stopped', { duration_sec: Math.round((Date.now() - gaT0) / 1000), peak_phones: gaPeak, track_id: armedId == null ? '' : armedId }); gaT0 = null; gaPeak = 0; }
+
   // ---- mode setup: hide features this session doesn't have, switch labels ----
   function applyMode() {
     Array.prototype.forEach.call(document.querySelectorAll('[data-feature]'), function (el) {
@@ -136,9 +144,13 @@
   }
 
   function renderState(st) {
+    var prevState = curState;
     curState = st.status;
     if ($('state')) $('state').textContent = st.status;
     updateReactHint();
+    // GA: one chokepoint for show start/stop — covers GO/resume/stop/blackout/track-end, personal+public.
+    if (st.status === 'running' && prevState !== 'running') gaShowStarted(armedId);
+    else if (st.status !== 'running' && prevState === 'running') gaShowStopped();
     if (pendingGo) return;
     var locking = (st.status === 'idle' && !(clock && clock.ready));
     if ($('go')) $('go').textContent = st.status === 'paused' ? '▶ RESUME' : (st.status === 'running' ? '● LIVE' : (locking ? '▶ GO (clock…)' : '▶ GO'));
@@ -169,11 +181,12 @@
     $('uploadMsg').textContent = 'Uploading & analyzing…';
     api(path, { method: 'POST', body: fd }).then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
       .then(function (res) {
-        if (!res.ok) { $('uploadMsg').textContent = 'Error: ' + (res.j.error || ''); return; }
+        if (!res.ok) { ga('upload_test', { result: 'error', reason: String(res.j.error || '').slice(0, 60) }); $('uploadMsg').textContent = 'Error: ' + (res.j.error || ''); return; }
+        ga('upload_test', { result: 'ok', cue_count: res.j.cueCount });
         if (PUBLIC) { $('uploadMsg').textContent = 'Ready — lights only (' + res.j.cueCount + ' cues). Playing…'; armTrack(res.j.trackId, true); }
         else { $('uploadMsg').textContent = 'Done: ' + res.j.cueCount + ' cues, ' + res.j.beats + ' beats'; loadState(); }
       })
-      .catch(function (e) { $('uploadMsg').textContent = 'Upload failed: ' + e; });
+      .catch(function (e) { ga('upload_test', { result: 'fail' }); $('uploadMsg').textContent = 'Upload failed: ' + e; });
   });
 
   // ---- transport: personal = operator WS; public = HTTP /api/console/* ----
@@ -188,6 +201,7 @@
 
   function armTrack(id, isDefault) {
     armedId = id; audioReady = false;
+    ga('track_played', { track_id: id == null ? '' : id, track_kind: (typeof id === 'number') ? 'curated' : 'guest', is_default: !!isDefault });
     if (PUBLIC) {
       // public console: arm over HTTP (the server broadcasts timeline to the room; the console
       // gets it as a previewer). Then auto-GO so the default music's LIGHTS start with no clicks.
@@ -321,6 +335,7 @@
     if (m.t === 'sync') { clock.onReply(m.c0, m.s1); if (clock.ready && curState === 'idle') renderState({ status: curState }); return; }
     if (!PUBLIC) {
       if (m.t === 'count') {
+        gaPeakUpdate(m.audience);
         $('count').textContent = m.audience; if ($('countBig')) $('countBig').textContent = m.audience;
         var ts = $('torchSplit');
         if (ts) ts.textContent = 'Flash reach: ' + (m.torchCapable || 0) + ' Android (camera-LED) · ' + (m.screenOnly || 0) + ' iPhone/other (screen-only)';
@@ -331,7 +346,7 @@
     }
     // ---- public console: derive transport state from the room messages it receives ----
     if (m.t === 'welcome' || m.t === 'state') { if (m.state) { renderState({ status: m.state.status }); if (m.state.status === 'running' && m.state.T0 != null) { pubT0 = m.state.T0; if (audio && soundOn) audio.start(pubT0); } } return; }
-    if (m.t === 'index') { var n = Math.max(0, (m.total | 0) - 1); if ($('count2')) $('count2').textContent = n; if ($('countBig')) $('countBig').textContent = n; return; } // -1: the console itself is a member
+    if (m.t === 'index') { var n = Math.max(0, (m.total | 0) - 1); gaPeakUpdate(n); if ($('count2')) $('count2').textContent = n; if ($('countBig')) $('countBig').textContent = n; return; } // -1: the console itself is a member
     if (m.t === 'timeline') { pubTrackId = m.trackId; return; }
     if (m.t === 'start') { renderState({ status: 'running' }); pubT0 = m.T0; if (audio && soundOn) audio.start(m.T0); return; }
     if (m.t === 'pause') { renderState({ status: 'paused' }); if (audio) audio.stop(); return; }
@@ -464,6 +479,7 @@
     }, 80);
   }
   function pickPreset(type) {
+    ga('preset_changed', { channel: 'screen', preset_type: type });
     if (type === 'off') {
       activeType = null; $('presetParams').innerHTML = ''; highlightPreset();
       window.__opPreview.type = null; pvShow(false);
@@ -544,6 +560,7 @@
     }, 80);
   }
   function pickTorch(type) {
+    ga('preset_changed', { channel: 'torch', preset_type: type });
     if (type === 'off') {
       activeTorch = null; $('torchParams').innerHTML = ''; highlightTorch();
       if (window.__opTorchPreview) window.__opTorchPreview.type = null; tpvShow(false);
@@ -584,6 +601,7 @@
   // ---- boot ----
   window.__opMode = { mode: MODE, room: ROOM, features: FEAT }; // test seam
   applyMode();
+  ga('studio_open', { is_public: !!PUBLIC });
   connect();
   loadPresets();
   if (PUBLIC) { loadPublic(); }

@@ -1,0 +1,24 @@
+{
+  "base": "http://localhost:3011",
+  "pre": {
+    "hasGtag": true,
+    "hasClsGA": true,
+    "defaultDenied": true,
+    "bannerVisible": true,
+    "gaCookie": false,
+    "consentStored": null
+  },
+  "post": {
+    "granted": true,
+    "stored": "granted",
+    "bannerGone": true,
+    "settingsLink": true
+  },
+  "probe": {
+    "grew": true,
+    "ev": true
+  },
+  "libLoads": 1,
+  "collects": 2,
+  "fails": []
+}
