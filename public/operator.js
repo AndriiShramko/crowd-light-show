@@ -18,8 +18,36 @@
   var ws = null, clock = null, armedId = null, audioReady = false, nudge = 0, curState = 'idle';
   var pendingGo = false, goWatcher = null; // GO deferred until the operator clock locks (personal)
   var pubT0 = null, pubTrackId = null, soundOn = false; // public: armed-track audio T0 + opt-in sound
-  var audio = null; // public: AudioSync for the console's own synced playback (round 9 / refined in audio fix)
+  var audio = null, audioBuf = null;                    // AudioSync + the armed track's raw bytes (decoded lazily)
+  var wantLiveAudio = false, lastAudioT0 = null;        // personal: drive audio start off the running-state echo
   var player = document.getElementById('player');
+
+  // ROUND 9 AUDIO FIX: the console's lights were already synced (T0 carries clock.offset+nudge),
+  // but the SOUND was started with a bare setTimeout(LEAD) — ignoring offset+nudge — so the
+  // console's monitor drifted from the on-air audio by exactly offset+nudge. Now the console plays
+  // through AudioSync.start(T0) on the SAME show clock as the phones (the visible <audio> is muted
+  // during live and kept only for off-air scrubbing). HONEST: __opAudio.scheduledShowInstant is a
+  // SCHEDULE instant (<=50ms to the phones), not acoustics — the operator still hears their own speaker.
+  window.__opAudio = { mode: MODE, ready: false, scheduled: false, scheduledShowInstant: null, soundShowInstant: null, T0: null, driftMs: 0 };
+  function ensureAudio() {
+    if (!audio && window.AudioSync) {
+      audio = new AudioSync(clock || new ClockSync(function () {}));
+      audio.tele = function (o) { for (var k in o) window.__opAudio[k] = o[k]; };
+    }
+    if (audio && clock) audio.clock = clock;
+    return audio;
+  }
+  // Align the console's audio to a running show T0 (covers GO and RESUME — both echo a running
+  // state with the authoritative T0). Decode is done ahead on arm, so this is immediate.
+  function syncLiveAudio(state) {
+    var a = ensureAudio(); if (!a) return;
+    if (state && state.status === 'running' && state.T0 != null && wantLiveAudio) {
+      if (lastAudioT0 === state.T0) return; // already aligned to this T0
+      lastAudioT0 = state.T0;
+      if (a.ready()) a.start(state.T0); else a._pendingT0 = state.T0; // start once the buffer decodes
+      window.__opAudio.T0 = state.T0;
+    } else { a.stop(); lastAudioT0 = null; }
+  }
 
   var $ = function (id) { return document.getElementById(id); };
   function api(path, opts) {
@@ -150,13 +178,25 @@
     if (ws && ws.readyState === 1) ws.send(JSON.stringify({ t: 'op', cmd: 'arm', trackId: id }));
     $('armed').textContent = 'track #' + id + ' (lights ready, loading audio…)';
     loadState();
-    api('/api/operator/audio/' + id).then(function (r) { return r.ok ? r.blob() : null; })
-      .then(function (blob) {
+    // re-arm: drop the previous track's decoded buffer so the NEW one is fetched + decoded.
+    var aPrev = ensureAudio(); if (aPrev) { aPrev.dropBuffer(); window.__opAudio.ready = false; lastAudioT0 = null; }
+    audioBuf = null;
+    // Fetch the audio ONCE: a Blob feeds the visible <audio> (off-air scrub); the SAME bytes are
+    // decoded into AudioSync for sample-accurate LIVE playback aligned to the show clock (the fix).
+    api('/api/operator/audio/' + id).then(function (r) { return r.ok ? r.arrayBuffer() : null; })
+      .then(function (ab) {
         if (armedId !== id) return;
-        if (!blob) throw new Error('no audio');
+        if (!ab) throw new Error('no audio');
         if (player.dataset.url) { try { URL.revokeObjectURL(player.dataset.url); } catch (e) {} }
-        var url = URL.createObjectURL(blob); player.dataset.url = url; player.src = url; player.load();
+        var url = URL.createObjectURL(new Blob([ab])); player.dataset.url = url; player.src = url; player.muted = false; player.load();
         audioReady = true; $('armed').textContent = 'track #' + id + ' ♪ audio ready';
+        var a2 = ensureAudio();
+        if (a2) {
+          a2.init().then(function () { return a2.cache(ab); }).then(function () {
+            window.__opAudio.ready = true;
+            if (a2._pendingT0 != null) { a2.start(a2._pendingT0); a2._pendingT0 = null; }
+          }).catch(function () {}); // decode may fail headless (AAC) -> lights + <audio> still work
+        }
       })
       .catch(function () { if (armedId === id) $('armed').textContent = 'track #' + id + ' (lights only — play music separately)'; });
   }
@@ -165,12 +205,12 @@
   // broadcast; the SOUND is opt-in (one tap) per browser autoplay policy.
   function fetchConsoleAudio(id) {
     if (!window.AudioSync) return;
-    if (!audio) { audio = new AudioSync(clock || new ClockSync(function () {})); audio.tele = function () {}; }
+    ensureAudio();
     pubTrackId = id;
     if ($('soundBtn')) $('soundBtn').classList.remove('hidden');
   }
   function startConsoleSound() {
-    if (!audio || pubTrackId == null) return;
+    if (!ensureAudio() || pubTrackId == null) return;
     audio.clock = clock || audio.clock;
     audio.init().then(function () {
       return api('/api/operator/audio/' + pubTrackId).then(function (r) { return r.ok ? r.arrayBuffer() : null; });
@@ -184,14 +224,15 @@
 
   function flashBtn(el) { el.style.boxShadow = '0 0 0 3px #fff'; setTimeout(function () { el.style.boxShadow = ''; }, 300); }
 
-  // personal GO: client-computed, audio-aligned T0 over the operator WS.
+  // personal GO: client-computed, audio-aligned T0 over the operator WS. The audio is NOT
+  // started by a bare setTimeout any more (that ignored clock.offset+nudge → console drifted
+  // from the on-air audio). The running-state echo (same authoritative T0) drives AudioSync
+  // via syncLiveAudio, so the console plays on the exact show clock the phones use.
   function doGo() {
     $('go').textContent = '● starting…';
     var T0 = performance.now() + LEAD_MS + (clock ? clock.offset : 0) + nudge;
-    if (audioReady && player.src) {
-      try { player.pause(); player.currentTime = 0; } catch (e) {}
-      setTimeout(function () { var p = player.play(); if (p && p.catch) p.catch(function () {}); }, LEAD_MS);
-    }
+    wantLiveAudio = true;
+    try { player.pause(); player.muted = true; } catch (e) {} // visible <audio> is scrub-only during live
     if (ws && ws.readyState === 1) ws.send(JSON.stringify({ t: 'op', cmd: 'go', T0: T0 }));
   }
   // public GO: server-timed; the console hears the start broadcast and aligns its sound to it.
@@ -202,7 +243,7 @@
     flashBtn($('go'));
     if (curState === 'paused') {
       if (PUBLIC) { tx('resume', {}); if (audio && soundOn) audio.resume(); return; }
-      if (audioReady && player.src) { var pr = player.play(); if (pr && pr.catch) pr.catch(function () {}); }
+      wantLiveAudio = true; lastAudioT0 = null; // the running echo realigns AudioSync to the resume T0
       if (ws && ws.readyState === 1) ws.send(JSON.stringify({ t: 'op', cmd: 'resume' }));
       return;
     }
@@ -254,7 +295,7 @@
         if (ts) ts.textContent = 'Flash reach: ' + (m.torchCapable || 0) + ' Android (camera-LED) · ' + (m.screenOnly || 0) + ' iPhone/other (screen-only)';
         return;
       }
-      if (m.t === 'state') { renderState(m.state); return; }
+      if (m.t === 'state') { renderState(m.state); syncLiveAudio(m.state); return; }
       return;
     }
     // ---- public console: derive transport state from the room messages it receives ----
