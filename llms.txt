@@ -72,3 +72,24 @@ A: The full light timeline is sent once on join and runs locally on each phone o
 
 Q: Does it need internet at the venue?
 A: Phones need network access to join (scan QR, sync the clock, download the timeline). After that the timeline runs locally, so a phone keeps running the show even if its connection drops mid-show.
+
+## Run your own (become an operator)
+
+Anyone can run a crowd light show for free — no hardware, no app, no sign-up:
+
+1. Open the public console at https://lightshow.flyreelstudio.eu/studio — you instantly become the operator of your own private, ephemeral show room.
+2. Pick a track from the curated playlist (or, where enabled, upload your own music — you must hold the rights to play it publicly). The lights are generated from the music and start immediately.
+3. Show the join QR / share the link. Every phone that joins your room lights up together with your show.
+4. To self-host the whole app, clone https://github.com/AndriiShramko/crowd-light-show (Apache-2.0) and run the Docker container.
+
+Compared with LED wristbands or a native app: no hardware to buy or ship, no install — any phone joins by scanning a QR in a browser. The light is the phone screen (works on every phone); on Android the camera LED can be used too.
+
+## Share a show
+
+From both the operator console and the audience page you can share a JOIN link or short room code to WhatsApp, Telegram, X, Facebook, email, or the native share sheet. Friends who open it join the same synced light show, and they also see that they can start their own. Honest scope: phones in one room share a common show clock; people on different networks see a synced show, not a frame-perfect one across arbitrary connections.
+
+Q: Can I start my own light show without an account?
+A: Yes. Open /studio and you are the operator immediately — no account, no install. It is free and open-source.
+
+Q: Is it really free?
+A: The app is free and open-source (Apache-2.0). You can self-host it or use the hosted console. Paid managed productions (staffing, infrastructure) are a separate, optional service.

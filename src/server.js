@@ -172,6 +172,7 @@ function renderPage(file, extra) {
   const tokens = Object.assign({
     '@@STUDIO@@': config.studioEnabled ? 'true' : 'false',
     '@@CONTACT@@': CONTACT_PARTIAL,
+    '@@SHARE@@': SHARE_PARTIAL,
   }, extra || {});
   for (const [k, v] of Object.entries(tokens)) html = html.replaceAll(k, String(v));
   return html;
@@ -181,6 +182,24 @@ app.get('/join', (req, reply) => reply.type('text/html').send(renderPage('audien
 app.get('/about', (req, reply) => reply.type('text/html').send(renderPage('about.html')));
 app.get('/try', (req, reply) => reply.type('text/html').send(renderPage('try.html')));
 app.get('/privacy', (req, reply) => reply.type('text/html').send(renderPage('privacy.html')));
+
+// SEO / answer-engine files MUST be reachable at the ROOT (crawlers fetch /robots.txt and
+// /sitemap.xml; the OG image must resolve). They live in public/ — round 9 fixes them being
+// reachable only under /static/ (they 404'd at the root, so robots.txt was never effective).
+const ROOT_FILES = {
+  '/robots.txt': ['robots.txt', 'text/plain; charset=utf-8'],
+  '/sitemap.xml': ['sitemap.xml', 'application/xml; charset=utf-8'],
+  '/llms.txt': ['llms.txt', 'text/plain; charset=utf-8'],
+  '/og-cover.png': ['og-cover.png', 'image/png'],
+};
+for (const [route, [file, mime]] of Object.entries(ROOT_FILES)) {
+  app.get(route, (req, reply) => {
+    const fp = path.join(config.publicDir, file);
+    if (!fs.existsSync(fp)) return reply.code(404).send({ error: 'not found' });
+    reply.header('Cache-Control', 'public, max-age=3600');
+    return reply.type(mime).send(fs.createReadStream(fp));
+  });
+}
 // Studio = the PUBLIC operator console (round 9). One CTA on the landing opens this: the
 // SAME console as /operator MINUS the leads, on its own ephemeral room, no auth. The room
 // is bound into a signed console token (read server-side, never from the body).

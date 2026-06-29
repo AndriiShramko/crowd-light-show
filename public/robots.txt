@@ -7,6 +7,8 @@ Allow: /
 # App endpoints are not content pages — keep them out of indexes
 Disallow: /join
 Disallow: /operator
+# Round 9: /studio is the public operator console (ephemeral rooms), not a content page
+Disallow: /studio
 
 # Explicitly welcome AI crawlers / answer engines
 User-agent: GPTBot

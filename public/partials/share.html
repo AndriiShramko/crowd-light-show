@@ -1,0 +1,28 @@
+<!-- ROUND 9 share block — injected by the server into /studio, /operator and /join. share.js
+     fills the room/join context CLIENT-SIDE (an ephemeral room is never baked into cached HTML). -->
+<div class="sh-wrap card" id="shareBlock" hidden>
+  <h2 class="sh-h">Invite people to this show</h2>
+  <p class="sh-sub">Share the link or code — friends scan it and their phones join the same synced light show. They'll also see they can run their own.</p>
+  <p class="sh-code" id="shCode" hidden>Code: <b id="shCodeVal"></b></p>
+  <div class="sh-btns">
+    <button class="sh-btn sh-native" id="shNative" hidden>Share…</button>
+    <a class="sh-btn" id="shWa" target="_blank" rel="noopener">WhatsApp</a>
+    <a class="sh-btn" id="shTg" target="_blank" rel="noopener">Telegram</a>
+    <a class="sh-btn" id="shX" target="_blank" rel="noopener">X</a>
+    <a class="sh-btn" id="shFb" target="_blank" rel="noopener">Facebook</a>
+    <a class="sh-btn" id="shMail">Email</a>
+    <button class="sh-btn" id="shCopy">Copy link</button>
+  </div>
+  <p class="sh-own">Anyone can run their own — it's free. <a class="sh-own-link" id="shOwn" href="/?utm=share">Start your own light show →</a></p>
+  <style>
+    .sh-wrap .sh-h { margin: 0 0 4px; }
+    .sh-wrap .sh-sub { color: #9aa3b5; margin: 0 0 10px; font-size: .92rem; }
+    .sh-wrap .sh-code { font-size: .95rem; margin: 0 0 8px; }
+    .sh-wrap .sh-btns { display: flex; flex-wrap: wrap; gap: 8px; }
+    .sh-wrap .sh-btn { display: inline-block; padding: 8px 14px; border-radius: 10px; background: rgba(120,150,210,.16); color: #eaf0fb; text-decoration: none; border: 1px solid rgba(150,170,220,.25); cursor: pointer; font-size: .92rem; }
+    .sh-wrap .sh-btn:hover { background: rgba(120,150,210,.28); }
+    .sh-wrap .sh-native { background: #2bc0ee; color: #04222c; border-color: transparent; font-weight: 600; }
+    .sh-wrap .sh-own { margin: 12px 0 0; color: #9aa3b5; font-size: .92rem; }
+    .sh-wrap .sh-own-link { color: #8fc6ff; }
+  </style>
+</div>

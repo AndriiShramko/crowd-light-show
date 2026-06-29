@@ -10,7 +10,16 @@
 <meta property="og:title" content="Crowd Light Show — synchronized phone light show for crowds">
 <meta property="og:description" content="Turn a crowd's phones into one synchronized light show in time with the music. Open-source, no app install. Works on any phone.">
 <meta property="og:url" content="https://lightshow.flyreelstudio.eu/">
-<meta name="twitter:card" content="summary">
+<meta property="og:image" content="https://lightshow.flyreelstudio.eu/static/og-cover.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://lightshow.flyreelstudio.eu/static/og-cover.png">
+<link rel="alternate" hreflang="en" href="https://lightshow.flyreelstudio.eu/?lang=en">
+<link rel="alternate" hreflang="pl" href="https://lightshow.flyreelstudio.eu/?lang=pl">
+<link rel="alternate" hreflang="es" href="https://lightshow.flyreelstudio.eu/?lang=es">
+<link rel="alternate" hreflang="fr" href="https://lightshow.flyreelstudio.eu/?lang=fr">
+<link rel="alternate" hreflang="x-default" href="https://lightshow.flyreelstudio.eu/">
 <link rel="stylesheet" href="/static/style.css">
 <script type="application/ld+json">
 {
@@ -28,6 +37,19 @@
     "name": "Andrii Shramko",
     "sameAs": "https://www.linkedin.com/in/andrii-shramko/"
   }
+}
+</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "HowTo",
+  "name": "Run your own crowd light show",
+  "description": "Start a free, synchronized phone light show for any crowd — no app, no hardware.",
+  "step": [
+    { "@type": "HowToStep", "name": "Open the console", "text": "Open the live console at /studio — you become the operator, no sign-up." },
+    { "@type": "HowToStep", "name": "Pick music & press GO", "text": "Pick a track and press GO. The lights are generated from the music and start instantly." },
+    { "@type": "HowToStep", "name": "Share the QR", "text": "Share the join link or QR. Every phone that joins lights up together with the show." }
+  ]
 }
 </script>
 <style>
@@ -106,6 +128,8 @@ img, svg { max-width: 100%; }
   box-shadow: 0 6px 22px rgba(90,160,255,.35), 0 2px 8px rgba(177,92,255,.3);
 }
 .m-btn-primary:hover { transform: translateY(-2px); box-shadow: 0 10px 32px rgba(90,160,255,.5), 0 4px 14px rgba(177,92,255,.45); }
+.m-try-quiet { display:inline-block; margin-top:10px; color:#aab3c5; text-decoration:underline; font-size:.95rem; opacity:.85; }
+.m-try-quiet:hover { color:#fff; }
 .m-btn-ghost {
   color: var(--m-fg); background: rgba(255,255,255,.04);
   border-color: var(--m-line);
@@ -366,8 +390,8 @@ img, svg { max-width: 100%; }
       <h1>Turn every phone in the crowd into <span class="m-grad-text">one giant light show</span></h1>
       <p class="m-hero-sub">Synced to your music, with no app to install — it works on any phone. The audience just scans a QR, and the whole room lights up together on the beat.</p>
       <div class="m-hero-cta">
-        <a class="m-btn m-btn-primary m-studio-cta" href="/studio" style="display:none">Try it live — you control it →</a>
-        <a class="m-btn m-btn-primary" href="/try">Try the live demo →</a>
+        <a class="m-btn m-btn-primary m-studio-cta" href="/studio" style="display:none">Start a light show — you're the operator →</a>
+        <a class="m-btn m-btn-primary m-try-cta" href="/try">Try the live demo →</a>
         <a class="m-btn m-btn-ghost" href="#contact">Get it for your event</a>
       </div>
       <div class="m-hero-meta">
@@ -579,8 +603,8 @@ img, svg { max-width: 100%; }
     <div class="m-tryband-inner">
       <h2>See it yourself in 10 seconds</h2>
       <p>Open the live demo, scan the QR with your phone, and watch your own screen join the show. Grab a few phones for the full effect.</p>
-      <a class="m-btn m-btn-primary m-studio-cta" href="/studio" style="display:none">Try it live — switch presets yourself →</a>
-      <a class="m-btn m-btn-primary" href="/try">Open the live demo →</a>
+      <a class="m-btn m-btn-primary m-studio-cta" href="/studio" style="display:none">Start a light show — you're the operator →</a>
+      <a class="m-btn m-btn-primary m-try-cta" href="/try">Open the live demo →</a>
     </div>
   </div>
 </section>
@@ -612,9 +636,13 @@ img, svg { max-width: 100%; }
 // The lead form is handled by /static/lead.js (loaded inside the shared contact block, server-injected).
 (function () {
   var enabled = ('@@STUDIO@@' === 'true') || /[?&]next=1\b/.test(location.search);
-  if (!enabled) return;
-  var els = document.querySelectorAll('.m-studio-cta');
-  for (var i = 0; i < els.length; i++) els[i].style.display = '';
+  if (!enabled) return; // studio off: the single primary CTA stays /try (graceful fallback, no JS needed)
+  // ONE primary CTA (req 1): reveal the /studio console CTA and DEMOTE the /try button to a quiet
+  // secondary link, so a visitor is never torn between two equally-loud primary buttons.
+  var studio = document.querySelectorAll('.m-studio-cta');
+  for (var i = 0; i < studio.length; i++) studio[i].style.display = '';
+  var tries = document.querySelectorAll('.m-try-cta');
+  for (var k = 0; k < tries.length; k++) { tries[k].classList.remove('m-btn-primary', 'm-btn', 'm-btn-ghost'); tries[k].classList.add('m-try-quiet'); }
 })();
 </script>
 <script src="/static/site-i18n.js"></script>
