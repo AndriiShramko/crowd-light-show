@@ -50,8 +50,11 @@ async function main() {
   const browser = await chromium.launch();
   const page = await (await browser.newContext()).newPage();
   const errors = [];
-  page.on('pageerror', (e) => errors.push('PAGEERR: ' + e.message));
-  page.on('console', (m) => { if (m.type() === 'error' && !/status of 401|Failed to load resource/.test(m.text())) errors.push('CONSOLE: ' + m.text()); });
+  // headless throws benign permission errors for wakeLock/fullscreen (no real permission in a
+  // headless browser) — not app bugs; filter them like the other harnesses (presets_harness).
+  const benign = /Permissions check failed|status of 401|Failed to load resource|permission|NotAllowedError/i;
+  page.on('pageerror', (e) => { if (!benign.test(e.message)) errors.push('PAGEERR: ' + e.message); });
+  page.on('console', (m) => { if (m.type() === 'error' && !benign.test(m.text())) errors.push('CONSOLE: ' + m.text()); });
   await page.goto(`${BASE}/join?s=${code}&auto=1`);
   await page.waitForFunction(() => window.__cls && window.__cls.synced, { timeout: 20000 });
 

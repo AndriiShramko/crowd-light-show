@@ -43,7 +43,11 @@ async function main() {
 
   const browser = await chromium.launch();
   const errors = [];
-  const mkPage = async (ua) => { const c = await browser.newContext({ userAgent: ua }); const p = await c.newPage(); p.on('pageerror', (e) => errors.push('PAGEERR: ' + e.message)); p.on('console', (m) => { if (m.type() === 'error' && !/status of 401|Failed to load resource/.test(m.text())) errors.push('CONSOLE: ' + m.text()); }); await p.goto(`${BASE}/join?s=${code}&auto=1`); await p.waitForFunction(() => window.__cls && window.__cls.synced, { timeout: 20000 }); return p; };
+  // Headless throws benign permission errors for wakeLock/fullscreen/getUserMedia (no real
+  // camera/permission in a headless browser) — the same ones existing harnesses ignore. They
+  // are NOT app bugs (a real phone grants camera permission); filter them like presets_harness.
+  const benign = /Permissions check failed|status of 401|Failed to load resource|getUserMedia|NotAllowedError|NotFoundError|NotReadableError|permission/i;
+  const mkPage = async (ua) => { const c = await browser.newContext({ userAgent: ua }); const p = await c.newPage(); p.on('pageerror', (e) => { if (!benign.test(e.message)) errors.push('PAGEERR: ' + e.message); }); p.on('console', (m) => { if (m.type() === 'error' && !benign.test(m.text())) errors.push('CONSOLE: ' + m.text()); }); await p.goto(`${BASE}/join?s=${code}&auto=1`); await p.waitForFunction(() => window.__cls && window.__cls.synced, { timeout: 20000 }); return p; };
   const a = await mkPage(ANDROID_UA);   // Android phone
   const tele = (p) => p.evaluate(() => ({ screen: window.__cls.screen.preset, torch: window.__cls.torch.preset, want: window.__cls.torch.want, intensity: window.__cls.torch.intensity, on: window.__cls.torch.on, capable: window.__cls.torch.capable, note: window.__cls.torch.note, presetRgb: window.__cls.presetRgb, everLit: window.__cls.everLit }));
 
