@@ -89,7 +89,39 @@ for (const col of ['email TEXT', 'phone TEXT', 'company TEXT', 'source TEXT', 't
   try { db.exec(`ALTER TABLE application ADD COLUMN ${col}`); } catch { /* column already exists */ }
 }
 
+// Round 9 — public operator console. Same idempotent ALTER pattern on the live populated DB.
+// is_public = a track Andrii curated into the PUBLIC playlist (the /studio console may arm it,
+// zero-friction, no consent tick — Andrii already attested the licence). Default 0 = private.
+for (const col of ['is_public INTEGER NOT NULL DEFAULT 0']) {
+  try { db.exec(`ALTER TABLE track ADD COLUMN ${col}`); } catch { /* column already exists */ }
+}
+// public_config singleton (id=1): the defaults the PUBLIC console starts from. Andrii edits it
+// from his OWN authed console; the public side reads it read-only and RE-validates on read.
+db.exec(`
+CREATE TABLE IF NOT EXISTS public_config (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  default_track_id INTEGER,
+  default_screen_preset TEXT,
+  default_screen_params TEXT,            -- JSON
+  default_torch_preset TEXT,
+  default_torch_params TEXT,             -- JSON
+  welcome_text TEXT,
+  brand_name TEXT NOT NULL DEFAULT 'Crowd Light Show',
+  allow_upload INTEGER NOT NULL DEFAULT 0,
+  allow_torch INTEGER NOT NULL DEFAULT 1,
+  updated_at INTEGER
+);
+`);
+db.prepare(`INSERT OR IGNORE INTO public_config (id, brand_name, allow_torch, updated_at) VALUES (1, 'Crowd Light Show', 1, ?)`).run(Date.now());
+
 export function now() { return Date.now(); }
+
+// Round 9 — public console helpers.
+export function getPublicConfig() { return db.prepare('SELECT * FROM public_config WHERE id = 1').get(); }
+// Curated public playlist: is_public AND fully analyzed (a timeline exists to broadcast).
+export function listPublicTracks() {
+  return db.prepare(`SELECT id, title, duration_ms, cue_count FROM track WHERE is_public = 1 AND analysis_status = 'done' AND timeline_path IS NOT NULL ORDER BY position, id`).all();
+}
 
 export function getOrCreateDefaultShow() {
   let show = db.prepare(`SELECT * FROM show WHERE status != 'ended' ORDER BY id DESC LIMIT 1`).get();

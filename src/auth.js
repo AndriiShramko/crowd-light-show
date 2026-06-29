@@ -2,8 +2,12 @@ import crypto from 'node:crypto';
 import { config } from './config.js';
 
 // Minimal signed token (HMAC-SHA256) for operator sessions. No external deps.
-export function issueToken(role = 'operator', ttlMs = 12 * 3600 * 1000) {
-  const payload = Buffer.from(JSON.stringify({ role, exp: Date.now() + ttlMs })).toString('base64url');
+// `extra` carries extra signed claims — round 9 uses it to bind a public-console token
+// to ONE ephemeral room ({role:'console', room}); the room is read SERVER-SIDE from the
+// verified token, never from the request body, so a public console can only ever touch
+// its own room.
+export function issueToken(role = 'operator', ttlMs = 12 * 3600 * 1000, extra = {}) {
+  const payload = Buffer.from(JSON.stringify({ role, ...extra, exp: Date.now() + ttlMs })).toString('base64url');
   const sig = crypto.createHmac('sha256', config.sessionSecret).update(payload).digest('base64url');
   return `${payload}.${sig}`;
 }

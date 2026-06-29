@@ -1,23 +1,58 @@
 (function () {
   'use strict';
-  var TOKEN = window.__TOKEN__;
-  var LEAD_MS = Number(window.__LEAD__) || 900; // from config (single source of truth)
+  // ROUND 9: ONE operator component drives BOTH consoles, parameterized by __SESSION__.
+  //   personal (/operator): authed, full features, transport over the operator WS, MAIN room.
+  //   public   (/studio)  : no auth, a console token bound to one ephemeral room; transport
+  //                         over HTTP /api/console/*; joins its room as a synced previewer.
+  // Every operator-only assumption (applications, upload, nudge persist, operator WS commands)
+  // is gated on the session mode/features — the public branch can NEVER reach /api/operator/*.
+  var S = window.__SESSION__ || { mode: 'personal', token: window.__TOKEN__, apiBase: '/api/operator', lead: window.__LEAD__, features: { applications: true, upload: true, torch: true, transport: true, publicConfig: true } };
+  var MODE = S.mode || 'personal';
+  var PUBLIC = MODE === 'public';
+  var TOKEN = S.token;
+  var APIB = S.apiBase || '/api/operator';
+  var ROOM = S.room || null;
+  var FEAT = S.features || {};
+  var DEFAULTS = S.defaults || {};
+  var LEAD_MS = Number(S.lead) || 900;
   var ws = null, clock = null, armedId = null, audioReady = false, nudge = 0, curState = 'idle';
-  var pendingGo = false, goWatcher = null; // GO deferred until the operator clock locks
+  var pendingGo = false, goWatcher = null; // GO deferred until the operator clock locks (personal)
+  var pubT0 = null, pubTrackId = null, soundOn = false; // public: armed-track audio T0 + opt-in sound
+  var audio = null; // public: AudioSync for the console's own synced playback (round 9 / refined in audio fix)
   var player = document.getElementById('player');
 
   var $ = function (id) { return document.getElementById(id); };
   function api(path, opts) {
     opts = opts || {}; opts.headers = Object.assign({ Authorization: 'Bearer ' + TOKEN }, opts.headers || {});
-    return fetch(path, opts);
+    // A personal-mode path /api/operator/X maps to the public console /api/console/X.
+    var p = (APIB !== '/api/operator') ? path.replace('/api/operator', APIB) : path;
+    return fetch(p, opts);
+  }
+  function esc(s) { return String(s).replace(/[<>&]/g, function (c) { return ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' })[c]; }); }
+
+  // ---- mode setup: hide features this session doesn't have, switch labels ----
+  function applyMode() {
+    Array.prototype.forEach.call(document.querySelectorAll('[data-feature]'), function (el) {
+      var f = el.getAttribute('data-feature');
+      if (FEAT[f] === false || FEAT[f] === undefined) el.classList.add('hidden');
+    });
+    if (PUBLIC) {
+      var title = $('consoleTitle'); if (title) title.textContent = (S.brand || 'Light Show') + ' — live console';
+      var pw = $('pubWelcome'); if (pw) { pw.textContent = S.welcome || 'You are the operator. Pick a track, press GO, and the phones that join your QR light up together. Want your own? It is free — anyone can run one.'; pw.classList.remove('hidden'); }
+      var pc = $('pubCount'); if (pc) pc.classList.remove('hidden');
+      var ph = $('playlistHint'); if (ph) ph.classList.remove('hidden');
+      var pt = $('playlistTitle'); if (pt) pt.textContent = '1 · Music';
+      if (FEAT.torch === false) { var tc = $('studioCard'); /* torch sub-section hidden below in setupTorch */ }
+    }
   }
 
+  // ===================== personal: playlist + applications =====================
   function loadState() {
     api('/api/operator/state').then(function (r) { return r.ok ? r.json() : null; }).then(function (s) {
       if (!s) return;
-      $('joinurl').textContent = s.joinUrl; $('joinurl').href = s.joinUrl; $('joinBig').textContent = s.joinUrl;
-      $('disk').textContent = (s.freeDiskBytes / 1e9).toFixed(1) + ' GB';
-      $('nudge').value = s.show.nudge_ms || 0; $('nudgeVal').textContent = (s.show.nudge_ms || 0) + ' ms'; nudge = s.show.nudge_ms || 0;
+      if ($('joinurl')) { $('joinurl').textContent = s.joinUrl; $('joinurl').href = s.joinUrl; $('joinBig').textContent = s.joinUrl; }
+      if ($('disk')) $('disk').textContent = (s.freeDiskBytes / 1e9).toFixed(1) + ' GB';
+      if ($('nudge')) { $('nudge').value = s.show.nudge_ms || 0; $('nudgeVal').textContent = (s.show.nudge_ms || 0) + ' ms'; nudge = s.show.nudge_ms || 0; }
       renderState(s.state);
       var tb = $('tracks').querySelector('tbody'); tb.innerHTML = '';
       s.tracks.forEach(function (t) {
@@ -25,7 +60,8 @@
         var tr = document.createElement('tr');
         if (isArmed) tr.style.background = 'rgba(90,160,255,.15)';
         tr.innerHTML = '<td><b>' + esc(t.title) + '</b>' + (isArmed ? ' <span style="color:#5aa0ff">● ARMED</span>' : '') + '<br><span class="muted">' + (t.analysis_status) + (t.cue_count ? ' · ' + t.cue_count + ' cues · ' + Math.round((t.duration_ms || 0) / 1000) + 's' : '') + '</span>'
-          + '<br><label class="muted"><input type="checkbox" ' + (t.license_attested ? 'checked' : '') + ' data-attest="' + t.id + '"> I hold rights/licence (ZAiKS) to play this publicly</label></td>'
+          + '<br><label class="muted"><input type="checkbox" ' + (t.license_attested ? 'checked' : '') + ' data-attest="' + t.id + '"> I hold rights/licence (ZAiKS) to play this publicly</label>'
+          + '<br><label class="muted"><input type="checkbox" ' + (t.is_public ? 'checked' : '') + ' data-public="' + t.id + '"> Show in the public /studio playlist</label></td>'
           + '<td style="text-align:right"><button data-arm="' + t.id + '" ' + (t.analysis_status !== 'done' ? 'disabled' : '') + ' class="' + (isArmed ? 'primary' : '') + '" style="width:auto">' + (isArmed ? '✓ Armed' : 'Arm') + '</button> '
           + '<button data-del="' + t.id + '" class="ghost" style="width:auto">✕</button></td>';
         tb.appendChild(tr);
@@ -33,27 +69,52 @@
     });
     api('/api/operator/qr').then(function (r) { return r.blob(); }).then(function (b) { var u = URL.createObjectURL(b); $('qr').src = u; $('qrBig').src = u; });
   }
-  function esc(s) { return String(s).replace(/[<>&]/g, function (c) { return ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' })[c]; }); }
-  function renderState(st) {
-    curState = st.status;
-    $('state').textContent = st.status;
-    updateReactHint(); // reactivity hint flips when a track starts/stops running
-    if (pendingGo) return; // keep the "⏳ syncing clock…" label while a GO is deferred
-    var locking = (st.status === 'idle' && !(clock && clock.ready));
-    $('go').textContent = st.status === 'paused' ? '▶ RESUME' : (st.status === 'running' ? '● LIVE' : (locking ? '▶ GO (clock…)' : '▶ GO'));
+
+  // ===================== public: curated playlist + QR =====================
+  function loadPublic() {
+    api('/api/operator/playlist').then(function (r) { return r.ok ? r.json() : null; }).then(function (d) {
+      if (!d) { var tb0 = $('tracks').querySelector('tbody'); if (tb0) tb0.innerHTML = '<tr><td class="muted">No public tracks yet.</td></tr>'; return; }
+      var tb = $('tracks').querySelector('tbody'); tb.innerHTML = '';
+      (d.tracks || []).forEach(function (t) {
+        var isArmed = t.id === armedId;
+        var tr = document.createElement('tr');
+        if (isArmed) tr.style.background = 'rgba(90,160,255,.15)';
+        tr.innerHTML = '<td><b>' + esc(t.title) + '</b>' + (isArmed ? ' <span style="color:#5aa0ff">● playing</span>' : '') + '<br><span class="muted">' + (t.cue_count ? Math.round((t.duration_ms || 0) / 1000) + 's' : '') + '</span></td>'
+          + '<td style="text-align:right"><button data-arm="' + t.id + '" class="' + (isArmed ? 'primary' : '') + '" style="width:auto">' + (isArmed ? '✓ Playing' : '▶ Play') + '</button></td>';
+        tb.appendChild(tr);
+      });
+      if (!(d.tracks || []).length) { tb.innerHTML = '<tr><td class="muted">The host has not published any tracks yet.</td></tr>'; }
+      // default music: auto-arm the default track (LIGHTS start now; SOUND waits for one tap)
+      var def = (DEFAULTS && DEFAULTS.default_track_id) || (d.defaults && d.defaults.default_track_id);
+      if (def && armedId == null) armTrack(Number(def), true);
+    });
+    api('/api/operator/qr').then(function (r) { return r.ok ? r.blob() : null; }).then(function (b) { if (!b) return; var u = URL.createObjectURL(b); if ($('qr')) $('qr').src = u; if ($('qrBig')) $('qrBig').src = u; });
   }
 
-  $('tracks').addEventListener('click', function (e) {
+  function renderState(st) {
+    curState = st.status;
+    if ($('state')) $('state').textContent = st.status;
+    updateReactHint();
+    if (pendingGo) return;
+    var locking = (st.status === 'idle' && !(clock && clock.ready));
+    if ($('go')) $('go').textContent = st.status === 'paused' ? '▶ RESUME' : (st.status === 'running' ? '● LIVE' : (locking ? '▶ GO (clock…)' : '▶ GO'));
+  }
+
+  if ($('tracks')) $('tracks').addEventListener('click', function (e) {
     var arm = e.target.getAttribute('data-arm'); var del = e.target.getAttribute('data-del');
     if (arm) armTrack(Number(arm));
-    if (del) api('/api/operator/track/' + del, { method: 'DELETE' }).then(loadState);
+    if (del && !PUBLIC) api('/api/operator/track/' + del, { method: 'DELETE' }).then(loadState);
   });
-  $('tracks').addEventListener('change', function (e) {
+  if ($('tracks')) $('tracks').addEventListener('change', function (e) {
+    if (PUBLIC) return;
     var at = e.target.getAttribute('data-attest');
+    var pub = e.target.getAttribute('data-public');
     if (at && e.target.checked) api('/api/operator/track/' + at + '/attest', { method: 'POST' });
+    if (pub) api('/api/operator/track/' + pub + '/public', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ is_public: e.target.checked }) })
+      .then(function (r) { return r.json(); }).then(function (j) { if (!j.ok) { alert(j.error || 'cannot publish'); loadState(); } loadPublicConfig(); });
   });
 
-  $('upload').addEventListener('click', function () {
+  if ($('upload')) $('upload').addEventListener('click', function () {
     var f = $('file').files[0]; if (!f) { $('uploadMsg').textContent = 'Choose a file first.'; return; }
     var fd = new FormData(); fd.append('audio', f);
     $('uploadMsg').textContent = 'Uploading & analyzing…';
@@ -62,14 +123,33 @@
       .catch(function (e) { $('uploadMsg').textContent = 'Upload failed: ' + e; });
   });
 
-  function armTrack(id) {
+  // ---- transport: personal = operator WS; public = HTTP /api/console/* ----
+  function tx(cmd, extra) {
+    if (PUBLIC) {
+      return api('/api/operator/' + cmd, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(extra || {}) })
+        .then(function (r) { return r.ok ? r.json() : null; });
+    }
+    if (ws && ws.readyState === 1) ws.send(JSON.stringify(Object.assign({ t: 'op', cmd: cmd }, extra || {})));
+    return Promise.resolve(null);
+  }
+
+  function armTrack(id, isDefault) {
     armedId = id; audioReady = false;
-    // Arm the LIGHTS immediately (distribute the timeline) — independent of audio.
+    if (PUBLIC) {
+      // public console: arm over HTTP (the server broadcasts timeline to the room; the console
+      // gets it as a previewer). Then auto-GO so the default music's LIGHTS start with no clicks.
+      tx('arm', { trackId: id }).then(function (j) {
+        if (!j || !j.ok) { if ($('armed')) $('armed').textContent = 'could not start that track'; return; }
+        if ($('armed')) $('armed').textContent = 'playing — lights live';
+        loadPublic();
+        fetchConsoleAudio(id);
+        if (isDefault) setTimeout(function () { doGoPublic(); }, 250); // visuals roll immediately
+      });
+      return;
+    }
     if (ws && ws.readyState === 1) ws.send(JSON.stringify({ t: 'op', cmd: 'arm', trackId: id }));
     $('armed').textContent = 'track #' + id + ' (lights ready, loading audio…)';
-    loadState(); // instant feedback: highlight the armed row now
-    // Stream the audio into an <audio> element via a Blob URL (the original ~3 MB
-    // file, NOT a giant decoded buffer): low memory, robust, decoded on the fly.
+    loadState();
     api('/api/operator/audio/' + id).then(function (r) { return r.ok ? r.blob() : null; })
       .then(function (blob) {
         if (armedId !== id) return;
@@ -81,12 +161,32 @@
       .catch(function () { if (armedId === id) $('armed').textContent = 'track #' + id + ' (lights only — play music separately)'; });
   }
 
+  // public console synced audio (curated track). Lights are already synced via the room
+  // broadcast; the SOUND is opt-in (one tap) per browser autoplay policy.
+  function fetchConsoleAudio(id) {
+    if (!window.AudioSync) return;
+    if (!audio) { audio = new AudioSync(clock || new ClockSync(function () {})); audio.tele = function () {}; }
+    pubTrackId = id;
+    if ($('soundBtn')) $('soundBtn').classList.remove('hidden');
+  }
+  function startConsoleSound() {
+    if (!audio || pubTrackId == null) return;
+    audio.clock = clock || audio.clock;
+    audio.init().then(function () {
+      return api('/api/operator/audio/' + pubTrackId).then(function (r) { return r.ok ? r.arrayBuffer() : null; });
+    }).then(function (ab) {
+      if (!ab) return; return audio.cache(ab).then(function () { if (curState === 'running' && pubT0 != null) audio.start(pubT0); });
+    }).catch(function () {});
+    soundOn = true;
+    if ($('soundBtn')) { $('soundBtn').textContent = '🔊 Sound on'; $('soundBtn').disabled = true; }
+  }
+  if ($('soundBtn')) $('soundBtn').addEventListener('click', startConsoleSound);
+
   function flashBtn(el) { el.style.boxShadow = '0 0 0 3px #fff'; setTimeout(function () { el.style.boxShadow = ''; }, 300); }
 
+  // personal GO: client-computed, audio-aligned T0 over the operator WS.
   function doGo() {
-    $('go').textContent = '● starting…';      // instant feedback (there is a lead before the drop)
-    // Lights start at T0 = now + lead (server clock via offset + nudge); audio is
-    // scheduled to the same instant. nudge fine-tunes PA latency.
+    $('go').textContent = '● starting…';
     var T0 = performance.now() + LEAD_MS + (clock ? clock.offset : 0) + nudge;
     if (audioReady && player.src) {
       try { player.pause(); player.currentTime = 0; } catch (e) {}
@@ -94,16 +194,19 @@
     }
     if (ws && ws.readyState === 1) ws.send(JSON.stringify({ t: 'op', cmd: 'go', T0: T0 }));
   }
-  $('go').addEventListener('click', function () {
-    if (armedId == null) { alert('Arm a track first.'); return; }
+  // public GO: server-timed; the console hears the start broadcast and aligns its sound to it.
+  function doGoPublic() { if ($('go')) $('go').textContent = '● starting…'; tx('go', {}); }
+
+  if ($('go')) $('go').addEventListener('click', function () {
+    if (armedId == null) { alert(PUBLIC ? 'Pick a track first.' : 'Arm a track first.'); return; }
     flashBtn($('go'));
-    if (curState === 'paused') {              // RESUME from the pause point (continue, not restart)
+    if (curState === 'paused') {
+      if (PUBLIC) { tx('resume', {}); if (audio && soundOn) audio.resume(); return; }
       if (audioReady && player.src) { var pr = player.play(); if (pr && pr.catch) pr.catch(function () {}); }
       if (ws && ws.readyState === 1) ws.send(JSON.stringify({ t: 'op', cmd: 'resume' }));
       return;
     }
-    // Do NOT GO off an unconverged operator clock — that shifts the whole crowd vs the
-    // music. Defer and auto-fire the instant the clock locks (usually <2s).
+    if (PUBLIC) { doGoPublic(); return; }
     if (!(clock && clock.ready)) {
       pendingGo = true; $('go').textContent = '⏳ syncing clock…';
       if (!goWatcher) goWatcher = setInterval(function () {
@@ -113,44 +216,59 @@
     }
     doGo();
   });
-  $('pause').addEventListener('click', function () { flashBtn($('pause')); try { player.pause(); } catch (e) {} if (ws) ws.send(JSON.stringify({ t: 'op', cmd: 'pause' })); });
-  $('stop').addEventListener('click', function () { flashBtn($('stop')); try { player.pause(); player.currentTime = 0; } catch (e) {} if (ws) ws.send(JSON.stringify({ t: 'op', cmd: 'stop' })); });
-  $('blackout').addEventListener('click', function () { flashBtn($('blackout')); if (ws) ws.send(JSON.stringify({ t: 'op', cmd: 'blackout' })); });
+  if ($('pause')) $('pause').addEventListener('click', function () { flashBtn($('pause')); try { player.pause(); } catch (e) {} if (audio) audio.stop(); tx('pause', {}); });
+  if ($('stop')) $('stop').addEventListener('click', function () { flashBtn($('stop')); try { player.pause(); player.currentTime = 0; } catch (e) {} if (audio) audio.stop(); tx('stop', {}); });
+  if ($('blackout')) $('blackout').addEventListener('click', function () { flashBtn($('blackout')); if (audio) audio.stop(); tx('blackout', {}); });
 
-  $('nudge').addEventListener('input', function () { nudge = Number($('nudge').value); $('nudgeVal').textContent = nudge + ' ms'; });
-  $('nudge').addEventListener('change', function () { api('/api/operator/nudge', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ms: nudge }) }); });
+  if ($('nudge')) {
+    $('nudge').addEventListener('input', function () { nudge = Number($('nudge').value); $('nudgeVal').textContent = nudge + ' ms'; });
+    if (!PUBLIC) $('nudge').addEventListener('change', function () { api('/api/operator/nudge', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ms: nudge }) }); });
+  }
 
-  $('projector').addEventListener('click', function () { $('proj').classList.remove('hidden'); });
-  $('projClose').addEventListener('click', function () { $('proj').classList.add('hidden'); });
+  if ($('projector')) $('projector').addEventListener('click', function () { $('proj').classList.remove('hidden'); });
+  if ($('projClose')) $('projClose').addEventListener('click', function () { $('proj').classList.add('hidden'); });
 
   function connect() {
     var proto = location.protocol === 'https:' ? 'wss' : 'ws';
     ws = new WebSocket(proto + '://' + location.host + '/ws');
     clock = new ClockSync(function (o) { try { ws.send(JSON.stringify(o)); } catch (e) {} });
+    if (audio) audio.clock = clock;
     ws.onopen = function () {
-      $('conn').textContent = 'online';
-      ws.send(JSON.stringify({ t: 'hello', role: 'operator', token: TOKEN }));
-      // Longer rapid sync (~2s, 25 @80ms) so the operator clock is genuinely converged
-      // before a human can arm+GO — a GO off an unconverged operator clock shifts the
-      // WHOLE crowd vs the music (the reported first-run ~0.5s desync).
+      if ($('conn')) $('conn').textContent = 'online';
+      if (PUBLIC) ws.send(JSON.stringify({ t: 'hello', role: 'audience', room: ROOM, platform: 'console' }));
+      else ws.send(JSON.stringify({ t: 'hello', role: 'operator', token: TOKEN }));
       var n = 0; var p = setInterval(function () { if (ws.readyState === 1) { clock.ping(); if (++n >= 25) clearInterval(p); } }, 80);
       setInterval(function () { if (ws.readyState === 1) clock.ping(); }, 25000);
     };
-    ws.onmessage = function (ev) { var m; try { m = JSON.parse(ev.data); } catch (e) { return; }
-      if (m.t === 'sync') { clock.onReply(m.c0, m.s1); if (clock.ready && curState === 'idle') renderState({ status: curState }); return; }
+    ws.onmessage = function (ev) { var m; try { m = JSON.parse(ev.data); } catch (e) { return; } onWs(m); };
+    ws.onclose = function () { if ($('conn')) $('conn').textContent = 'offline — retrying'; setTimeout(connect, 1500); };
+    ws.onerror = function () {};
+  }
+
+  function onWs(m) {
+    if (m.t === 'sync') { clock.onReply(m.c0, m.s1); if (clock.ready && curState === 'idle') renderState({ status: curState }); return; }
+    if (!PUBLIC) {
       if (m.t === 'count') {
-        $('count').textContent = m.audience; $('countBig').textContent = m.audience;
+        $('count').textContent = m.audience; if ($('countBig')) $('countBig').textContent = m.audience;
         var ts = $('torchSplit');
         if (ts) ts.textContent = 'Flash reach: ' + (m.torchCapable || 0) + ' Android (camera-LED) · ' + (m.screenOnly || 0) + ' iPhone/other (screen-only)';
         return;
       }
       if (m.t === 'state') { renderState(m.state); return; }
-    };
-    ws.onclose = function () { $('conn').textContent = 'offline — retrying'; setTimeout(connect, 1500); };
-    ws.onerror = function () {};
+      return;
+    }
+    // ---- public console: derive transport state from the room messages it receives ----
+    if (m.t === 'welcome' || m.t === 'state') { if (m.state) { renderState({ status: m.state.status }); if (m.state.status === 'running' && m.state.T0 != null) { pubT0 = m.state.T0; if (audio && soundOn) audio.start(pubT0); } } return; }
+    if (m.t === 'index') { var n = Math.max(0, (m.total | 0) - 1); if ($('count2')) $('count2').textContent = n; if ($('countBig')) $('countBig').textContent = n; return; } // -1: the console itself is a member
+    if (m.t === 'timeline') { pubTrackId = m.trackId; return; }
+    if (m.t === 'start') { renderState({ status: 'running' }); pubT0 = m.T0; if (audio && soundOn) audio.start(m.T0); return; }
+    if (m.t === 'pause') { renderState({ status: 'paused' }); if (audio) audio.stop(); return; }
+    if (m.t === 'stop') { renderState({ status: 'idle' }); armedId = armedId; if (audio) audio.stop(); return; }
+    if (m.t === 'blackout') { renderState({ status: 'blackout' }); if (audio) audio.stop(); return; }
   }
 
   function loadApps() {
+    if (!FEAT.applications) return;
     api('/api/operator/applications').then(function (r) { return r.ok ? r.json() : null; }).then(function (d) {
       if (!d) return;
       var tb = $('apps').querySelector('tbody'); tb.innerHTML = '';
@@ -165,21 +283,39 @@
       });
     });
   }
-  $('apps').addEventListener('click', function (e) {
+  if ($('apps')) $('apps').addEventListener('click', function (e) {
     var id = e.target.getAttribute('data-delapp');
     if (id) api('/api/operator/application/' + id, { method: 'DELETE' }).then(loadApps);
   });
-  $('refreshApps').addEventListener('click', loadApps);
+  if ($('refreshApps')) $('refreshApps').addEventListener('click', loadApps);
+
+  // ---- public console defaults editor (personal mode only) ----
+  function loadPublicConfig() {
+    if (!FEAT.publicConfig) return;
+    api('/api/operator/public-config').then(function (r) { return r.ok ? r.json() : null; }).then(function (d) {
+      if (!d || !d.config) return;
+      var c = d.config;
+      if ($('pcBrand')) $('pcBrand').value = c.brand_name || '';
+      if ($('pcWelcome')) $('pcWelcome').value = c.welcome_text || '';
+      if ($('pcTorch')) $('pcTorch').checked = c.allow_torch !== 0;
+      if ($('pcUpload')) { $('pcUpload').checked = !!c.allow_upload; $('pcUpload').disabled = !d.uploadEnabled; if ($('pcUploadNote')) $('pcUploadNote').textContent = d.uploadEnabled ? '' : '(disabled on the server — PUBLIC_UPLOAD_ENABLED=0)'; }
+      var sel = $('pcTrack'); if (sel) {
+        sel.innerHTML = '<option value="">— none —</option>';
+        (d.publicTracks || []).forEach(function (t) { var o = document.createElement('option'); o.value = t.id; o.textContent = t.title; if (c.default_track_id === t.id) o.selected = true; sel.appendChild(o); });
+      }
+    });
+  }
+  if ($('pcSave')) $('pcSave').addEventListener('click', function () {
+    var body = { brand_name: $('pcBrand').value, welcome_text: $('pcWelcome').value, allow_torch: $('pcTorch').checked, default_track_id: $('pcTrack').value ? Number($('pcTrack').value) : null };
+    if ($('pcUpload') && !$('pcUpload').disabled) body.allow_upload = $('pcUpload').checked;
+    api('/api/operator/public-config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+      .then(function (r) { return r.json(); }).then(function (j) { $('pcMsg').textContent = j.ok ? 'Saved ✓' : ('Error: ' + (j.error || '')); setTimeout(function () { $('pcMsg').textContent = ''; }, 2500); });
+  });
 
   // ---- live presets (studio) ----
   var presetSchema = null, activeType = null, activeParams = {};
   function defParams(type) { var o = {}, ps = presetSchema[type].params; for (var k in ps) o[k] = ps[k].def; return o; }
 
-  // ---- live preview (round 8A): SEE what each preset/param does to colour, brightness &
-  // flash, rendered through the EXACT phone pipeline (clampColor + makeBackstop = the same
-  // safety governor; the preview can NEVER show >3 flashes/s — it is not a bypass). A
-  // synthetic loudness drives the music-reactivity so the operator can watch the reactivity
-  // sliders bite even with no track running. Scrolls a filmstrip: time -> right.
   var PV = window.CLS_PRESETS;
   var pvCanvas = $('presetPreview'), pvCtx = pvCanvas ? pvCanvas.getContext('2d') : null;
   var pvBackstop = null, pvT0 = null, pvLast = 0;
@@ -200,7 +336,7 @@
     if (pvT0 == null) { pvT0 = now; pvLast = now; }
     var ms = now - pvT0, dt = Math.max(1, now - pvLast); pvLast = now;
     var rgb = PV.clampColor(PV.PRESETS[activeType](ms, activeParams, 0, 1, simLoudness(ms)));
-    if (pvBackstop) rgb = pvBackstop(rgb, dt);                 // GOVERNED — exactly the phone's output
+    if (pvBackstop) rgb = pvBackstop(rgb, dt);
     var w = pvCanvas.width, h = pvCanvas.height, col = 3;
     try { var img = pvCtx.getImageData(col, 0, w - col, h); pvCtx.putImageData(img, 0, 0); } catch (e) {}
     var bg = 'rgb(' + rgb[0] + ',' + rgb[1] + ',' + rgb[2] + ')';
@@ -236,7 +372,6 @@
     });
     updateReactHint();
   }
-  // Tell the operator when the active preset is actually reacting to the music.
   function updateReactHint() {
     var el = $('reactHint'); if (!el) return;
     if (!activeType || activeType === 'off') { el.textContent = ''; return; }
@@ -247,14 +382,14 @@
   }
   var paramTimer = null, pendingParam = {};
   function sendParam(k, v) {
-    if (window.__opPreview) window.__opPreview.changeSeq++;   // slider move -> preview re-renders live (reads activeParams)
+    if (window.__opPreview) window.__opPreview.changeSeq++;
     pendingParam[k] = v; if (paramTimer) return;
     paramTimer = setTimeout(function () {
       var pp = pendingParam; pendingParam = {}; paramTimer = null;
       Object.keys(pp).forEach(function (key) {
         api('/api/operator/preset/param', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: key, value: pp[key] }) });
       });
-    }, 80); // throttle slider spam (morph is phase-preserving, order-independent)
+    }, 80);
   }
   function pickPreset(type) {
     if (type === 'off') {
@@ -264,7 +399,7 @@
       $('presetMsg').textContent = 'Presets off.'; return;
     }
     activeType = type; activeParams = defParams(type); renderParams(); highlightPreset();
-    pvReset(); pvShow(true);   // live preview reflects the newly picked preset immediately
+    pvReset(); pvShow(true);
     api('/api/operator/preset', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: type, params: activeParams }) })
       .then(function (r) { return r.json(); })
       .then(function (j) { $('presetMsg').textContent = j.ok ? ('● LIVE: ' + presetSchema[type].label + ' — epoch ' + j.epoch) : ('Error: ' + (j.error || '')); });
@@ -278,16 +413,14 @@
       });
       var off = document.createElement('button'); off.style.width = 'auto'; off.className = 'ghost'; off.textContent = '■ Off'; off.setAttribute('data-preset', 'off'); box.appendChild(off);
       if (d.active && d.active.type && d.active.type !== 'off') { activeType = d.active.type; activeParams = Object.assign({}, d.active.params); renderParams(); pvReset(); pvShow(true); }
+      else if (PUBLIC && DEFAULTS && DEFAULTS.screen && DEFAULTS.screen.type) { pickPreset(DEFAULTS.screen.type); } // public: start on the host's default look
       highlightPreset();
-      setupTorch(d);   // round 8B: the autonomous torch channel
+      setupTorch(d);
     });
   }
   if ($('presetBtns')) $('presetBtns').addEventListener('click', function (e) { var t = e.target.getAttribute('data-preset'); if (t) pickPreset(t); });
 
   // ======================= TORCH channel (round 8B) — operator UI =======================
-  // A second, fully independent channel: own preset buttons, own reactivity sliders, own
-  // safety-governed preview. Sends to /api/operator/preset with channel:'torch' so it never
-  // touches the screen channel above.
   var torchSchema = null, activeTorch = null, activeTorchParams = {};
   function torchDefParams(type) { var o = {}, ps = (torchSchema[type] && torchSchema[type].params) || {}; for (var k in ps) o[k] = ps[k].def; return o; }
   function highlightTorch() {
@@ -348,8 +481,6 @@
   }
   if ($('torchBtns')) $('torchBtns').addEventListener('click', function (e) { var t = e.target.getAttribute('data-torch'); if (t) pickTorch(t); });
 
-  // torch preview: a governed on/off filmstrip (CLS_PRESETS.TORCH_PRESETS + makeTorchGate),
-  // driven by a synthetic loudness so 'beat' is visible without a track. Never shows >3/s.
   var TPV = window.CLS_PRESETS, tpvCanvas = $('torchPreview'), tpvCtx = tpvCanvas ? tpvCanvas.getContext('2d') : null;
   var tpvGate = null, tpvT0 = null, tpvLast = 0;
   window.__opTorchPreview = { ready: !!(TPV && TPV.TORCH_PRESETS), type: null, frames: 0, changeSeq: 0, onFrac: 0, flashesPerSec: 0, _on: 0, _onCount: 0, cross: [], _prev: 0 };
@@ -365,7 +496,7 @@
     var on = tpvGate ? tpvGate(intensity >= 0.5, dt) : (intensity >= 0.5 ? 1 : 0);
     var w = tpvCanvas.width, h = tpvCanvas.height, col = 3;
     try { var img = tpvCtx.getImageData(col, 0, w - col, h); tpvCtx.putImageData(img, 0, 0); } catch (e) {}
-    tpvCtx.fillStyle = on ? '#ffe9a8' : '#0a0a0a'; tpvCtx.fillRect(w - col, 0, col, h);   // warm = LED on
+    tpvCtx.fillStyle = on ? '#ffe9a8' : '#0a0a0a'; tpvCtx.fillRect(w - col, 0, col, h);
     var pv = window.__opTorchPreview; pv.frames++; pv.type = activeTorch;
     if (on) pv._onCount++; pv.onFrac = pv._onCount / pv.frames;
     if (on && !pv._prev) pv.cross.push(ms); pv._prev = on;
@@ -374,5 +505,11 @@
   }
   requestAnimationFrame(tpvFrame);
 
-  connect(); loadState(); loadApps(); loadPresets(); setInterval(loadState, 8000); setInterval(loadApps, 20000);
+  // ---- boot ----
+  window.__opMode = { mode: MODE, room: ROOM, features: FEAT }; // test seam
+  applyMode();
+  connect();
+  loadPresets();
+  if (PUBLIC) { loadPublic(); }
+  else { loadState(); loadApps(); loadPublicConfig(); setInterval(loadState, 8000); setInterval(loadApps, 20000); }
 })();

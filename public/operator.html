@@ -9,14 +9,18 @@
 </head>
 <body>
 <div class="wrap">
-  <h1>Operator console</h1>
-  <p class="muted">Connected: <span id="conn">…</span> · Audience: <b id="count">0</b> · Free disk: <span id="disk">–</span></p>
+  <h1 id="consoleTitle">Operator console</h1>
+  <p id="pubWelcome" class="muted hidden"></p>
+  <p class="muted">Connected: <span id="conn">…</span> · <span data-feature="applications">Audience: <b id="count">0</b> · Free disk: <span id="disk">–</span></span><span id="pubCount" class="hidden">Phones joined: <b id="count2">0</b></span></p>
 
   <div class="card">
-    <h2>1 · Playlist</h2>
-    <input type="file" id="file" accept="audio/*">
-    <button id="upload" class="primary">Upload &amp; analyze</button>
-    <div id="uploadMsg" class="muted"></div>
+    <h2 id="playlistTitle">1 · Playlist</h2>
+    <div data-feature="upload">
+      <input type="file" id="file" accept="audio/*">
+      <button id="upload" class="primary">Upload &amp; analyze</button>
+      <div id="uploadMsg" class="muted"></div>
+    </div>
+    <p id="playlistHint" class="muted hidden">Pick a track to play it to your phones — no setup needed. The lights start automatically; tap “🔊 Sound” to add the music.</p>
     <table id="tracks"><tbody></tbody></table>
   </div>
 
@@ -37,8 +41,11 @@
     </div>
     <button id="blackout">⬛ BLACKOUT ALL</button>
     <div class="nudge"><span>Nudge</span><input type="range" id="nudge" min="-500" max="500" value="0" step="5"><span id="nudgeVal">0 ms</span></div>
+    <button id="soundBtn" class="hidden" style="background:#2bc0ee;margin-top:10px">🔊 Tap for sound</button>
     <audio id="player" controls preload="auto" style="width:100%;margin-top:12px"></audio>
   </div>
+
+  @@SHARE@@
 
   <div class="card" id="studioCard">
     <h2>4 · Live presets <span class="muted" style="font-weight:400">— real-time; react to the music when a track plays</span></h2>
@@ -65,10 +72,21 @@
     <p class="muted" id="torchMsg">Pick a flash pattern (independent of the screen).</p>
   </div>
 
-  <div class="card">
+  <div class="card" data-feature="applications">
     <h2>5 · Applications <button id="refreshApps" style="width:auto;float:right;margin:0">↻ Refresh</button></h2>
     <p class="muted" id="appsMsg">Leads from the landing page form appear here.</p>
     <table id="apps"><tbody></tbody></table>
+  </div>
+
+  <div class="card" data-feature="publicConfig">
+    <h2>6 · Public console defaults</h2>
+    <p class="muted">What every visitor to the public <a href="/studio" target="_blank">/studio</a> console starts with. Your personal shows here are separate — these are just the public defaults. Tracks you tick “Show publicly” above appear in the public playlist.</p>
+    <div class="nudge"><span style="min-width:110px">Brand name</span><input type="text" id="pcBrand" maxlength="80" style="flex:1"></div>
+    <div class="nudge"><span style="min-width:110px">Welcome text</span><input type="text" id="pcWelcome" maxlength="300" style="flex:1"></div>
+    <div class="nudge"><span style="min-width:110px">Default track</span><select id="pcTrack" style="flex:1"></select></div>
+    <label class="muted"><input type="checkbox" id="pcTorch"> Allow the flash (torch) channel in the public console</label><br>
+    <label class="muted"><input type="checkbox" id="pcUpload" disabled> Allow visitors to upload their own music <span id="pcUploadNote"></span></label>
+    <div style="margin-top:8px"><button id="pcSave" class="primary" style="width:auto">Save public defaults</button> <span class="muted" id="pcMsg"></span></div>
   </div>
 
   <div class="credit">
@@ -84,8 +102,9 @@
   <button id="projClose" style="width:auto;margin-top:24px">Close</button>
 </div>
 
-<script>window.__TOKEN__ = "@@OPTOKEN@@"; window.__LEAD__ = @@LEAD@@;</script>
+<script>window.__SESSION__ = @@SESSION@@;</script>
 <script src="/static/clocksync.js"></script>
+<script src="/static/audio-sync.js"></script>
 <script src="/static/presets.js"></script>
 <script src="/static/operator.js"></script>
 </body>

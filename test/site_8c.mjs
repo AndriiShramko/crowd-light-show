@@ -14,15 +14,20 @@ const check = (id, ok, d) => { report.checks[id] = { ok: !!ok, detail: d }; if (
 const get = (p) => fetch(BASE + p).then((r) => r.text());
 
 async function main() {
-  // ---- 4. all 5 pages: shared contact block present, NO raw @@ tokens ----
+  // ---- 4. all marketing pages: shared contact block present, NO raw @@ tokens ----
+  // round 9: /studio is no longer a marketing page — it is the PUBLIC OPERATOR CONSOLE
+  // ("all of /operator EXCEPT leads"), so it carries no lead form by design and is excluded.
   let allClean = true, allForm = true, det = [];
-  for (const p of ['/', '/try', '/studio', '/join', '/about', '/privacy']) {
+  for (const p of ['/', '/try', '/join', '/about', '/privacy']) {
     const h = await get(p);
     const raw = (h.match(/@@/g) || []).length, form = /id="leadForm"/.test(h);
     if (raw > 0) allClean = false; if (!form) allForm = false;
     det.push(`${p}:@@${raw}${form ? '+form' : '-FORM'}`);
   }
   check('4_contact_5pages', allClean && allForm, det.join(' '));
+  // /studio is the public console: NO lead form, and no unrendered @@ tokens.
+  const studioHtml = await get('/studio');
+  check('4b_studio_is_console', !/id="leadForm"/.test(studioHtml) && (studioHtml.match(/@@/g) || []).length === 0 && /__SESSION__/.test(studioHtml), 'studio console, no lead form');
 
   // ---- 1. pricing: 4 tiers + CTA to the form ----
   const home = await get('/');

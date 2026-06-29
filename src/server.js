@@ -8,7 +8,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import QRCode from 'qrcode';
 import { config, scryptVerify } from './config.js';
-import { db, getOrCreateDefaultShow, listTracks, uploadsUsage, now } from './db.js';
+import { db, getOrCreateDefaultShow, listTracks, uploadsUsage, now, getPublicConfig, listPublicTracks } from './db.js';
 import { issueToken, verifyToken } from './auth.js';
 import { analyze } from './audio.js';
 import { compileFromEnvelope } from './compiler.js';
@@ -79,6 +79,80 @@ function requireOperator(req, reply) {
   return s;
 }
 
+// ---------- ROUND 9: public operator console (/studio) ----------
+const ROOM_RE = /^[a-z0-9]{6,24}$/;
+// Public console auth: a signed CONSOLE token whose `room` claim is read here, on the
+// server, from the verified token — NEVER from the request body. A public console can
+// therefore only ever drive its own ephemeral room.
+function consoleRoom(req, reply) {
+  if (!config.studioEnabled) { reply.code(503).send({ error: 'studio disabled' }); return null; }
+  const s = bearer(req);
+  if (!s || s.role !== 'console' || !s.room || !ROOM_RE.test(s.room)) { reply.code(401).send({ error: 'unauthorized' }); return null; }
+  return s.room;
+}
+// Per-IP cap on how many public sessions one client may mint per minute (anti-flood;
+// the hard room ceiling is enforced separately in hub.getRoom).
+const _mintLog = new Map(); // ip -> [timestamps]
+function mintGuard(ip) {
+  const t = Date.now(), win = 60000;
+  const arr = (_mintLog.get(ip) || []).filter((x) => t - x < win);
+  if (arr.length >= config.publicMintPerIpPerMin) { _mintLog.set(ip, arr); return false; }
+  arr.push(t); _mintLog.set(ip, arr);
+  if (_mintLog.size > 5000) { for (const [k, v] of _mintLog) if (!v.some((x) => t - x < win)) _mintLog.delete(k); }
+  return true;
+}
+// Read public_config and RE-VALIDATE everything (defense in depth — never trust the stored
+// snapshot; a preset could have been poisoned, a track could have gone private). Returns a
+// safe subset the public session/console may use.
+function readValidatedDefaults() {
+  const pc = getPublicConfig() || {};
+  const out = {
+    brand_name: pc.brand_name || 'Crowd Light Show',
+    welcome_text: pc.welcome_text || '',
+    allow_torch: pc.allow_torch !== 0,
+    allow_upload: !!pc.allow_upload && config.publicUploadEnabled,
+  };
+  if (pc.default_screen_preset) {
+    let params = {}; try { params = pc.default_screen_params ? JSON.parse(pc.default_screen_params) : {}; } catch { /* bad json */ }
+    const v = validatePreset(pc.default_screen_preset, params); if (v.ok) out.screen = { type: v.type, params: v.params };
+  }
+  if (pc.default_torch_preset) {
+    let params = {}; try { params = pc.default_torch_params ? JSON.parse(pc.default_torch_params) : {}; } catch { /* bad json */ }
+    const v = validateTorchPreset(pc.default_torch_preset, params); if (v.ok) out.torch = { type: v.type, params: v.params };
+  }
+  if (pc.default_track_id) {
+    const t = db.prepare("SELECT id FROM track WHERE id=? AND is_public=1 AND analysis_status='done' AND timeline_path IS NOT NULL").get(pc.default_track_id);
+    if (t) out.default_track_id = t.id;
+  }
+  return out;
+}
+function personalSession(token) {
+  return {
+    mode: 'personal', token, room: null, apiBase: '/api/operator', lead: config.startLeadMs,
+    features: { applications: true, upload: true, torch: true, transport: true, publicConfig: true, playlist: false, defaultMusic: false },
+    brand: 'Crowd Light Show',
+  };
+}
+function publicSession(room, token) {
+  const d = readValidatedDefaults();
+  return {
+    mode: 'public', token, room, apiBase: '/api/console', lead: config.startLeadMs,
+    features: { applications: false, upload: d.allow_upload, torch: d.allow_torch, transport: true, publicConfig: false, playlist: true, defaultMusic: true },
+    brand: d.brand_name, welcome: d.welcome_text,
+    defaults: { screen: d.screen || null, torch: d.torch || null, default_track_id: d.default_track_id || null },
+    playlist: listPublicTracks(),
+  };
+}
+// ONE renderer for BOTH consoles: the same operator.html, parameterized by the session
+// JSON. /operator => personal (auth); /studio => public (no auth, room-bound token).
+function renderConsole(session) {
+  let html = fs.readFileSync(path.join(config.publicDir, 'operator.html'), 'utf8');
+  html = html.replace('@@SESSION@@', JSON.stringify(session));
+  html = html.replaceAll('@@LEAD@@', String(config.startLeadMs));
+  html = html.replaceAll('@@SHARE@@', SHARE_PARTIAL);
+  return html;
+}
+
 function joinUrl(show) {
   const base = config.publicBaseUrl || '';
   return `${base}/join?s=${show.join_code}`;
@@ -90,6 +164,9 @@ function joinUrl(show) {
 // "/" did token replacement; /try /join /about /studio were served raw, so a @@CONTACT@@
 // there would have rendered as literal text. The contact partial is read once at boot.
 const CONTACT_PARTIAL = fs.readFileSync(path.join(config.publicDir, 'partials', 'contact.html'), 'utf8');
+// Share block (round 9) — injected into the consoles + /join via @@SHARE@@. Defensive read
+// so the server still boots before the partial is added.
+const SHARE_PARTIAL = (() => { try { return fs.readFileSync(path.join(config.publicDir, 'partials', 'share.html'), 'utf8'); } catch { return ''; } })();
 function renderPage(file, extra) {
   let html = fs.readFileSync(path.join(config.publicDir, file), 'utf8');
   const tokens = Object.assign({
@@ -104,11 +181,16 @@ app.get('/join', (req, reply) => reply.type('text/html').send(renderPage('audien
 app.get('/about', (req, reply) => reply.type('text/html').send(renderPage('about.html')));
 app.get('/try', (req, reply) => reply.type('text/html').send(renderPage('try.html')));
 app.get('/privacy', (req, reply) => reply.type('text/html').send(renderPage('privacy.html')));
-// Studio = guest-controlled live preset demo (no auth, ephemeral room). The "Try it
-// live" target: switch presets in real time and see your own phones change.
+// Studio = the PUBLIC operator console (round 9). One CTA on the landing opens this: the
+// SAME console as /operator MINUS the leads, on its own ephemeral room, no auth. The room
+// is bound into a signed console token (read server-side, never from the body).
 app.get('/studio', (req, reply) => {
   if (!config.studioEnabled) return reply.code(503).type('text/html').send('<h1>Studio is currently disabled.</h1>');
-  return reply.type('text/html').send(renderPage('studio.html'));
+  const ip = String(req.headers['x-real-ip'] || req.ip || '');
+  if (!mintGuard(ip)) return reply.code(429).type('text/html').send('<h1>Too many sessions from your network — please try again in a minute.</h1>');
+  const room = crypto.randomBytes(8).toString('hex');
+  const token = issueToken('console', 12 * 3600 * 1000, { room });
+  return reply.type('text/html').send(renderConsole(publicSession(room, token)));
 });
 app.get('/healthz', () => ({ ok: true, freeDiskBytes: freeDiskBytes(), audience: hub.audience.size, status: hub.state.status }));
 app.get('/api/public/show', () => { const s = getOrCreateDefaultShow(); return { code: s.join_code, status: hub.state.status }; });
@@ -150,7 +232,6 @@ app.get('/api/demo/qr', async (req, reply) => {
 // QR, and switches presets live. Switches reach ONLY phones that joined that room
 // (server-mediated fan-out — a guest can never touch the real show or other rooms),
 // and every cue still passes server-side validatePreset (safety is never bypassed).
-const ROOM_RE = /^[a-z0-9]{6,24}$/;
 app.get('/api/demo/room', (req, reply) => {
   if (!config.studioEnabled) return reply.code(503).send({ error: 'studio disabled' });
   const room = crypto.randomBytes(8).toString('hex');
@@ -181,6 +262,72 @@ app.post('/api/demo/preset/param', (req, reply) => {
   const v = validateParam(r.preset.type, String((req.body && req.body.key) || ''), (req.body && req.body.value));
   if (!v.ok) return reply.code(400).send({ error: v.error });
   return hub.setParam(room, v.key, v.value);
+});
+
+// ====================== PUBLIC CONSOLE API (/studio) — round 9 ======================
+// All routes: room comes from the verified console TOKEN (consoleRoom), never the body.
+// Every preset/torch is RE-VALIDATED here (validatePreset/validateTorchPreset) — the safety
+// governor sits BELOW the room layer and is never bypassed on the public surface.
+app.get('/api/console/presets', (req, reply) => {
+  const room = consoleRoom(req, reply); if (!room) return;
+  const r = hub.rooms.get(room);
+  return {
+    types: PRESET_TYPES, schema: PARAM_SCHEMA, default: DEFAULT_PRESET, active: (r && r.preset) || null,
+    torchTypes: TORCH_TYPES, torchSchema: TORCH_SCHEMA, torchDefault: DEFAULT_TORCH, torchActive: (r && r.torch) || null,
+  };
+});
+app.get('/api/console/playlist', (req, reply) => {
+  const room = consoleRoom(req, reply); if (!room) return;
+  const d = readValidatedDefaults();
+  return { tracks: listPublicTracks(), defaults: { default_track_id: d.default_track_id || null, screen: d.screen || null, torch: d.torch || null, allow_torch: d.allow_torch, brand_name: d.brand_name } };
+});
+app.post('/api/console/preset', (req, reply) => {
+  const room = consoleRoom(req, reply); if (!room) return;
+  const channel = (req.body && req.body.channel) === 'torch' ? 'torch' : 'screen';
+  const type = String((req.body && req.body.type) || '');
+  const params = (req.body && req.body.params) || {};
+  const v = channel === 'torch' ? validateTorchPreset(type, params) : validatePreset(type, params);
+  if (!v.ok) return reply.code(400).send({ error: v.error });
+  return hub.setPreset(room, v, channel);
+});
+app.post('/api/console/preset/param', (req, reply) => {
+  const room = consoleRoom(req, reply); if (!room) return;
+  const channel = (req.body && req.body.channel) === 'torch' ? 'torch' : 'screen';
+  const r = hub.rooms.get(room);
+  const active = r ? (channel === 'torch' ? r.torch : r.preset) : null;
+  if (!active) return reply.code(409).send({ error: 'no active preset' });
+  const v = channel === 'torch'
+    ? validateTorchParam(active.type, String((req.body && req.body.key) || ''), (req.body && req.body.value))
+    : validateParam(active.type, String((req.body && req.body.key) || ''), (req.body && req.body.value));
+  if (!v.ok) return reply.code(400).send({ error: v.error });
+  return hub.setParam(room, v.key, v.value, channel);
+});
+// PUBLIC console may ONLY arm a curated is_public track (never a private one).
+app.post('/api/console/arm', (req, reply) => {
+  const room = consoleRoom(req, reply); if (!room) return;
+  const trackId = Number((req.body && req.body.trackId));
+  const t = db.prepare("SELECT id FROM track WHERE id=? AND is_public=1 AND analysis_status='done' AND timeline_path IS NOT NULL").get(trackId);
+  if (!t) return reply.code(403).send({ error: 'not a public track' });
+  return hub.arm(trackId, { keepPreset: !!(req.body && req.body.keepPreset) }, room);
+});
+app.post('/api/console/go', (req, reply) => { const room = consoleRoom(req, reply); if (!room) return; return hub.go(serverClock() + config.startLeadMs, room); });
+app.post('/api/console/pause', (req, reply) => { const room = consoleRoom(req, reply); if (!room) return; return hub.pause(room); });
+app.post('/api/console/resume', (req, reply) => { const room = consoleRoom(req, reply); if (!room) return; return hub.resume(room); });
+app.post('/api/console/stop', (req, reply) => { const room = consoleRoom(req, reply); if (!room) return; return hub.stop(room); });
+app.post('/api/console/blackout', (req, reply) => { const room = consoleRoom(req, reply); if (!room) return; return hub.blackout(room); });
+app.get('/api/console/qr', async (req, reply) => {
+  const room = consoleRoom(req, reply); if (!room) return;
+  const png = await QRCode.toBuffer(`${config.publicBaseUrl || ''}/join?room=${room}`, { width: 600, margin: 2 });
+  return reply.type('image/png').send(png);
+});
+// Console-side synced audio: serve a CURATED (is_public) track's audio only, rate-limited.
+// No private track can be enumerated; not a general file host.
+app.get('/api/console/audio/:id', { config: { rateLimit: { max: 60, timeWindow: '1 minute' } } }, (req, reply) => {
+  const room = consoleRoom(req, reply); if (!room) return;
+  const t = db.prepare('SELECT * FROM track WHERE id=? AND is_public=1').get(Number(req.params.id));
+  if (!t || !t.file_path || !fs.existsSync(t.file_path)) return reply.code(404).send({ error: 'no audio' });
+  reply.header('Accept-Ranges', 'bytes').header('Cache-Control', 'public, max-age=3600');
+  return reply.type('application/octet-stream').send(fs.createReadStream(t.file_path));
 });
 
 // ---- per-phone synchronized audio: serve ONLY the currently-armed track, no auth,
@@ -229,11 +376,8 @@ app.get('/operator', (req, reply) => {
     return reply.code(401).header('WWW-Authenticate', 'Basic realm="Crowd Light Show operator"').type('text/html')
       .send('<h1>401</h1><p>Operator console — authentication required.</p>');
   }
-  const token = issueToken('operator');
-  let html = fs.readFileSync(path.join(config.publicDir, 'operator.html'), 'utf8');
-  html = html.replace('@@OPTOKEN@@', token);
-  html = html.replaceAll('@@LEAD@@', String(config.startLeadMs)); // single source of truth for the GO lead
-  return reply.type('text/html').send(html);
+  // Round 9: the SAME operator component, parameterized by a personal session.
+  return reply.type('text/html').send(renderConsole(personalSession(issueToken('operator'))));
 });
 
 app.post('/api/login', async (req, reply) => {
@@ -332,6 +476,55 @@ app.post('/api/operator/track/:id/attest', (req, reply) => {
   if (!requireOperator(req, reply)) return;
   db.prepare('UPDATE track SET license_attested=1 WHERE id=?').run(Number(req.params.id));
   return { ok: true };
+});
+
+// Round 9 — Andrii curates a track into the PUBLIC playlist. Flipping is_public=1 requires
+// the track to be analyzed AND licence-attested (he holds the rights to play it publicly).
+app.post('/api/operator/track/:id/public', (req, reply) => {
+  if (!requireOperator(req, reply)) return;
+  const id = Number(req.params.id);
+  const on = !!(req.body && req.body.is_public);
+  if (on) {
+    const t = db.prepare('SELECT analysis_status, license_attested FROM track WHERE id=?').get(id);
+    if (!t || t.analysis_status !== 'done' || !t.license_attested) return reply.code(409).send({ error: 'analyze + attest the licence before making a track public' });
+  }
+  db.prepare('UPDATE track SET is_public=? WHERE id=?').run(on ? 1 : 0, id);
+  return { ok: true, is_public: on ? 1 : 0 };
+});
+
+// Round 9 — Andrii sets the PUBLIC console defaults from his OWN authed console. Read-only
+// to the public side; every preset is validated on write so a bad default can't be stored.
+app.get('/api/operator/public-config', (req, reply) => {
+  if (!requireOperator(req, reply)) return;
+  return { config: getPublicConfig(), publicTracks: listPublicTracks(), uploadEnabled: config.publicUploadEnabled };
+});
+app.post('/api/operator/public-config', (req, reply) => {
+  if (!requireOperator(req, reply)) return;
+  const b = req.body || {};
+  const set = {};
+  if (b.brand_name != null) set.brand_name = String(b.brand_name).slice(0, 80) || 'Crowd Light Show';
+  if (b.welcome_text != null) set.welcome_text = String(b.welcome_text).slice(0, 300);
+  if (b.allow_torch != null) set.allow_torch = b.allow_torch ? 1 : 0;
+  if (b.allow_upload != null) set.allow_upload = b.allow_upload ? 1 : 0;
+  if (b.default_screen_preset != null) {
+    const v = validatePreset(String(b.default_screen_preset), b.default_screen_params || {});
+    if (!v.ok) return reply.code(400).send({ error: 'screen default: ' + v.error });
+    set.default_screen_preset = v.type; set.default_screen_params = JSON.stringify(v.params);
+  }
+  if (b.default_torch_preset != null) {
+    const v = validateTorchPreset(String(b.default_torch_preset), b.default_torch_params || {});
+    if (!v.ok) return reply.code(400).send({ error: 'torch default: ' + v.error });
+    set.default_torch_preset = v.type; set.default_torch_params = JSON.stringify(v.params);
+  }
+  if (b.default_track_id != null) {
+    const id = Number(b.default_track_id);
+    if (id) { const t = db.prepare("SELECT id FROM track WHERE id=? AND is_public=1 AND analysis_status='done'").get(id); if (!t) return reply.code(400).send({ error: 'default track must be a public, analyzed track' }); set.default_track_id = id; }
+    else set.default_track_id = null;
+  }
+  set.updated_at = now();
+  const keys = Object.keys(set);
+  if (keys.length) db.prepare(`UPDATE public_config SET ${keys.map((k) => k + '=?').join(', ')} WHERE id = 1`).run(...keys.map((k) => set[k]));
+  return { ok: true, config: getPublicConfig() };
 });
 
 app.post('/api/operator/nudge', (req, reply) => {
