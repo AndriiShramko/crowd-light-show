@@ -138,7 +138,12 @@
     };
     ws.onmessage = function (ev) { var m; try { m = JSON.parse(ev.data); } catch (e) { return; }
       if (m.t === 'sync') { clock.onReply(m.c0, m.s1); if (clock.ready && curState === 'idle') renderState({ status: curState }); return; }
-      if (m.t === 'count') { $('count').textContent = m.audience; $('countBig').textContent = m.audience; return; }
+      if (m.t === 'count') {
+        $('count').textContent = m.audience; $('countBig').textContent = m.audience;
+        var ts = $('torchSplit');
+        if (ts) ts.textContent = 'Flash reach: ' + (m.torchCapable || 0) + ' Android (camera-LED) · ' + (m.screenOnly || 0) + ' iPhone/other (screen-only)';
+        return;
+      }
       if (m.t === 'state') { renderState(m.state); return; }
     };
     ws.onclose = function () { $('conn').textContent = 'offline — retrying'; setTimeout(connect, 1500); };
@@ -273,9 +278,100 @@
       var off = document.createElement('button'); off.style.width = 'auto'; off.className = 'ghost'; off.textContent = '■ Off'; off.setAttribute('data-preset', 'off'); box.appendChild(off);
       if (d.active && d.active.type && d.active.type !== 'off') { activeType = d.active.type; activeParams = Object.assign({}, d.active.params); renderParams(); pvReset(); pvShow(true); }
       highlightPreset();
+      setupTorch(d);   // round 8B: the autonomous torch channel
     });
   }
   if ($('presetBtns')) $('presetBtns').addEventListener('click', function (e) { var t = e.target.getAttribute('data-preset'); if (t) pickPreset(t); });
+
+  // ======================= TORCH channel (round 8B) — operator UI =======================
+  // A second, fully independent channel: own preset buttons, own reactivity sliders, own
+  // safety-governed preview. Sends to /api/operator/preset with channel:'torch' so it never
+  // touches the screen channel above.
+  var torchSchema = null, activeTorch = null, activeTorchParams = {};
+  function torchDefParams(type) { var o = {}, ps = (torchSchema[type] && torchSchema[type].params) || {}; for (var k in ps) o[k] = ps[k].def; return o; }
+  function highlightTorch() {
+    Array.prototype.forEach.call($('torchBtns').querySelectorAll('button'), function (b) {
+      var t = b.getAttribute('data-torch'); b.className = (t === (activeTorch || 'off')) ? 'primary' : (t === 'off' ? 'ghost' : '');
+    });
+  }
+  function setupTorch(d) {
+    torchSchema = d.torchSchema || {};
+    var box = $('torchBtns'); if (!box) return; box.innerHTML = '';
+    (d.torchTypes || []).forEach(function (type) {
+      if (type === 'off') return;
+      var b = document.createElement('button'); b.style.width = 'auto'; b.textContent = (torchSchema[type] && torchSchema[type].label) || type; b.setAttribute('data-torch', type); box.appendChild(b);
+    });
+    var off = document.createElement('button'); off.style.width = 'auto'; off.className = 'ghost'; off.textContent = '■ Off'; off.setAttribute('data-torch', 'off'); box.appendChild(off);
+    if (d.torchActive && d.torchActive.type && d.torchActive.type !== 'off') {
+      activeTorch = d.torchActive.type; activeTorchParams = Object.assign({}, d.torchActive.params); renderTorchParams(); tpvReset(); tpvShow(true);
+    }
+    highlightTorch();
+  }
+  function renderTorchParams() {
+    var wrap = $('torchParams'); wrap.innerHTML = '';
+    if (!activeTorch || !torchSchema[activeTorch]) return;
+    var ps = torchSchema[activeTorch].params;
+    Object.keys(ps).forEach(function (k) {
+      var spec = ps[k];
+      var row = document.createElement('div'); row.className = 'nudge';
+      var lab = document.createElement('span'); lab.textContent = spec.label; lab.style.minWidth = '110px';
+      var inp = document.createElement('input'); inp.type = 'range'; inp.min = spec.min; inp.max = spec.max; inp.step = spec.step;
+      inp.value = activeTorchParams[k] != null ? activeTorchParams[k] : spec.def;
+      var val = document.createElement('span'); val.textContent = inp.value; val.style.minWidth = '52px';
+      inp.addEventListener('input', function () { val.textContent = inp.value; activeTorchParams[k] = Number(inp.value); sendTorchParam(k, Number(inp.value)); });
+      row.appendChild(lab); row.appendChild(inp); row.appendChild(val); wrap.appendChild(row);
+    });
+  }
+  var torchParamTimer = null, pendingTorch = {};
+  function sendTorchParam(k, v) {
+    if (window.__opTorchPreview) window.__opTorchPreview.changeSeq++;
+    pendingTorch[k] = v; if (torchParamTimer) return;
+    torchParamTimer = setTimeout(function () {
+      var pp = pendingTorch; pendingTorch = {}; torchParamTimer = null;
+      Object.keys(pp).forEach(function (key) {
+        api('/api/operator/preset/param', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ channel: 'torch', key: key, value: pp[key] }) });
+      });
+    }, 80);
+  }
+  function pickTorch(type) {
+    if (type === 'off') {
+      activeTorch = null; $('torchParams').innerHTML = ''; highlightTorch();
+      if (window.__opTorchPreview) window.__opTorchPreview.type = null; tpvShow(false);
+      api('/api/operator/preset', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ channel: 'torch', type: 'off' }) });
+      $('torchMsg').textContent = 'Flash off.'; return;
+    }
+    activeTorch = type; activeTorchParams = torchDefParams(type); renderTorchParams(); highlightTorch(); tpvReset(); tpvShow(true);
+    api('/api/operator/preset', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ channel: 'torch', type: type, params: activeTorchParams }) })
+      .then(function (r) { return r.json(); })
+      .then(function (j) { $('torchMsg').textContent = j.ok ? ('⚡ LIVE flash: ' + (torchSchema[type].label || type) + ' — epoch ' + j.epoch) : ('Error: ' + (j.error || '')); });
+  }
+  if ($('torchBtns')) $('torchBtns').addEventListener('click', function (e) { var t = e.target.getAttribute('data-torch'); if (t) pickTorch(t); });
+
+  // torch preview: a governed on/off filmstrip (CLS_PRESETS.TORCH_PRESETS + makeTorchGate),
+  // driven by a synthetic loudness so 'beat' is visible without a track. Never shows >3/s.
+  var TPV = window.CLS_PRESETS, tpvCanvas = $('torchPreview'), tpvCtx = tpvCanvas ? tpvCanvas.getContext('2d') : null;
+  var tpvGate = null, tpvT0 = null, tpvLast = 0;
+  window.__opTorchPreview = { ready: !!(TPV && TPV.TORCH_PRESETS), type: null, frames: 0, changeSeq: 0, onFrac: 0, flashesPerSec: 0, _on: 0, _onCount: 0, cross: [], _prev: 0 };
+  function tpvReset() { var p = window.__opTorchPreview; p.frames = 0; p._onCount = 0; p.cross = []; p._prev = 0; p.changeSeq++; tpvGate = (TPV && TPV.makeTorchGate) ? TPV.makeTorchGate(1000 / 2.8) : null; tpvT0 = null; if (tpvCtx && tpvCanvas.width) tpvCtx.clearRect(0, 0, tpvCanvas.width, tpvCanvas.height); }
+  function tpvShow(on) { var w = $('torchPreviewWrap'); if (w) w.className = on ? '' : 'hidden'; }
+  function tpvFrame(now) {
+    requestAnimationFrame(tpvFrame);
+    if (!tpvCtx || !TPV || !TPV.TORCH_PRESETS || !activeTorch || !torchSchema || !torchSchema[activeTorch]) return;
+    if (!tpvCanvas.width || tpvCanvas.width < 8) { tpvCanvas.width = tpvCanvas.clientWidth || 320; tpvCanvas.height = 40; }
+    if (tpvT0 == null) { tpvT0 = now; tpvLast = now; }
+    var ms = now - tpvT0, dt = Math.max(1, now - tpvLast); tpvLast = now;
+    var intensity = TPV.TORCH_PRESETS[activeTorch](ms, activeTorchParams, 0, 1, simLoudness(ms));
+    var on = tpvGate ? tpvGate(intensity >= 0.5, dt) : (intensity >= 0.5 ? 1 : 0);
+    var w = tpvCanvas.width, h = tpvCanvas.height, col = 3;
+    try { var img = tpvCtx.getImageData(col, 0, w - col, h); tpvCtx.putImageData(img, 0, 0); } catch (e) {}
+    tpvCtx.fillStyle = on ? '#ffe9a8' : '#0a0a0a'; tpvCtx.fillRect(w - col, 0, col, h);   // warm = LED on
+    var pv = window.__opTorchPreview; pv.frames++; pv.type = activeTorch;
+    if (on) pv._onCount++; pv.onFrac = pv._onCount / pv.frames;
+    if (on && !pv._prev) pv.cross.push(ms); pv._prev = on;
+    while (pv.cross.length && ms - pv.cross[0] > 1000) pv.cross.shift();
+    pv.flashesPerSec = pv.cross.length;
+  }
+  requestAnimationFrame(tpvFrame);
 
   connect(); loadState(); loadApps(); loadPresets(); setInterval(loadState, 8000); setInterval(loadApps, 20000);
 })();

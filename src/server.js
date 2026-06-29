@@ -15,6 +15,7 @@ import { compileFromEnvelope } from './compiler.js';
 import { hub, serverClock } from './show.js';
 import { notifyTelegram } from './notify.js';
 import { validatePreset, validateParam, PARAM_SCHEMA, PRESET_TYPES, DEFAULT_PRESET } from './presets.js';
+import { validateTorchPreset, validateTorchParam, TORCH_SCHEMA, TORCH_TYPES, DEFAULT_TORCH } from './presets.js';
 
 // A built-in, always-looping demo light show so anyone can try it with zero setup
 // (the "Try it" QR / /join?demo=1). Synthetic, safety-clamped, ~24s loop.
@@ -339,24 +340,36 @@ app.post('/api/operator/blackout', (req, reply) => { if (!requireOperator(req, r
 // Catalog + param schema for the console/studio UI.
 app.get('/api/operator/presets', (req, reply) => {
   if (!requireOperator(req, reply)) return;
-  return { types: PRESET_TYPES, schema: PARAM_SCHEMA, default: DEFAULT_PRESET, active: hub.preset };
+  return {
+    types: PRESET_TYPES, schema: PARAM_SCHEMA, default: DEFAULT_PRESET, active: hub.preset,
+    // round 8B — autonomous torch channel catalog + its active preset
+    torchTypes: TORCH_TYPES, torchSchema: TORCH_SCHEMA, torchDefault: DEFAULT_TORCH, torchActive: hub.torchPreset,
+  };
 });
-// Switch preset (epoch++ -> instant flip on the next frame, all phones in sync).
+// Switch preset on a channel ('screen' default | 'torch') — epoch++ -> instant flip, all in sync.
 app.post('/api/operator/preset', (req, reply) => {
   if (!requireOperator(req, reply)) return;
   if (!config.studioEnabled) return reply.code(503).send({ error: 'studio disabled' });
-  const v = validatePreset(String((req.body && req.body.type) || ''), (req.body && req.body.params) || {});
+  const channel = (req.body && req.body.channel) === 'torch' ? 'torch' : 'screen';
+  const type = String((req.body && req.body.type) || '');
+  const params = (req.body && req.body.params) || {};
+  const v = channel === 'torch' ? validateTorchPreset(type, params) : validatePreset(type, params);
   if (!v.ok) return reply.code(400).send({ error: v.error });
-  return hub.setPreset('main', v); // -> { ok, epoch }
+  return hub.setPreset('main', v, channel); // -> { ok, epoch }
 });
-// Live param tweak — morph WITHOUT restarting the preset (epoch/phase preserved).
+// Live param tweak on a channel — morph WITHOUT restarting the preset (epoch/phase preserved).
 app.post('/api/operator/preset/param', (req, reply) => {
   if (!requireOperator(req, reply)) return;
   if (!config.studioEnabled) return reply.code(503).send({ error: 'studio disabled' });
-  if (!hub.preset) return reply.code(409).send({ error: 'no active preset' });
-  const v = validateParam(hub.preset.type, String((req.body && req.body.key) || ''), (req.body && req.body.value));
+  const channel = (req.body && req.body.channel) === 'torch' ? 'torch' : 'screen';
+  const active = channel === 'torch' ? hub.torchPreset : hub.preset;
+  if (!active) return reply.code(409).send({ error: 'no active preset' });
+  const key = String((req.body && req.body.key) || '');
+  const v = channel === 'torch'
+    ? validateTorchParam(active.type, key, (req.body && req.body.value))
+    : validateParam(active.type, key, (req.body && req.body.value));
   if (!v.ok) return reply.code(400).send({ error: v.error });
-  return hub.setParam('main', v.key, v.value);
+  return hub.setParam('main', v.key, v.value, channel);
 });
 
 app.get('/api/operator/applications', (req, reply) => {

@@ -9,7 +9,7 @@ import vm from 'node:vm';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { PRESETS as S, clampColor as clampS, PARAM_SCHEMA } from '../src/presets.js';
+import { PRESETS as S, clampColor as clampS, PARAM_SCHEMA, TORCH_PRESETS as TS, TORCH_SCHEMA as TSCHEMA } from '../src/presets.js';
 
 const dir = path.dirname(fileURLToPath(import.meta.url));
 const code = fs.readFileSync(path.join(dir, '..', 'public', 'presets.js'), 'utf8');
@@ -87,6 +87,37 @@ test('audioDepth=0 reproduces the autonomous output exactly (any gain/floor/gamm
       }
     }
   }
+});
+
+test('TORCH_PRESETS identical (server vs browser) across params + level + index (round 8B)', () => {
+  const tdefs = (type) => { const o = {}; for (const [k, s] of Object.entries(TSCHEMA[type].params)) o[k] = s.def; return o; };
+  assert.ok(B.TORCH_PRESETS, 'no browser TORCH_PRESETS');
+  let checked = 0;
+  for (const type of Object.keys(TSCHEMA)) {
+    assert.ok(B.TORCH_PRESETS[type], 'missing browser torch ' + type);
+    const variants = [tdefs(type)];
+    if (type === 'strobe' || type === 'sparkle') { variants.push({ ...tdefs(type), rate: 2.8, duty: 0.6 }, { ...tdefs(type), rate: 0.5, duty: 0.1 }); }
+    if (type === 'beat') { variants.push({ torchDepth: 1, torchGain: 6, torchFloor: 0, torchGamma: 0.4 }, { torchDepth: 0.5, torchGain: 1, torchFloor: 0.4, torchGamma: 1.6 }, { torchDepth: 0 }); }
+    for (const p of variants) {
+      for (const N of [1, 12, 37]) {
+        for (const index of [0, Math.floor(N / 2), N - 1]) {
+          for (const level of [undefined, 0, 0.5, 1]) {
+            for (let pos = 0; pos <= 4000; pos += 211) {
+              const a = Number(S && TS[type](pos, p, index, N, level));
+              const b = Number(B.TORCH_PRESETS[type](pos, p, index, N, level));
+              assert.equal(b, a, `torch ${type} N=${N} idx=${index} level=${level} pos=${pos}: ${b} != ${a}`);
+              checked++;
+            }
+          }
+        }
+      }
+    }
+  }
+  assert.ok(checked > 2000, 'checked ' + checked);
+});
+
+test('TORCH_SCHEMA identical (server vs browser)', () => {
+  assert.deepEqual(JSON.parse(JSON.stringify(B.TORCH_SCHEMA)), JSON.parse(JSON.stringify(TSCHEMA)), 'torch schema drift');
 });
 
 test('clampColor identical on tricky colours', () => {

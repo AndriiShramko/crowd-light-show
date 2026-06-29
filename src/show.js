@@ -116,6 +116,7 @@ export class ShowHub {
       // Late/joining client: hand it the full picture so it can run offline & in-sync.
       this.send(ws, { t: 'welcome', state: this.publicState(), serverTime: serverClock() });
       if (this.preset) this.send(ws, { t: 'preset', ...this.preset });
+      if (this.torchPreset) this.send(ws, { t: 'preset', ...this.torchPreset }); // autonomous torch channel
       if (this.state.trackId != null) {
         const tl = this.loadTimeline(this.state.trackId);
         if (tl) this.send(ws, { t: 'timeline', trackId: this.state.trackId, data: tl });
@@ -149,42 +150,49 @@ export class ShowHub {
     }
   }
 
-  // ---- live parametric presets (studio channel) ----
-  // `valid` must already have passed validatePreset (server-authoritative safety).
-  setPreset(roomId, valid) {
+  // ---- live parametric presets — TWO autonomous channels: 'screen' and 'torch' (round 8B) ----
+  // `valid` must already have passed validatePreset/validateTorchPreset (server-authoritative
+  // safety). The torch channel is operator/main-room only (guest demo rooms are screen-only).
+  setPreset(roomId, valid, channel) {
+    channel = channel === 'torch' ? 'torch' : 'screen';
     const startedAt = serverClock();
     if (!roomId || roomId === MAIN_ROOM) {
-      const epoch = (this.preset ? this.preset.epoch : 0) + 1;
-      this.preset = { type: valid.type, params: valid.params, epoch, startedAt };
-      this.broadcastAudience({ t: 'preset', ...this.preset });
+      const cur = channel === 'torch' ? this.torchPreset : this.preset;
+      const epoch = (cur ? cur.epoch : 0) + 1;
+      const next = { channel, type: valid.type, params: valid.params, epoch, startedAt };
+      if (channel === 'torch') this.torchPreset = next; else this.preset = next;
+      this.broadcastAudience({ t: 'preset', ...next });
       this.broadcastState();
       return { ok: true, epoch };
     }
-    const r = this.getRoom(roomId, true);
+    const r = this.getRoom(roomId, true);   // guest demo room: screen only
     const epoch = (r.preset ? r.preset.epoch : 0) + 1;
-    r.preset = { type: valid.type, params: valid.params, epoch, startedAt };
+    r.preset = { channel: 'screen', type: valid.type, params: valid.params, epoch, startedAt };
     for (const ws of r.members) this.send(ws, { t: 'preset', ...r.preset });
     return { ok: true, epoch, members: r.members.size };
   }
 
   // A single param tweak: morph WITHOUT bumping epoch/startedAt (phase preserved).
-  setParam(roomId, key, value) {
+  setParam(roomId, key, value, channel) {
+    channel = channel === 'torch' ? 'torch' : 'screen';
     const r = (!roomId || roomId === MAIN_ROOM) ? null : this.getRoom(roomId, false);
-    const preset = r ? r.preset : this.preset;
+    const preset = r ? r.preset : (channel === 'torch' ? this.torchPreset : this.preset);
     if (!preset) return { ok: false, error: 'no active preset' };
     preset.params[key] = value;
-    const msg = { t: 'paramUpdate', epoch: preset.epoch, key, value };
+    const msg = { t: 'paramUpdate', channel, epoch: preset.epoch, key, value };
     if (r) { for (const ws of r.members) this.send(ws, msg); }
     else this.broadcastAudience(msg);
     return { ok: true, epoch: preset.epoch };
   }
 
-  // Drop the main-room preset (back to timeline/idle). Used when a timeline is armed.
-  clearPreset() {
-    if (!this.preset) return;
-    const epoch = this.preset.epoch + 1;
-    this.preset = null;
-    this.broadcastAudience({ t: 'preset', type: 'off', params: {}, epoch, startedAt: serverClock() });
+  // Drop a channel's main-room preset (back to timeline/idle). Used when a timeline is armed (screen).
+  clearPreset(channel) {
+    channel = channel === 'torch' ? 'torch' : 'screen';
+    const cur = channel === 'torch' ? this.torchPreset : this.preset;
+    if (!cur) return;
+    const epoch = cur.epoch + 1;
+    if (channel === 'torch') this.torchPreset = null; else this.preset = null;
+    this.broadcastAudience({ t: 'preset', channel, type: 'off', params: {}, epoch, startedAt: serverClock() });
   }
 
   // Auto-stop the show when the track finishes, so phones don't keep flashing after
@@ -207,7 +215,11 @@ export class ShowHub {
   removeOperator(ws) { this.operators.delete(ws); }
 
   broadcastCount() {
-    this.broadcastOperators({ t: 'count', audience: this.audience.size, operators: this.operators.size });
+    // Torch capability split (round 8B): Android phones can drive the camera LED; iOS/other are
+    // screen-only (no web torch API). Lets the operator see how many torches will actually fire.
+    let torchCapable = 0, screenOnly = 0;
+    for (const ws of this.audience) { if (ws.platform === 'android') torchCapable++; else screenOnly++; }
+    this.broadcastOperators({ t: 'count', audience: this.audience.size, operators: this.operators.size, torchCapable, screenOnly });
   }
 
   publicState() {
@@ -279,7 +291,7 @@ export class ShowHub {
 
   stop() {
     this.cancelEnd();
-    this.preset = null; // STOP also kills any live preset (it must not keep flashing)
+    this.preset = null; this.torchPreset = null; // STOP kills BOTH channels (no screen or torch flashing)
     this.state.epoch++;
     this.state.status = 'idle';
     this.state.T0 = null;
@@ -292,7 +304,7 @@ export class ShowHub {
   blackout() {
     // Immediate, all-dark, highest-priority. Separate from audience opt-out.
     this.cancelEnd();
-    this.preset = null; // BLACKOUT kills the preset too (all dark, nothing renders)
+    this.preset = null; this.torchPreset = null; // BLACKOUT kills screen AND torch (all dark)
     this.state.epoch++;
     this.state.status = 'blackout';
     this.state.T0 = null;

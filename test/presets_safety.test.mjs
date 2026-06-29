@@ -8,6 +8,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { validatePreset, validateParam, simulate, PRESETS, clampColor, relLum, PARAM_SCHEMA, PRESET_TYPES } from '../src/presets.js';
+import { TORCH_PRESETS, TORCH_SCHEMA, TORCH_TYPES, validateTorchPreset, validateTorchParam, simulateTorch, normalizeTorchParams } from '../src/presets.js';
 import { compileFromEnvelope, maxFlashesPerWindow } from '../src/compiler.js';
 
 // load the browser engine for makeBackstop (the on-device safety slew the phone applies)
@@ -141,4 +142,91 @@ test('validatePreset rejects unknown; off is allowed; validateParam clamps', () 
   assert.equal(validateParam('pulse', 'bpm', -50).value, 30);   // clamped to min
   assert.equal(validateParam('pulse', 'nope', 1).ok, false);
   assert.equal(validateParam('color_waves', 'dir', -3).value, -1);
+});
+
+// ---- TORCH channel safety (round 8B): the camera-LED flash is a STRONGER trigger than the
+// screen, so it is independently capped <=3 flashes/s (rate cap + on-device makeTorchGate). ----
+function torchEdges(onSeries) { // count ON-edges per 1000ms window over a [{ms,on}] series
+  const edges = []; let prev = 0;
+  for (const s of onSeries) { if (s.on && !prev) edges.push(s.ms); prev = s.on; }
+  let j = 0, w = 0; for (let i = 0; i < edges.length; i++) { while (edges[i] - edges[j] >= 1000) j++; w = Math.max(w, i - j + 1); }
+  return w;
+}
+test('every torch preset at DEFAULT params is <=3 flashes/s (structural rate cap)', () => {
+  for (const type of TORCH_TYPES) {
+    const v = validateTorchPreset(type, {});
+    assert.ok(v.ok, type + ' rejected at defaults');
+    assert.ok(simulateTorch(v.type, v.params, 24).maxFlashesPerWindow <= 3, type + ' torch sim >3/s');
+  }
+});
+test('pathological torch params clamp to safe (rate/duty bounded, never strobe >3/s)', () => {
+  const attacks = [
+    { type: 'strobe', params: { rate: 999, duty: 9 } },
+    { type: 'sparkle', params: { rate: 999, duty: 9 } },
+    { type: 'beat', params: { torchDepth: 9, torchGain: 99, torchFloor: -3, torchGamma: 99 } },
+  ];
+  for (const a of attacks) {
+    const v = validateTorchPreset(a.type, a.params);
+    assert.ok(v.ok, a.type + ' should clamp, not fail');
+    assert.ok(simulateTorch(v.type, v.params, 24).maxFlashesPerWindow <= 3, a.type + ' torch >3/s after clamp');
+    for (const [k, val] of Object.entries(v.params)) {
+      const spec = TORCH_SCHEMA[a.type].params[k];
+      assert.ok(val >= spec.min && val <= spec.max, `${a.type}.${k}=${val} out of [${spec.min},${spec.max}]`);
+    }
+  }
+});
+test('torch on a BEAT-HEAVY track stays <=3 flashes/s through the on-device gate (rendered pipeline)', () => {
+  // governed loudness already <=3/s (from the screen safety fixture), driving the reactive 'beat'
+  // torch at MAX strength; the makeTorchGate is the hard per-phone guarantee.
+  const env = [];
+  for (let t = 0; t <= 8000; t += 20) env.push({ t, rms: (Math.floor(t / 120) % 2) === 0 ? 0.95 : 0.05 });
+  const cues = compileFromEnvelope(env, { durationMs: 8000 });
+  const torchConfigs = [
+    { type: 'beat', params: { torchDepth: 1, torchGain: 6, torchFloor: 0, torchGamma: 0.4 } },
+    { type: 'beat', params: { torchDepth: 1, torchGain: 6, torchFloor: 0.5, torchGamma: 1.6 } },
+    { type: 'strobe', params: { rate: 2.8, duty: 0.6 } },
+    { type: 'sparkle', params: { rate: 2.8, duty: 0.6 } },
+  ];
+  for (const tc of torchConfigs) {
+    const v = validateTorchPreset(tc.type, tc.params); assert.ok(v.ok);
+    for (const idx of [0, 6, 11]) {
+      const gate = CLS.makeTorchGate(1000 / 2.8);
+      const series = [];
+      for (let ms = 0; ms <= 8000; ms += 16) {
+        const level = sampleB(cues, ms);
+        const intensity = CLS.TORCH_PRESETS[v.type](ms, v.params, idx, 12, level);
+        const on = gate(intensity >= 0.5, 16) ? 1 : 0;          // exactly what the phone drives to the LED
+        series.push({ ms, on });
+      }
+      assert.ok(torchEdges(series) <= 3, `${tc.type} ${JSON.stringify(tc.params)} idx=${idx}: ${torchEdges(series)} torch flashes/s`);
+    }
+  }
+});
+test('screen + torch capped INDEPENDENTLY and TOGETHER on the same beat-heavy track', () => {
+  const env = [];
+  for (let t = 0; t <= 6000; t += 20) env.push({ t, rms: (Math.floor(t / 120) % 2) === 0 ? 0.95 : 0.05 });
+  const cues = compileFromEnvelope(env, { durationMs: 6000 });
+  const sv = validatePreset('pulse', { audioDepth: 1, audioGain: 6, audioFloor: 0, audioGamma: 0.4, bpm: 180 });
+  const tv = validateTorchPreset('beat', { torchDepth: 1, torchGain: 6, torchFloor: 0, torchGamma: 0.4 });
+  const back = CLS.makeBackstop(150), gate = CLS.makeTorchGate(1000 / 2.8);
+  const sCross = []; let armed = true; const tSeries = [];
+  for (let ms = 0; ms <= 6000; ms += 16) {
+    const level = sampleB(cues, ms);
+    let rgb = back(clampColor(PRESETS.pulse(ms, sv.params, 6, 12, level)), 16);
+    const L = relLum(rgb); if (L < LOW) armed = true; else if (L >= HIGH && armed) { sCross.push(ms); armed = false; }
+    const on = gate(CLS.TORCH_PRESETS.beat(ms, tv.params, 6, 12, level) >= 0.5, 16) ? 1 : 0;
+    tSeries.push({ ms, on });
+  }
+  let j = 0, sw = 0; for (let i = 0; i < sCross.length; i++) { while (sCross[i] - sCross[j] >= 1000) j++; sw = Math.max(sw, i - j + 1); }
+  assert.ok(sw <= 3, `screen ${sw} flashes/s while torch also active`);
+  assert.ok(torchEdges(tSeries) <= 3, `torch ${torchEdges(tSeries)} flashes/s while screen also active`);
+});
+test('torch validateTorchParam clamps to schema bounds; unknown rejected; off allowed', () => {
+  assert.equal(validateTorchPreset('off', {}).ok, true);
+  assert.equal(validateTorchPreset('nope', {}).ok, false);
+  assert.equal(validateTorchParam('strobe', 'rate', 99).value, 2.8);   // hard <=2.8Hz cap
+  assert.equal(validateTorchParam('strobe', 'rate', 0).value, 0.5);
+  assert.equal(validateTorchParam('beat', 'torchGain', 99).value, 6);
+  assert.equal(validateTorchParam('beat', 'torchDepth', -1).value, 0);
+  assert.equal(validateTorchParam('beat', 'nope', 1).ok, false);
 });

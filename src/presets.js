@@ -262,3 +262,149 @@ export function validateParam(type, key, value) {
   if (key === 'dir') v = v < 0 ? -1 : 1;
   return { ok: true, key, value: v };
 }
+
+// ======================= TORCH channel (round 8B) =======================
+// An AUTONOMOUS flash (camera-LED) channel, fully independent of the screen presets above
+// (different presets, different reactivity sliders, separate state). The torch is binary
+// (LED on/off), so a torch preset returns an INTENSITY 0..1 the phone thresholds (>=0.5) to
+// drive the LED, with its own on-device rate gate. iOS has NO web torch API -> on iPhone the
+// channel is a no-op (the screen channel is unaffected). Lives here so the parity test covers
+// it and the operator preview can render it. The flash RATE is structurally capped (rate<=2.8
+// in TORCH_SCHEMA) AND the gate (makeTorchGate) + simulateTorch enforce <=3 flashes/s.
+
+// Torch music-reactivity drive — parallel to audioDrive but with torch-prefixed knobs, so the
+// flash reactivity is tuned SEPARATELY from the screen.
+export function torchDrive(level, p) {
+  let d = p.torchDepth == null ? 0 : (p.torchDepth < 0 ? 0 : p.torchDepth > 1 ? 1 : p.torchDepth);
+  if (d === 0) return 0;
+  let lv = (typeof level === 'number' && level === level) ? level : 0;
+  lv = lv < 0 ? 0 : lv > 1 ? 1 : lv;
+  const floor = p.torchFloor == null ? 0 : (p.torchFloor < 0 ? 0 : p.torchFloor > 0.9 ? 0.9 : p.torchFloor);
+  const gain = p.torchGain == null ? 1 : (p.torchGain < 0.1 ? 0.1 : p.torchGain > 8 ? 8 : p.torchGain);
+  const gamma = p.torchGamma == null ? 1 : p.torchGamma;
+  let x = (lv - floor) / (1 - floor);
+  if (x < 0) x = 0;
+  x = x * gain; if (x > 1) x = 1;
+  if (gamma !== 1) x = Math.pow(x, gamma);
+  return d * x;
+}
+
+// deterministic hashed pseudo-random in [0,1) from an integer (no Math.random -> every phone
+// sparkles identically, in sync).
+function hash01(n) { const s = Math.sin(n * 12.9898) * 43758.5453; return s - Math.floor(s); }
+
+// Each torch preset: (positionMs, params, index, N, level) -> intensity 0..1.
+export const TORCH_PRESETS = {
+  off() { return 0; },
+  // steady square strobe at `rate` (<=2.8 Hz), `duty` = on-fraction.
+  strobe(position, p, index, N, level) {
+    return frac((position / 1000) * p.rate) < p.duty ? 1 : 0;
+  },
+  // sparse twinkle: in each 1/rate slot a hashed subset (by time + crowd index) flashes briefly.
+  sparkle(position, p, index, N, level) {
+    const t = position / 1000;
+    const slot = Math.floor(t * p.rate);
+    const u = N > 1 ? index / N : 0;
+    const h = hash01(slot * 7.13 + Math.floor(u * 997));
+    return (h < p.duty && frac(t * p.rate) < 0.5) ? 1 : 0;   // brief on
+  },
+  // reactive: the torch pulses with the music loudness (torchGain/Floor/Gamma shape it).
+  beat(position, p, index, N, level) {
+    return clamp01(torchDrive(level, p));
+  },
+};
+
+const TORCH_AUDIO = {
+  torchDepth: { min: 0, max: 1, step: 0.01, def: 0.85, label: 'Flash reactivity' },
+  torchGain: { min: 1, max: 6, step: 0.1, def: 2.5, label: 'Flash strength' },
+  torchFloor: { min: 0, max: 0.5, step: 0.01, def: 0.12, label: 'Flash floor' },
+  torchGamma: { min: 0.4, max: 1.6, step: 0.05, def: 0.8, label: 'Flash curve' },
+};
+export const TORCH_SCHEMA = {
+  off: { label: 'Off', params: {} },
+  strobe: { label: 'Strobe', params: {
+    rate: { min: 0.5, max: 2.8, step: 0.1, def: 2.0, label: 'Rate (Hz)' },   // <=2.8 => <=3 flashes/s
+    duty: { min: 0.1, max: 0.6, step: 0.05, def: 0.3, label: 'On time' },
+  } },
+  sparkle: { label: 'Sparkle', params: {
+    rate: { min: 0.5, max: 2.8, step: 0.1, def: 2.5, label: 'Rate (Hz)' },
+    duty: { min: 0.1, max: 0.6, step: 0.05, def: 0.3, label: 'Density' },
+  } },
+  beat: { label: 'Beat (reactive)', params: { ...TORCH_AUDIO } },
+};
+export const TORCH_TYPES = Object.keys(TORCH_SCHEMA);
+export const DEFAULT_TORCH = 'off';
+
+export function normalizeTorchParams(type, params) {
+  const schema = TORCH_SCHEMA[type];
+  if (!schema) return null;
+  const out = {};
+  for (const [key, spec] of Object.entries(schema.params)) {
+    let v = params && params[key] != null ? Number(params[key]) : spec.def;
+    if (!Number.isFinite(v)) v = spec.def;
+    v = Math.max(spec.min, Math.min(spec.max, v));
+    out[key] = v;
+  }
+  return out;
+}
+
+// Count binary ON-edges per 1000ms window (dual-pass over a held loudness — the varying-
+// loudness flashing is the on-device makeTorchGate's job, proven by test/presets_safety).
+export function simulateTorch(type, params, N = 12) {
+  const fn = TORCH_PRESETS[type]; if (!fn) return { maxFlashesPerWindow: 0 };
+  const idxs = N > 2 ? [0, Math.floor((N - 1) / 2), N - 1] : [0];
+  let maxFlashes = 0;
+  for (const lvl of [0, 0.5, 1]) {
+    for (const index of idxs) {
+      const edges = []; let prev = 0;
+      for (let ms = 0; ms <= 4000; ms += 10) {
+        const on = fn(ms, params, index, N, lvl) >= 0.5 ? 1 : 0;
+        if (on && !prev) edges.push(ms);
+        prev = on;
+      }
+      let j = 0, w = 0; for (let i = 0; i < edges.length; i++) { while (edges[i] - edges[j] >= 1000) j++; w = Math.max(w, i - j + 1); }
+      maxFlashes = Math.max(maxFlashes, w);
+    }
+  }
+  return { maxFlashesPerWindow: maxFlashes };
+}
+
+// Authoritative torch gate (server). Returns { ok, type, params } or { ok:false, error }.
+export function validateTorchPreset(type, rawParams) {
+  if (type === 'off') return { ok: true, type: 'off', params: {} };
+  if (!TORCH_SCHEMA[type]) return { ok: false, error: 'unknown torch preset' };
+  let params = normalizeTorchParams(type, rawParams);
+  let sim = simulateTorch(type, params, 12); let guard = 0;
+  while (sim.maxFlashesPerWindow > 3 && guard++ < 8) {
+    if (params.rate != null) params.rate = Math.max(0.5, params.rate * 0.7); else break;
+    sim = simulateTorch(type, params, 12);
+  }
+  if (sim.maxFlashesPerWindow > 3) return { ok: false, error: 'torch preset exceeds flash-rate limit' };
+  return { ok: true, type, params, sim };
+}
+
+export function validateTorchParam(type, key, value) {
+  const schema = TORCH_SCHEMA[type];
+  if (!schema || !schema.params[key]) return { ok: false, error: 'unknown torch param' };
+  const spec = schema.params[key];
+  let v = Number(value);
+  if (!Number.isFinite(v)) return { ok: false, error: 'not a number' };
+  v = Math.max(spec.min, Math.min(spec.max, v));
+  return { ok: true, key, value: v };
+}
+
+// On-device torch rate gate (the hard, per-phone guarantee): at most one ON edge per
+// minFlashGap (>=357ms => <=2.8/s, margin under the 3/s cap). Binary in/out, stateful.
+export function makeTorchGate(minFlashGap) {
+  minFlashGap = minFlashGap || (1000 / 2.8);
+  let t = 0, lastOn = -1e9, prevOn = false;
+  return function (onWanted, dtMs) {
+    dtMs = dtMs || 16; t += dtMs;
+    if (onWanted && !prevOn) {                 // requested rising edge
+      if (t - lastOn >= minFlashGap) { lastOn = t; prevOn = true; return true; }
+      return false;                            // too soon -> suppress (stay off)
+    }
+    if (!onWanted) { prevOn = false; return false; }
+    return true;                               // hold ON (steady on isn't a new flash)
+  };
+}

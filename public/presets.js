@@ -179,9 +179,73 @@
     };
   }
 
+  // ======================= TORCH channel (round 8B) — mirror of src/presets.js =======================
+  // Autonomous flash (camera-LED) channel: own presets + own reactivity knobs, independent of the
+  // screen. Binary LED: a torch preset returns intensity 0..1, the phone thresholds (>=0.5) + rate-
+  // gates it. iOS = no web torch API -> no-op (screen unaffected). Math byte-identical to the server.
+  function torchDrive(level, p) {
+    var d = p.torchDepth == null ? 0 : (p.torchDepth < 0 ? 0 : p.torchDepth > 1 ? 1 : p.torchDepth);
+    if (d === 0) return 0;
+    var lv = (typeof level === 'number' && level === level) ? level : 0;
+    lv = lv < 0 ? 0 : lv > 1 ? 1 : lv;
+    var floor = p.torchFloor == null ? 0 : (p.torchFloor < 0 ? 0 : p.torchFloor > 0.9 ? 0.9 : p.torchFloor);
+    var gain = p.torchGain == null ? 1 : (p.torchGain < 0.1 ? 0.1 : p.torchGain > 8 ? 8 : p.torchGain);
+    var gamma = p.torchGamma == null ? 1 : p.torchGamma;
+    var x = (lv - floor) / (1 - floor);
+    if (x < 0) x = 0;
+    x = x * gain; if (x > 1) x = 1;
+    if (gamma !== 1) x = Math.pow(x, gamma);
+    return d * x;
+  }
+  function hash01(n) { var s = Math.sin(n * 12.9898) * 43758.5453; return s - Math.floor(s); }
+  var TORCH_PRESETS = {
+    off: function () { return 0; },
+    strobe: function (position, p, index, N, level) { return frac((position / 1000) * p.rate) < p.duty ? 1 : 0; },
+    sparkle: function (position, p, index, N, level) {
+      var t = position / 1000, slot = Math.floor(t * p.rate), u = N > 1 ? index / N : 0;
+      var h = hash01(slot * 7.13 + Math.floor(u * 997));
+      return (h < p.duty && frac(t * p.rate) < 0.5) ? 1 : 0;
+    },
+    beat: function (position, p, index, N, level) { return clamp01(torchDrive(level, p)); },
+  };
+  var TORCH_AUDIO = {
+    torchDepth: { min: 0, max: 1, step: 0.01, def: 0.85, label: 'Flash reactivity' },
+    torchGain: { min: 1, max: 6, step: 0.1, def: 2.5, label: 'Flash strength' },
+    torchFloor: { min: 0, max: 0.5, step: 0.01, def: 0.12, label: 'Flash floor' },
+    torchGamma: { min: 0.4, max: 1.6, step: 0.05, def: 0.8, label: 'Flash curve' },
+  };
+  var TORCH_SCHEMA = {
+    off: { label: 'Off', params: {} },
+    strobe: { label: 'Strobe', params: {
+      rate: { min: 0.5, max: 2.8, step: 0.1, def: 2.0, label: 'Rate (Hz)' },
+      duty: { min: 0.1, max: 0.6, step: 0.05, def: 0.3, label: 'On time' } } },
+    sparkle: { label: 'Sparkle', params: {
+      rate: { min: 0.5, max: 2.8, step: 0.1, def: 2.5, label: 'Rate (Hz)' },
+      duty: { min: 0.1, max: 0.6, step: 0.05, def: 0.3, label: 'Density' } } },
+    beat: { label: 'Beat (reactive)', params: {
+      torchDepth: TORCH_AUDIO.torchDepth, torchGain: TORCH_AUDIO.torchGain, torchFloor: TORCH_AUDIO.torchFloor, torchGamma: TORCH_AUDIO.torchGamma } },
+  };
+  function torchDefaults(type) { var s = TORCH_SCHEMA[type]; if (!s) return {}; var o = {}; for (var k in s.params) o[k] = s.params[k].def; return o; }
+  // On-device torch rate gate: <=1 ON edge per minFlashGap (>=357ms => <=2.8/s). Binary, stateful.
+  function makeTorchGate(minFlashGap) {
+    minFlashGap = minFlashGap || (1000 / 2.8);
+    var t = 0, lastOn = -1e9, prevOn = false;
+    return function (onWanted, dtMs) {
+      dtMs = dtMs || 16; t += dtMs;
+      if (onWanted && !prevOn) {
+        if (t - lastOn >= minFlashGap) { lastOn = t; prevOn = true; return true; }
+        return false;
+      }
+      if (!onWanted) { prevOn = false; return false; }
+      return true;
+    };
+  }
+
   global.CLS_PRESETS = {
     PRESETS: PRESETS, PARAM_SCHEMA: PARAM_SCHEMA, clampColor: clampColor,
     relLum: relLum, defaults: defaults, makeBackstop: makeBackstop,
     DEFAULT_PRESET: 'pulse', TYPES: Object.keys(PARAM_SCHEMA),
+    TORCH_PRESETS: TORCH_PRESETS, TORCH_SCHEMA: TORCH_SCHEMA, torchDefaults: torchDefaults,
+    makeTorchGate: makeTorchGate, TORCH_TYPES: Object.keys(TORCH_SCHEMA), DEFAULT_TORCH: 'off',
   };
 })(typeof window !== 'undefined' ? window : this);

@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-06-29
+
+Round 8B — the torch (camera-LED flash) becomes a fully AUTONOMOUS channel, independent of the screen: its own patterns, its own reactivity sliders, its own safety-governed preview. Honest about iPhone.
+
+### Added
+
+- **Autonomous torch channel.** A second preset channel (`{t:'preset', channel:'torch'}`) with its own presets — **off / strobe / sparkle / beat (reactive)** — and its own reactivity knobs (**Flash reactivity / strength / floor / curve**), completely independent of the screen presets. Changing the torch never moves the screen and vice-versa. The torch is driven by this channel (no longer a mirror of the screen luminance).
+- **Live flash preview in the operator console** — a safety-governed on/off filmstrip of the camera-LED as you tune the torch pattern.
+- **Flash-reach split in the operator console** — how many connected phones are Android (camera-LED capable) vs iPhone/other (screen-only).
+
+### Changed
+
+- **Honest about iPhone.** iOS has no web torch API (WebKit), so on iPhone the torch channel is a **no-op** — the LED is never driven and the **screen** is the light instead, with a clear in-app note. The app never claims the flashlight works on iPhone.
+
+### Safety
+
+- The torch is an independent flashing surface, so it is **independently capped to ≤3 flashes/s** (rate cap ≤2.8 Hz in the schema + an on-device `makeTorchGate` + server `validateTorchPreset`). Screen and torch are proven ≤3/s **independently and together** at max strength on a beat-heavy track (`test/presets_safety.test.mjs`). STOP and BLACKOUT kill **both** channels. `TORCH_PRESETS` live in `presets.js` so the byte-parity test (`test/presets_parity.mjs`) covers them.
+
 ## [0.7.0] - 2026-06-29
 
 Round 8A — screen engine: waveform-restart bug fixed, much stronger (operator-tunable) music reactivity, and a live preset preview in the operator console. Screen channel only; the separate torch channel is a later round.

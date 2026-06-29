@@ -14,9 +14,11 @@
   // Live parametric preset engine (studio channel). Each phone renders the active
   // preset locally off the synced clock; switches are a tiny broadcast (epoch++).
   var P = window.CLS_PRESETS;
-  var preset = null;        // { type, params, epoch, startedAt }
+  var preset = null;        // screen channel { type, params, epoch, startedAt }
+  var torchPreset = null;   // torch channel (round 8B) — autonomous, independent of the screen
   var myIndex = 0, N = 1;   // sticky index in the crowd + grid width
   var backstop = P ? P.makeBackstop(150) : null; // client-side safety slew (defense in depth)
+  var torchGate = (P && P.makeTorchGate) ? P.makeTorchGate() : null; // torch rate cap <=2.8/s (defense in depth)
   var lastFrameT = 0;
 
   var flashEl = document.getElementById('flash');
@@ -34,6 +36,8 @@
   // here — it is the single machine-readable seam for verification.
   window.__cls = { flashes: [], lastBg: '#000', offset: 0, timeOrigin: performance.timeOrigin, status: 'idle', started: false, consented: false, everLit: false, colors: [],
     room: ROOM || 'main', idx: 0, total: 1, preset: null, presetRgb: null, presetPos: -1, presetEpoch: 0,
+    // round 8B: the two autonomous channels are independent readback seams (screen never moves the torch & vice-versa)
+    screen: { preset: null, epoch: 0 }, torch: { preset: null, epoch: 0, on: 0, intensity: 0, capable: null, startedAt: 0 },
     synced: false, degraded: false, quality: null, audio: { wanted: false, ready: false, scheduled: false } };
 
   var ws = null, clock = null, timeline = null;
@@ -44,7 +48,11 @@
   var renderRunning = false; // the rAF loop starts once and survives leave()/rejoin
 
   var isAndroid = /Android/i.test(navigator.userAgent);
+  var isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+  // iOS has NO web torch API (WebKit) -> torch impossible; Android may have it (camera LED).
   var canTryTorch = isAndroid && !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+  window.__cls.torch.capable = canTryTorch ? null : false; // false on iOS/desktop; null=unknown until probed (Android)
+  if (isIOS) window.__cls.torch.note = 'ios-screen-only';  // iPhone: torch channel is a no-op; screen is the light
   if (canTryTorch) joinTorch.classList.remove('hidden');
 
   agree.addEventListener('change', function () {
@@ -72,9 +80,11 @@
   // (plus the consent-card instruction). Skipped for headless/auto so harnesses are unaffected.
   function showBrightToast() {
     if (AUTO || !brightToast) return;
-    brightToast.textContent = i18n.t('bright_toast');
+    var msg = i18n.t('bright_toast');
+    if (isIOS) msg += ' · ' + i18n.t('ios_torch');   // honest: no web torch on iPhone — the screen is the light
+    brightToast.textContent = msg;
     brightToast.classList.remove('hidden');
-    setTimeout(function () { brightToast.classList.add('hidden'); }, 4000);
+    setTimeout(function () { brightToast.classList.add('hidden'); }, isIOS ? 6000 : 4000);
   }
   var lastStatusKey = '';
   function setStatus(key) { if (key === lastStatusKey) return; lastStatusKey = key; pill.classList.remove('hidden'); pill.textContent = i18n.t(key); }
@@ -153,17 +163,23 @@
     }
     if (m.t === 'start') { runState = { status: 'running', T0: m.T0, epoch: m.epoch, pausePos: 0 }; window.__cls.status = 'running'; window.__cls.gotStart = m.T0; prevLum = 0; flashArmed = true; if (audio && audioOn) audio.start(m.T0); setStatus('st_play'); showWave(); return; }
     if (m.t === 'pause') { runState.status = 'paused'; runState.pausePos = m.pos; window.__cls.status = 'paused'; if (audio) audio.stop(); setStatus('st_paused'); return; }
-    if (m.t === 'stop') { runState = { status: 'idle', T0: null, epoch: m.epoch, pausePos: 0 }; preset = null; window.__cls.preset = null; window.__cls.status = 'idle'; if (audio) audio.stop(); hideWave(); setStatus('st_wait'); return; }
-    if (m.t === 'blackout') { runState = { status: 'blackout', T0: null, epoch: m.epoch }; preset = null; window.__cls.preset = null; window.__cls.status = 'blackout'; if (audio) audio.stop(); hideWave(); return; }
+    if (m.t === 'stop') { runState = { status: 'idle', T0: null, epoch: m.epoch, pausePos: 0 }; preset = null; torchPreset = null; window.__cls.preset = null; window.__cls.screen.preset = null; window.__cls.torch.preset = null; window.__cls.status = 'idle'; if (audio) audio.stop(); hideWave(); setStatus('st_wait'); return; }
+    if (m.t === 'blackout') { runState = { status: 'blackout', T0: null, epoch: m.epoch }; preset = null; torchPreset = null; window.__cls.preset = null; window.__cls.screen.preset = null; window.__cls.torch.preset = null; window.__cls.status = 'blackout'; if (audio) audio.stop(); hideWave(); return; }
     // ---- studio: live parametric presets ----
     if (m.t === 'index') { myIndex = m.index | 0; N = Math.max(1, m.total | 0); window.__cls.idx = myIndex; window.__cls.total = N; return; }
     if (m.t === 'preset') {
-      if (m.type === 'off' || !P || !P.PRESETS[m.type]) { preset = null; window.__cls.preset = null; window.__cls.status = 'idle'; setStatus('st_wait'); return; }
+      if (m.channel === 'torch') {                 // round 8B: autonomous torch channel — never touches the screen
+        if (m.type === 'off' || !P || !P.TORCH_PRESETS || !P.TORCH_PRESETS[m.type]) { torchPreset = null; window.__cls.torch.preset = null; window.__cls.torch.epoch = m.epoch | 0; return; }
+        torchPreset = { type: m.type, params: m.params || (P.torchDefaults ? P.torchDefaults(m.type) : {}), epoch: m.epoch | 0, startedAt: m.startedAt };
+        window.__cls.torch.preset = m.type; window.__cls.torch.epoch = torchPreset.epoch; window.__cls.torch.startedAt = m.startedAt; return;
+      }
+      if (m.type === 'off' || !P || !P.PRESETS[m.type]) { preset = null; window.__cls.preset = null; window.__cls.screen.preset = null; window.__cls.status = 'idle'; setStatus('st_wait'); return; }
       preset = { type: m.type, params: m.params || P.defaults(m.type), epoch: m.epoch | 0, startedAt: m.startedAt };
-      window.__cls.preset = m.type; window.__cls.presetEpoch = preset.epoch; window.__cls.presetStartedAt = m.startedAt; window.__cls.status = 'running';
+      window.__cls.preset = m.type; window.__cls.screen.preset = m.type; window.__cls.screen.epoch = preset.epoch; window.__cls.presetEpoch = preset.epoch; window.__cls.presetStartedAt = m.startedAt; window.__cls.status = 'running';
       prevLum = 0; flashArmed = true; setStatus('st_play'); return;
     }
     if (m.t === 'paramUpdate') {
+      if (m.channel === 'torch') { if (torchPreset && m.epoch === torchPreset.epoch) torchPreset.params[m.key] = m.value; return; }
       if (preset && m.epoch === preset.epoch) { preset.params[m.key] = m.value; } // epoch-gated, phase preserved
       return;
     }
@@ -257,6 +273,8 @@
     window.__cls.ticks = (window.__cls.ticks || 0) + 1;
     var synced = !!(clock && clock.ready); window.__cls.synced = synced;
     var finalRgb = [0, 0, 0], flum = 0, pos = -1, playing = false, epochNow = runState.epoch;
+    var nowf = performance.now(); var dt = lastFrameT ? nowf - lastFrameT : 16; lastFrameT = nowf;
+    var musicLevel = sampleEnv();                       // governed loudness once — shared by screen + torch
 
     if (runState.status === 'blackout') {
       // operator BLACKOUT overrides everything — go dark immediately.
@@ -264,10 +282,9 @@
       // STUDIO: render the active parametric preset locally off the synced clock.
       if (synced) {
         pos = clock.serverNow() - preset.startedAt;
-        var env = sampleEnv();                          // music loudness at the synced track position
+        var env = musicLevel;                           // music loudness at the synced track position
         var raw = P.PRESETS[preset.type](pos, preset.params, myIndex, N, env.level);
         finalRgb = P.clampColor(raw);                 // safety backstop #1: no saturated red
-        var nowf = performance.now(); var dt = lastFrameT ? nowf - lastFrameT : 16; lastFrameT = nowf;
         if (backstop) finalRgb = backstop(finalRgb, dt); // safety backstop #2: >=150ms ramp / <=3 fl/s
         flum = P.relLum(finalRgb); playing = true; epochNow = preset.epoch;
         window.__cls.presetRgb = finalRgb; window.__cls.presetPos = Math.round(pos);
@@ -307,8 +324,34 @@
     }
     prevLum = flum;
     window.__cls.lastPos = Math.round(pos); window.__cls.maxLum = Math.max(window.__cls.maxLum || 0, flum);
-    driveTorch(flum);
+    driveTorchChannel(dt, synced, musicLevel.level);
     if ((++waveTick % 5) === 0) { drawWave(playing && timeline ? pos : -1); if (DIAG) updateDiag(pos); }
+  }
+
+  // ---- TORCH CHANNEL (round 8B): autonomous from the screen. Computes the torch intensity
+  // from the torch preset (off when none / on STOP / BLACKOUT), gates it to <=2.8/s, and drives
+  // the camera LED. On iOS there is no torchTrack -> applyTorch is a no-op and the screen is
+  // untouched. The torch reads the SAME governed loudness as the screen so 'beat' stays in sync.
+  function driveTorchChannel(dt, synced, level) {
+    var wantOn = false, intensity = 0;
+    if (runState.status !== 'blackout' && torchPreset && torchPreset.type && P && P.TORCH_PRESETS && P.TORCH_PRESETS[torchPreset.type] && synced) {
+      var tpos = clock.serverNow() - torchPreset.startedAt;
+      intensity = P.TORCH_PRESETS[torchPreset.type](tpos, torchPreset.params, myIndex, N, level);
+      wantOn = intensity >= 0.5;
+    }
+    var gatedOn = torchGate ? torchGate(wantOn, dt) : wantOn; // hard <=2.8/s cap, independent of the screen gate
+    window.__cls.torch.intensity = intensity; window.__cls.torch.want = gatedOn ? 1 : 0; // channel intent (gated)
+    applyTorch(gatedOn);
+  }
+  function applyTorch(on) {
+    if (!torchTrack) { window.__cls.torch.on = 0; window.__cls.torch.capable = canTryTorch ? window.__cls.torch.capable : false; return; } // iOS/no-LED: NO-OP, LED stays off, screen unaffected
+    window.__cls.torch.capable = true;
+    var nowt = performance.now();
+    if (!!on !== torchOn && nowt - lastTorchAt > 60) {   // only hit applyConstraints on a real change (it's slow)
+      torchOn = !!on; lastTorchAt = nowt;
+      torchTrack.applyConstraints({ advanced: [{ torch: torchOn }] }).catch(function () {});
+    }
+    window.__cls.torch.on = torchOn ? 1 : 0;   // ACTUAL LED state (only ever non-zero with a real torchTrack)
   }
 
   // Small per-device waveform of the track's loudness envelope + a moving playhead,
@@ -348,22 +391,15 @@
     el.textContent = 'offset ' + Math.round(clock ? clock.offset : 0) + 'ms · rtt ' + (clock ? Math.round(clock.rtt) : '?') + 'ms · n' + (clock ? clock.count : 0) + ' · pos ' + Math.round(pos) + 'ms';
   }
 
-  // --- torch (Android only, slow: only toggle on threshold crossing, throttled) ---
+  // --- torch acquisition (Android only). hasWebTorch probe: getUserMedia(env) -> getCapabilities().torch.
+  // The torch is then driven by the AUTONOMOUS torch channel (driveTorchChannel), NOT the screen.
   function startTorch() {
     navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } }).then(function (stream) {
       var track = stream.getVideoTracks()[0];
       var caps = track.getCapabilities ? track.getCapabilities() : {};
-      if (caps && caps.torch) { torchTrack = track; setStatus('st_ready_t'); }
-      else { track.stop(); useTorch = false; }
-    }).catch(function () { useTorch = false; });
-  }
-  function driveTorch(lum) {
-    if (!torchTrack) return;
-    var want = lum > 0.5; var nowt = performance.now();
-    if (want !== torchOn && nowt - lastTorchAt > 120) {
-      torchOn = want; lastTorchAt = nowt;
-      torchTrack.applyConstraints({ advanced: [{ torch: want }] }).catch(function () {});
-    }
+      if (caps && caps.torch) { torchTrack = track; window.__cls.torch.capable = true; setStatus('st_ready_t'); }
+      else { track.stop(); useTorch = false; window.__cls.torch.capable = false; } // Android, but no torch-capable LED
+    }).catch(function () { useTorch = false; window.__cls.torch.capable = false; });
   }
 
   // --- screen wake lock (re-acquired on visibility) ---
