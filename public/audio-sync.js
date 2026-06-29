@@ -62,7 +62,13 @@
     var valid = ts && ts.contextTime > 0 && ts.performanceTime > 0;
     var perf = valid ? ts.performanceTime : performance.now();
     var actx = valid ? ts.contextTime : this.ctx.currentTime;
-    this.anchor = { actx: actx, showAtActx: perf + this.clock.offset }; // (audio sec) <-> (show ms)
+    // Anchor in the SAME slewed basis serverNow() uses (offsetApplied), not the raw best
+    // estimate `offset`. During clock convergence the two differ, so a raw-offset anchor made
+    // the drift loop compare audio against a DIFFERENT clock than the scheduler used and inject
+    // a phantom per-second drift (part of the round-10 stutter). Fall back to offset if a stub
+    // clock lacks offsetApplied.
+    var applied = (typeof this.clock.offsetApplied === 'number') ? this.clock.offsetApplied : this.clock.offset;
+    this.anchor = { actx: actx, showAtActx: perf + applied }; // (audio sec) <-> (show ms)
   };
   // Start (or restart) playback aligned so show-position == clock.serverNow() - T0.
   AudioSync.prototype.start = function (T0) {
@@ -84,31 +90,58 @@
     var clampSec = safeWhen - when;                       // if we lost time, skip the buffer forward too
     var realOffset = Math.max(0, offsetSec + clampSec);
     try { src.start(safeWhen, realOffset); } catch (e) { return; }
-    this.src = src; this.startOffsetSec = realOffset; this.outLatencySec = L;
+    // startWhenActx is the REAL audio instant the cursor == realOffset. The drift loop measures
+    // played progress from HERE (not from anchor.actx, which sits one LEAD earlier — that gap was
+    // a constant ~120ms phantom drift that reseated the source every second: the round-10 stutter).
+    this.src = src; this.startOffsetSec = realOffset; this.startWhenActx = safeWhen; this.outLatencySec = L;
+    this._startSeq = (this._startSeq || 0) + 1; // counts (re)schedules — a drift-loop reseat bumps it; the no-reseat test asserts it stays flat during steady playback
     // Cursor instant is the PRIMARY alignment (== show clock when comp is off, the default,
     // so same-model phones lock). soundShowInstant uses the REPORTED latency so a mixed
     // fleet's spread stays observable even though we don't compensate it by default.
     var scheduledShowInstant = this.anchor.showAtActx + (safeWhen - this.anchor.actx) * 1000 - realOffset * 1000;
     var soundShowInstant = scheduledShowInstant + Lrep * 1000;
     this.tele({ scheduled: true, scheduledShowInstant: scheduledShowInstant, soundShowInstant: soundShowInstant,
-      outLatencyMs: Math.round(Lrep * 1000), compMs: Math.round(L * 1000), rate: 1, T0: T0, offsetSec: realOffset, driftMs: 0 });
+      outLatencyMs: Math.round(Lrep * 1000), compMs: Math.round(L * 1000), rate: 1, T0: T0, offsetSec: realOffset, driftMs: 0, startSeq: this._startSeq });
     this._startDrift();
+  };
+  // Deadband / nudge / reseat thresholds (ms). On REAL hardware the AudioContext crystal drifts
+  // <10ms over a 3-min track (round-9 measurement) — far below DEADBAND — so on real phones none
+  // of the tiers ever fire: rate stays 1.0, phones stay locked, no stutter. The tiers only act on
+  // anomalies (a clock slew after resync, a tab suspend, a throttle glitch).
+  AudioSync.DEADBAND_MS = 50;   // <= this: leave rate at 1.0 (never chase clock noise / inter-phone floor)
+  AudioSync.RESEAT_MS = 180;    // > this: one clean reseat (stop+restart) — unavoidable for a big jump
+  AudioSync.NUDGE_MAX = 0.02;   // bounded ±2% playbackRate
+  AudioSync.NUDGE_TICKS = 2;    // one-shot: a nudge lasts at most this many ticks, then forced back to 1.0
+  // Pure decision for ONE drift tick. Extracted so the tiers are unit-testable without real audio.
+  // Returns 'reseat' | 'nudging' | 'nudge' | 'hold'; mutates playbackRate + _nudgeLeft as a side effect.
+  AudioSync.prototype._applyDriftDecision = function (drift) {
+    var ad = Math.abs(drift);
+    var rate = this.src ? this.src.playbackRate : null;
+    if (ad > AudioSync.RESEAT_MS) { this._nudgeLeft = 0; if (rate) rate.value = 1; return 'reseat'; }
+    // mid-nudge: count it down; the LAST tick of a nudge forces rate back to exactly 1.0 (one-shot,
+    // so identical phones don't continuously chase their own clock noise -> no inter-phone wobble).
+    if (this._nudgeLeft > 0) { this._nudgeLeft--; if (this._nudgeLeft === 0 && rate) rate.value = 1; return 'nudging'; }
+    if (ad > AudioSync.DEADBAND_MS) {
+      if (rate) rate.value = 1 + Math.max(-AudioSync.NUDGE_MAX, Math.min(AudioSync.NUDGE_MAX, drift / 2000)); // +ve drift -> behind -> play faster
+      this._nudgeLeft = AudioSync.NUDGE_TICKS;
+      return 'nudge';
+    }
+    if (rate) rate.value = 1;
+    return 'hold';
   };
   AudioSync.prototype._startDrift = function () {
     var self = this; if (this.driftTimer) clearInterval(this.driftTimer);
+    this._nudgeLeft = 0;
     this.driftTimer = setInterval(function () {
       if (!self.src) return;
-      var expected = self.clock.serverNow() - self.T0;                                  // ms (ground truth)
-      var played = ((self.ctx.currentTime - self.anchor.actx) + self.startOffsetSec) * 1000; // ms actually rendered
-      var drift = expected - played;                                                    // +ve = audio behind
-      self.tele({ driftMs: Math.round(drift), rate: 1 });
-      // RESEAT-ONLY: the buffer is scheduled ABSOLUTELY off the synced clock, and the
-      // AudioContext clock drifts <10ms over a 3-min track — below the cross-phone floor.
-      // A continuous playbackRate nudge made each phone chase its OWN clock noise, so
-      // identical phones wobbled against each other. So we NEVER nudge; we only reseat
-      // (one clean reschedule) if something large happened (tab suspend / glitch / throttle).
-      self.src.playbackRate.value = 1;
-      if (Math.abs(drift) > 60) self.start(self.T0);
+      var expected = self.clock.serverNow() - self.T0;                                       // ms (ground truth)
+      var played = (self.startOffsetSec + (self.ctx.currentTime - self.startWhenActx)) * 1000; // ms rendered, from the REAL buffer-start instant
+      // +outLatency: when latency-compensation is ON the cursor INTENTIONALLY leads the show clock
+      // by L (so the SOUND lands on time), so subtract that designed lead — otherwise the loop would
+      // fight its own compensation. L is 0 in the default (no-comp) path, so this is a no-op there.
+      var drift = expected - played + (self.outLatencySec || 0) * 1000;                       // +ve = audio behind
+      self.tele({ driftMs: Math.round(drift), rate: self.src.playbackRate.value });
+      if (self._applyDriftDecision(drift) === 'reseat') self.start(self.T0);                 // clean reschedule only on a big jump
     }, 1000);
   };
   // LOOPING playback synced to a fixed epoch (the landing demo): every phone plays the
@@ -132,7 +165,8 @@
     if (offsetSec < 0) offsetSec += loopSec;
     try { src.start(safeWhen, offsetSec); } catch (e) { return; }
     this.src = src; this.startOffsetSec = offsetSec; this.startWhenActx = safeWhen; this.loopSec = loopSec;
-    this.tele({ scheduled: true, looping: true, outLatencyMs: Math.round(Lrep * 1000), compMs: Math.round(L * 1000), loopMs: loopMs, rate: 1, driftMs: 0 });
+    this._startSeq = (this._startSeq || 0) + 1;
+    this.tele({ scheduled: true, looping: true, outLatencyMs: Math.round(Lrep * 1000), compMs: Math.round(L * 1000), loopMs: loopMs, rate: 1, driftMs: 0, startSeq: this._startSeq });
     this._startLoopDrift();
   };
   AudioSync.prototype._startLoopDrift = function () {
