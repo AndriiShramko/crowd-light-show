@@ -61,3 +61,25 @@ td, th { text-align: left; padding: 6px 4px; border-bottom: 1px solid var(--line
 .nudge input { flex: 1; }
 input[type=password], input[type=text] { width: 100%; padding: 12px; border-radius: 10px; border: 1px solid var(--line);
   background: #0f131b; color: var(--fg); font: inherit; }
+
+/* Round 10: responsive operator/studio console — use the full width on desktop instead of a
+   560px phone-strip. Scoped to .op-console (operator.html ONLY); the audience /join page uses
+   bare .wrap and is untouched. Mobile = unchanged single column. Robust to public-mode
+   hide/reorder: a 2- then 3-column grid that flows cards; top-level header/welcome/play/status/
+   credit span all columns. */
+@media (min-width: 980px) {
+  .op-console { max-width: 1240px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px; align-items: start; grid-auto-flow: row dense; }
+  .op-console > h1, .op-console > #pubWelcome, .op-console > #playSound,
+  .op-console > p.muted, .op-console > .credit, .op-console > details { grid-column: 1 / -1; }
+  .op-console .card { margin: 0; }
+}
+@media (min-width: 1440px) {
+  .op-console { max-width: 1560px; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+/* Advanced-controls disclosure (public studio): laid out as its own full-width grid inside */
+.op-adv { margin: 14px 0; }
+.op-adv > summary { cursor: pointer; padding: 12px 16px; background: var(--card); border: 1px solid var(--line);
+  border-radius: 12px; list-style: none; font-weight: 600; color: var(--muted); }
+.op-adv[open] > summary { border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
+.op-adv > summary::-webkit-details-marker { display: none; }

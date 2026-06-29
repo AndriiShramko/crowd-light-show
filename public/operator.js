@@ -20,6 +20,8 @@
   var pubT0 = null, pubTrackId = null, soundOn = false; // public: armed-track audio T0 + opt-in sound
   var audio = null, audioBuf = null;                    // AudioSync + the armed track's raw bytes (decoded lazily)
   var wantLiveAudio = false, lastAudioT0 = null;        // personal: drive audio start off the running-state echo
+  var plMode = (DEFAULTS && DEFAULTS.playlist_mode) || 'all', plNow = null, plNext = null, plSelected = []; // round 10 playlist (public)
+  var pubTracks = [];                                   // last-loaded public track list (for now/next titles + selected checkboxes)
   var player = document.getElementById('player');
 
   // ROUND 9 AUDIO FIX: the console's lights were already synced (T0 carries clock.offset+nudge),
@@ -58,6 +60,14 @@
   }
   function esc(s) { return String(s).replace(/[<>&]/g, function (c) { return ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' })[c]; }); }
 
+  // ---- GA4 events (round 10): answer the owner's "how many tests / how many people per session
+  // / how long is a session". window.clsGA is a no-op until the visitor accepts the cookie banner.
+  var gaRoom = ROOM || 'main', gaPeak = 0, gaT0 = null;
+  function ga(ev, p) { try { if (window.clsGA) window.clsGA(ev, Object.assign({ room_id: gaRoom, operator_mode: MODE }, p || {})); } catch (e) {} }
+  function gaPeakUpdate(n) { n = n | 0; if (n > gaPeak) gaPeak = n; }
+  function gaShowStarted(trackId) { gaT0 = Date.now(); ga('show_started', { track_id: trackId == null ? '' : trackId, preset_type: activeType || '' }); }
+  function gaShowStopped() { if (gaT0 == null) return; ga('show_stopped', { duration_sec: Math.round((Date.now() - gaT0) / 1000), peak_phones: gaPeak, track_id: armedId == null ? '' : armedId }); gaT0 = null; gaPeak = 0; }
+
   // ---- mode setup: hide features this session doesn't have, switch labels ----
   function applyMode() {
     Array.prototype.forEach.call(document.querySelectorAll('[data-feature]'), function (el) {
@@ -66,12 +76,27 @@
     });
     if (PUBLIC) {
       var title = $('consoleTitle'); if (title) title.textContent = (S.brand || 'Light Show') + ' — live console';
-      var pw = $('pubWelcome'); if (pw) { pw.textContent = S.welcome || 'You are the operator. Pick a track, press GO, and the phones that join your QR light up together. Want your own? It is free — anyone can run one.'; pw.classList.remove('hidden'); }
-      var pc = $('pubCount'); if (pc) pc.classList.remove('hidden');
+      var pw = $('pubWelcome'); if (pw) { pw.textContent = S.welcome || 'The lights are already running. Share the code below so phones join. Tap “Play with sound” to hear the music. It is free — anyone can run their own.'; pw.classList.remove('hidden'); }
+      var pcc = $('pubCount'); if (pcc) pcc.classList.remove('hidden');
       var ph = $('playlistHint'); if (ph) ph.classList.remove('hidden');
       var pt = $('playlistTitle'); if (pt) pt.textContent = '1 · Music';
-      if (FEAT.upload) { var ucw = $('uploadConsentWrap'); if (ucw) ucw.classList.remove('hidden'); var ub = $('upload'); if (ub) ub.textContent = 'Use my music (lights only)'; }
-      if (FEAT.torch === false) { var tc = $('studioCard'); /* torch sub-section hidden below in setupTorch */ }
+      if (FEAT.upload) { var ucw = $('uploadConsentWrap'); if (ucw) ucw.classList.remove('hidden'); var ub = $('upload'); if (ub) ub.textContent = 'Use my music'; }
+      // ROUND 10 UX: collapse the 4 play-ish controls to ONE. Hide the dead native <audio>, the
+      // redundant GO (the default track already auto-GOes the lights) and the old Sound button —
+      // the single "▶ Play with sound" at the top is the one autoplay gesture.
+      ['player', 'go', 'soundBtn'].forEach(function (id) { var e = $(id); if (e) e.classList.add('hidden'); });
+      // Move Share to the top — it is the main goal (get phones into the room).
+      var share = $('shareBlock'), cardPl = $('cardPlaylist');
+      if (share && cardPl && cardPl.parentNode) cardPl.parentNode.insertBefore(share, cardPl);
+      // Tuck the operator transport (pause/stop/blackout/nudge) + live presets/torch under an
+      // "Advanced" disclosure — a casual host never needs them; one click reveals them.
+      var cardShow = $('cardShow'), studioCard = $('studioCard');
+      if (cardPl && cardShow && cardPl.parentNode) {
+        var det = document.createElement('details'); det.className = 'op-adv';
+        var sum = document.createElement('summary'); sum.textContent = '▸ Advanced — pause / stop, live presets & flash';
+        det.appendChild(sum); det.appendChild(cardShow); if (studioCard) det.appendChild(studioCard);
+        if (cardPl.nextSibling) cardPl.parentNode.insertBefore(det, cardPl.nextSibling); else cardPl.parentNode.appendChild(det);
+      }
     }
   }
 
@@ -103,16 +128,21 @@
   function loadPublic() {
     api('/api/operator/playlist').then(function (r) { return r.ok ? r.json() : null; }).then(function (d) {
       if (!d) { var tb0 = $('tracks').querySelector('tbody'); if (tb0) tb0.innerHTML = '<tr><td class="muted">No public tracks yet.</td></tr>'; return; }
+      pubTracks = d.tracks || [];
+      if (d.playlist && d.playlist.mode) { plMode = d.playlist.mode; plNow = d.playlist.nowId; plNext = d.playlist.nextId; }
+      if (d.defaults && d.defaults.playlist_mode && plNow == null) plMode = plMode || d.defaults.playlist_mode;
       var tb = $('tracks').querySelector('tbody'); tb.innerHTML = '';
-      (d.tracks || []).forEach(function (t) {
+      pubTracks.forEach(function (t) {
         var isArmed = t.id === armedId;
         var tr = document.createElement('tr');
         if (isArmed) tr.style.background = 'rgba(90,160,255,.15)';
-        tr.innerHTML = '<td><b>' + esc(t.title) + '</b>' + (isArmed ? ' <span style="color:#5aa0ff">● playing</span>' : '') + '<br><span class="muted">' + (t.cue_count ? Math.round((t.duration_ms || 0) / 1000) + 's' : '') + '</span></td>'
-          + '<td style="text-align:right"><button data-arm="' + t.id + '" class="' + (isArmed ? 'primary' : '') + '" style="width:auto">' + (isArmed ? '✓ Playing' : '▶ Play') + '</button></td>';
+        var pick = (plMode === 'selected') ? '<input type="checkbox" data-plsel="' + t.id + '"' + (plSelected.indexOf(t.id) >= 0 ? ' checked' : '') + ' style="margin-right:6px">' : '';
+        tr.innerHTML = '<td>' + pick + '<b>' + esc(t.title) + '</b>' + (isArmed ? ' <span style="color:#5aa0ff">● playing</span>' : '') + '<br><span class="muted">' + (t.cue_count ? Math.round((t.duration_ms || 0) / 1000) + 's' : '') + '</span></td>'
+          + '<td style="text-align:right"><button data-arm="' + t.id + '" class="' + (isArmed ? 'primary' : '') + '" style="width:auto">' + (isArmed ? '✓ Playing' : 'Switch') + '</button></td>';
         tb.appendChild(tr);
       });
-      if (!(d.tracks || []).length) { tb.innerHTML = '<tr><td class="muted">The host has not published any tracks yet.</td></tr>'; }
+      if (!pubTracks.length) { tb.innerHTML = '<tr><td class="muted">The host has not published any tracks yet.</td></tr>'; }
+      renderPlaylistCtl();
       // default music: auto-arm the default track (LIGHTS start now; SOUND waits for one tap)
       var def = (DEFAULTS && DEFAULTS.default_track_id) || (d.defaults && d.defaults.default_track_id);
       if (def && armedId == null) armTrack(Number(def), true);
@@ -120,10 +150,44 @@
     api('/api/operator/qr').then(function (r) { return r.ok ? r.blob() : null; }).then(function (b) { if (!b) return; var u = URL.createObjectURL(b); if ($('qr')) $('qr').src = u; if ($('qrBig')) $('qrBig').src = u; });
   }
 
+  // ---- playlist controls (public console, round 10) ----
+  function plTitle(id) { for (var i = 0; i < pubTracks.length; i++) if (pubTracks[i].id === id) return pubTracks[i].title; return id == null ? '—' : ('#' + id); }
+  function renderPlaylistCtl() {
+    if (!PUBLIC) return;
+    var ctl = $('playlistCtl'); if (!ctl) return;
+    if (!pubTracks.length) { ctl.classList.add('hidden'); return; }
+    ctl.classList.remove('hidden');
+    var btns = ctl.querySelectorAll('[data-plmode]');
+    for (var i = 0; i < btns.length; i++) { var on = btns[i].getAttribute('data-plmode') === plMode; btns[i].className = on ? 'primary' : ''; }
+    var nn = $('plNowNext');
+    if (nn) {
+      var label = plMode === 'one' ? 'Looping' : (plMode === 'selected' ? 'Selected loop' : 'Loop all');
+      nn.textContent = label + ' · Now: ' + plTitle(plNow == null ? armedId : plNow) + (plMode === 'one' ? '' : ' · Next: ' + plTitle(plNext));
+    }
+  }
+  function applyPlMode(mode) {
+    plMode = mode;
+    // collect ticked ids for 'selected'
+    if (mode === 'selected') { plSelected = []; var cbs = document.querySelectorAll('[data-plsel]'); for (var i = 0; i < cbs.length; i++) if (cbs[i].checked) plSelected.push(Number(cbs[i].getAttribute('data-plsel'))); }
+    api('/api/operator/playlist', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode: mode, selected: plSelected }) })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (p) { if (p && p.ok) { plNow = p.nowId; plNext = p.nextId; if (typeof p.idx === 'number' && p.nowId != null) armedId = p.nowId; } loadPublic(); });
+    renderPlaylistCtl();
+  }
+  if ($('plModes')) $('plModes').addEventListener('click', function (e) { var m = e.target.getAttribute('data-plmode'); if (m) applyPlMode(m); });
+  if ($('tracks')) $('tracks').addEventListener('change', function (e) {
+    if (!PUBLIC) return; var sel = e.target.getAttribute('data-plsel');
+    if (sel && plMode === 'selected') applyPlMode('selected'); // re-post the new selection
+  });
+
   function renderState(st) {
+    var prevState = curState;
     curState = st.status;
     if ($('state')) $('state').textContent = st.status;
     updateReactHint();
+    // GA: one chokepoint for show start/stop — covers GO/resume/stop/blackout/track-end, personal+public.
+    if (st.status === 'running' && prevState !== 'running') gaShowStarted(armedId);
+    else if (st.status !== 'running' && prevState === 'running') gaShowStopped();
     if (pendingGo) return;
     var locking = (st.status === 'idle' && !(clock && clock.ready));
     if ($('go')) $('go').textContent = st.status === 'paused' ? '▶ RESUME' : (st.status === 'running' ? '● LIVE' : (locking ? '▶ GO (clock…)' : '▶ GO'));
@@ -149,16 +213,18 @@
     if (PUBLIC) {
       if (!($('uploadConsent') && $('uploadConsent').checked)) { $('uploadMsg').textContent = 'Please tick the rights confirmation first.'; return; }
       path = '/api/operator/upload?consent=1'; // -> /api/console/upload?consent=1 (server-mandatory)
+      var a0 = ensureAudio(); if (a0) a0.init().catch(function () {}); // create+resume the AudioContext IN this click so the uploaded sound can auto-play (autoplay policy)
     }
     var fd = new FormData(); fd.append('audio', f);
     $('uploadMsg').textContent = 'Uploading & analyzing…';
     api(path, { method: 'POST', body: fd }).then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
       .then(function (res) {
-        if (!res.ok) { $('uploadMsg').textContent = 'Error: ' + (res.j.error || ''); return; }
-        if (PUBLIC) { $('uploadMsg').textContent = 'Ready — lights only (' + res.j.cueCount + ' cues). Playing…'; armTrack(res.j.trackId, true); }
+        if (!res.ok) { ga('upload_test', { result: 'error', reason: String(res.j.error || '').slice(0, 60) }); $('uploadMsg').textContent = 'Error: ' + (res.j.error || ''); return; }
+        ga('upload_test', { result: 'ok', cue_count: res.j.cueCount });
+        if (PUBLIC) { $('uploadMsg').textContent = 'Ready — ' + res.j.cueCount + ' cues. Playing your music…'; armTrack(res.j.trackId, true); soundOn = false; setTimeout(startConsoleSound, 400); } // auto-play the uploaded sound (gesture = the Upload click)
         else { $('uploadMsg').textContent = 'Done: ' + res.j.cueCount + ' cues, ' + res.j.beats + ' beats'; loadState(); }
       })
-      .catch(function (e) { $('uploadMsg').textContent = 'Upload failed: ' + e; });
+      .catch(function (e) { ga('upload_test', { result: 'fail' }); $('uploadMsg').textContent = 'Upload failed: ' + e; });
   });
 
   // ---- transport: personal = operator WS; public = HTTP /api/console/* ----
@@ -173,14 +239,15 @@
 
   function armTrack(id, isDefault) {
     armedId = id; audioReady = false;
+    ga('track_played', { track_id: id == null ? '' : id, track_kind: (typeof id === 'number') ? 'curated' : 'guest', is_default: !!isDefault });
     if (PUBLIC) {
       // public console: arm over HTTP (the server broadcasts timeline to the room; the console
       // gets it as a previewer). Then auto-GO so the default music's LIGHTS start with no clicks.
       tx('arm', { trackId: id }).then(function (j) {
         if (!j || !j.ok) { if ($('armed')) $('armed').textContent = 'could not start that track'; return; }
-        if ($('armed')) $('armed').textContent = (typeof id === 'number') ? 'playing — lights live' : 'playing your music — lights only';
+        if ($('armed')) $('armed').textContent = 'playing — lights live';
         loadPublic();
-        if (typeof id === 'number') fetchConsoleAudio(id); // curated tracks have audio; guest uploads are lights-only (decode-then-discard)
+        fetchConsoleAudio(id); // round 10: curated AND guest uploads now have served audio (keep-and-serve)
         if (isDefault) setTimeout(function () { doGoPublic(); }, 250); // visuals roll immediately
       });
       return;
@@ -217,20 +284,37 @@
     if (!window.AudioSync) return;
     ensureAudio();
     pubTrackId = id;
-    if ($('soundBtn')) $('soundBtn').classList.remove('hidden');
+    // round 10: the one prominent "▶ Play with sound" button is the single sound gesture.
+    if (!soundOn) { var ps = $('playSound'); if (ps) ps.classList.remove('hidden'); }
   }
+  function guestPath(id) { return (typeof id === 'string' && id.indexOf('g:') === 0) ? '/api/operator/guest-audio' : null; } // -> /api/console/guest-audio (room from token)
   function startConsoleSound() {
     if (!ensureAudio() || pubTrackId == null) return;
     audio.clock = clock || audio.clock;
-    audio.init().then(function () {
-      return api('/api/operator/audio/' + pubTrackId).then(function (r) { return r.ok ? r.arrayBuffer() : null; });
-    }).then(function (ab) {
-      if (!ab) return; return audio.cache(ab).then(function () { if (curState === 'running' && pubT0 != null) audio.start(pubT0); });
-    }).catch(function () {});
+    var trackPath = (typeof pubTrackId === 'number') ? ('/api/operator/audio/' + pubTrackId) : guestPath(pubTrackId); // round 10: guest uploads are served too
+    if (trackPath) {
+      audio.init().then(function () {
+        return api(trackPath).then(function (r) { return r.ok ? r.arrayBuffer() : null; });
+      }).then(function (ab) {
+        if (!ab) return; return audio.cache(ab).then(function () { if (curState === 'running' && pubT0 != null) audio.start(pubT0); });
+      }).catch(function () {});
+    } else { audio.init().catch(function () {}); }
     soundOn = true;
+    var ps = $('playSound'); if (ps) { ps.textContent = '🔊 Sound on'; ps.disabled = true; }
     if ($('soundBtn')) { $('soundBtn').textContent = '🔊 Sound on'; $('soundBtn').disabled = true; }
   }
   if ($('soundBtn')) $('soundBtn').addEventListener('click', startConsoleSound);
+  if ($('playSound')) $('playSound').addEventListener('click', startConsoleSound);
+
+  // playlist advanced to a new curated track while the console sound is on — swap the monitor audio.
+  function reloadConsoleSound(id) {
+    if (!ensureAudio() || typeof id !== 'number') return;
+    audio.clock = clock || audio.clock;
+    if (audio.dropBuffer) audio.dropBuffer();
+    audio.init().then(function () { return api('/api/operator/audio/' + id).then(function (r) { return r.ok ? r.arrayBuffer() : null; }); })
+      .then(function (ab) { if (!ab) return; return audio.cache(ab).then(function () { if (curState === 'running' && pubT0 != null) audio.start(pubT0); }); })
+      .catch(function () {});
+  }
 
   function flashBtn(el) { el.style.boxShadow = '0 0 0 3px #fff'; setTimeout(function () { el.style.boxShadow = ''; }, 300); }
 
@@ -300,6 +384,7 @@
     if (m.t === 'sync') { clock.onReply(m.c0, m.s1); if (clock.ready && curState === 'idle') renderState({ status: curState }); return; }
     if (!PUBLIC) {
       if (m.t === 'count') {
+        gaPeakUpdate(m.audience);
         $('count').textContent = m.audience; if ($('countBig')) $('countBig').textContent = m.audience;
         var ts = $('torchSplit');
         if (ts) ts.textContent = 'Flash reach: ' + (m.torchCapable || 0) + ' Android (camera-LED) · ' + (m.screenOnly || 0) + ' iPhone/other (screen-only)';
@@ -310,8 +395,13 @@
     }
     // ---- public console: derive transport state from the room messages it receives ----
     if (m.t === 'welcome' || m.t === 'state') { if (m.state) { renderState({ status: m.state.status }); if (m.state.status === 'running' && m.state.T0 != null) { pubT0 = m.state.T0; if (audio && soundOn) audio.start(pubT0); } } return; }
-    if (m.t === 'index') { var n = Math.max(0, (m.total | 0) - 1); if ($('count2')) $('count2').textContent = n; if ($('countBig')) $('countBig').textContent = n; return; } // -1: the console itself is a member
-    if (m.t === 'timeline') { pubTrackId = m.trackId; return; }
+    if (m.t === 'index') { var n = Math.max(0, (m.total | 0) - 1); gaPeakUpdate(n); if ($('count2')) $('count2').textContent = n; if ($('countBig')) $('countBig').textContent = n; return; } // -1: the console itself is a member
+    if (m.t === 'timeline') { var chg = (m.trackId !== pubTrackId); pubTrackId = m.trackId; if (chg && soundOn && typeof m.trackId === 'number') reloadConsoleSound(m.trackId); return; }
+    if (m.t === 'playlist') { // round 10: the room advanced (or mode changed) — follow now/next
+      plMode = m.mode || plMode; plNow = m.nowId; plNext = m.nextId;
+      if (m.nowId != null && m.nowId !== armedId) { armedId = m.nowId; loadPublic(); } else renderPlaylistCtl();
+      return;
+    }
     if (m.t === 'start') { renderState({ status: 'running' }); pubT0 = m.T0; if (audio && soundOn) audio.start(m.T0); return; }
     if (m.t === 'pause') { renderState({ status: 'paused' }); if (audio) audio.stop(); return; }
     if (m.t === 'stop') { renderState({ status: 'idle' }); armedId = armedId; if (audio) audio.stop(); return; }
@@ -443,6 +533,7 @@
     }, 80);
   }
   function pickPreset(type) {
+    ga('preset_changed', { channel: 'screen', preset_type: type });
     if (type === 'off') {
       activeType = null; $('presetParams').innerHTML = ''; highlightPreset();
       window.__opPreview.type = null; pvShow(false);
@@ -467,6 +558,10 @@
       else if (PUBLIC && DEFAULTS && DEFAULTS.screen && DEFAULTS.screen.type) { pickPreset(DEFAULTS.screen.type); } // public: start on the host's default look
       highlightPreset();
       setupTorch(d);
+      // round 10: public console auto-picks the host's default REACTIVE torch (beat) so the
+      // flash channel is alive on open too (mirror of the screen auto-pick above). Gated on
+      // FEAT.torch so a host who disabled torch isn't overridden.
+      if (PUBLIC && FEAT.torch !== false && DEFAULTS && DEFAULTS.torch && DEFAULTS.torch.type && DEFAULTS.torch.type !== 'off' && !activeTorch) pickTorch(DEFAULTS.torch.type);
     });
   }
   if ($('presetBtns')) $('presetBtns').addEventListener('click', function (e) { var t = e.target.getAttribute('data-preset'); if (t) pickPreset(t); });
@@ -519,6 +614,7 @@
     }, 80);
   }
   function pickTorch(type) {
+    ga('preset_changed', { channel: 'torch', preset_type: type });
     if (type === 'off') {
       activeTorch = null; $('torchParams').innerHTML = ''; highlightTorch();
       if (window.__opTorchPreview) window.__opTorchPreview.type = null; tpvShow(false);
@@ -559,6 +655,7 @@
   // ---- boot ----
   window.__opMode = { mode: MODE, room: ROOM, features: FEAT }; // test seam
   applyMode();
+  ga('studio_open', { is_public: !!PUBLIC });
   connect();
   loadPresets();
   if (PUBLIC) { loadPublic(); }

@@ -111,6 +111,7 @@ function readValidatedDefaults() {
     welcome_text: pc.welcome_text || '',
     allow_torch: pc.allow_torch !== 0,
     allow_upload: !!pc.allow_upload && config.publicUploadEnabled,
+    playlist_mode: (pc.playlist_mode === 'one' || pc.playlist_mode === 'selected') ? pc.playlist_mode : 'all',
   };
   if (pc.default_screen_preset) {
     let params = {}; try { params = pc.default_screen_params ? JSON.parse(pc.default_screen_params) : {}; } catch { /* bad json */ }
@@ -139,7 +140,7 @@ function publicSession(room, token) {
     mode: 'public', token, room, apiBase: '/api/console', lead: config.startLeadMs,
     features: { applications: false, upload: d.allow_upload, torch: d.allow_torch, transport: true, publicConfig: false, playlist: true, defaultMusic: true },
     brand: d.brand_name, welcome: d.welcome_text,
-    defaults: { screen: d.screen || null, torch: d.torch || null, default_track_id: d.default_track_id || null },
+    defaults: { screen: d.screen || null, torch: d.torch || null, default_track_id: d.default_track_id || null, playlist_mode: d.playlist_mode || 'all' },
     playlist: listPublicTracks(),
   };
 }
@@ -150,6 +151,7 @@ function renderConsole(session) {
   html = html.replace('@@SESSION@@', JSON.stringify(session));
   html = html.replaceAll('@@LEAD@@', String(config.startLeadMs));
   html = html.replaceAll('@@SHARE@@', SHARE_PARTIAL);
+  html = html.replaceAll('@@GA@@', GA_PARTIAL);
   return html;
 }
 
@@ -167,12 +169,16 @@ const CONTACT_PARTIAL = fs.readFileSync(path.join(config.publicDir, 'partials', 
 // Share block (round 9) — injected into the consoles + /join via @@SHARE@@. Defensive read
 // so the server still boots before the partial is added.
 const SHARE_PARTIAL = (() => { try { return fs.readFileSync(path.join(config.publicDir, 'partials', 'share.html'), 'utf8'); } catch { return ''; } })();
+// Google Analytics + cookie-consent (round 10) — injected into <head> via @@GA@@ on every page
+// EXCEPT /join (the epilepsy consent gate). Defensive read.
+const GA_PARTIAL = (() => { try { return fs.readFileSync(path.join(config.publicDir, 'partials', 'ga.html'), 'utf8'); } catch { return ''; } })();
 function renderPage(file, extra) {
   let html = fs.readFileSync(path.join(config.publicDir, file), 'utf8');
   const tokens = Object.assign({
     '@@STUDIO@@': config.studioEnabled ? 'true' : 'false',
     '@@CONTACT@@': CONTACT_PARTIAL,
     '@@SHARE@@': SHARE_PARTIAL,
+    '@@GA@@': GA_PARTIAL,
   }, extra || {});
   for (const [k, v] of Object.entries(tokens)) html = html.replaceAll(k, String(v));
   return html;
@@ -298,7 +304,18 @@ app.get('/api/console/presets', (req, reply) => {
 app.get('/api/console/playlist', (req, reply) => {
   const room = consoleRoom(req, reply); if (!room) return;
   const d = readValidatedDefaults();
-  return { tracks: listPublicTracks(), defaults: { default_track_id: d.default_track_id || null, screen: d.screen || null, torch: d.torch || null, allow_torch: d.allow_torch, brand_name: d.brand_name } };
+  return { tracks: listPublicTracks(), defaults: { default_track_id: d.default_track_id || null, screen: d.screen || null, torch: d.torch || null, allow_torch: d.allow_torch, brand_name: d.brand_name, playlist_mode: d.playlist_mode || 'all' }, playlist: hub.playlistState(room) };
+});
+// Round 10: set the room's LIVE playlist loop mode ('all'|'selected'|'one'). Per-room only — a
+// public visitor tunes THEIR session; it never rewrites the global default (that's owner-only via
+// /api/operator/public-config). 'selected' carries the chosen public-track ids.
+app.post('/api/console/playlist', (req, reply) => {
+  const room = consoleRoom(req, reply); if (!room) return;
+  const mode = String((req.body && req.body.mode) || 'all');
+  const selected = Array.isArray(req.body && req.body.selected) ? req.body.selected : undefined;
+  const res = hub.setPlaylist(room, mode, selected);
+  if (!res.ok) return reply.code(400).send(res);
+  return res;
 });
 app.post('/api/console/preset', (req, reply) => {
   const room = consoleRoom(req, reply); if (!room) return;
@@ -355,13 +372,13 @@ app.get('/api/console/audio/:id', { config: { rateLimit: { max: 60, timeWindow: 
   return reply.type('application/octet-stream').send(fs.createReadStream(t.file_path));
 });
 
-// ---- PUBLIC own-music upload — DARK by default (PUBLIC_UPLOAD_ENABLED=0) ----
-// Contract (honest): the visitor's audio is DECODE-THEN-DISCARD — it is analyzed into a
-// safety-governed LIGHT timeline (held in memory, keyed to the room), then the audio file is
-// DELETED immediately. The sound is NEVER stored, re-served or published — own-music = lights
-// only. consent is server-mandatory; size/duration/rate/concurrency are all bounded.
-// A simple counting semaphore (NET-NEW) serializes ffmpeg decodes — the public path removed the
-// single-operator serialization, so without this an upload flood could fork-bomb ffmpeg.
+// ---- PUBLIC own-music upload — KEEP-AND-SERVE (round 10), gated by PUBLIC_UPLOAD_ENABLED ----
+// Contract (honest, mirrored in the consent text + privacy notice): the visitor's audio is
+// analyzed into a safety-governed LIGHT timeline AND KEPT on disk so it actually PLAYS — it is
+// streamed to that session's phones + console. It is NOT published beyond the session and is
+// DELETED when the room empties (tab close + a short grace) or after 24h, whichever comes first.
+// The uploader confirms they hold the rights (consent is server-mandatory). Bounded by per-file
+// size/duration, a per-IP file cap, a total disk budget (recomputed by du), and a decode semaphore.
 function makeSemaphore(max) {
   let active = 0; const q = [];
   return {
@@ -371,7 +388,7 @@ function makeSemaphore(max) {
   };
 }
 const uploadSem = makeSemaphore(config.publicUploadConcurrency);
-const _upLog = new Map(); // ip -> [timestamps], 3 per 10 min
+const _upLog = new Map(); // ip -> [timestamps], 3 per 10 min (rate guard, distinct from the stored-file cap)
 function uploadGuard(ip) {
   const t = Date.now(), win = 10 * 60 * 1000;
   const arr = (_upLog.get(ip) || []).filter((x) => t - x < win);
@@ -380,6 +397,36 @@ function uploadGuard(ip) {
   return true;
 }
 const GUEST_DIR = path.join(config.dataDir, 'uploads', 'guest');
+// One KEPT guest file per public room. room -> { path, createdAt, durationMs, ip, emptySince }.
+const guestFiles = new Map();
+function guestDirBytes() { let n = 0; for (const g of guestFiles.values()) { try { n += fs.statSync(g.path).size; } catch { /* gone */ } } return n; }
+function guestFilesByIp(ip) { let n = 0; for (const g of guestFiles.values()) if (g.ip === ip) n++; return n; }
+function deleteGuestFile(room) {
+  const g = guestFiles.get(room); if (!g) return;
+  try { fs.unlinkSync(g.path); } catch { /* already gone */ }
+  guestFiles.delete(room);
+  hub.timelineCache.delete('g:' + room);
+}
+// Janitor: drop a room's guest file 24h after upload, or shortly after the room empties (the
+// operator closed the /studio tab and no phones remain). Runs on a timer; also a boot clean-slate.
+function guestJanitor() {
+  const now = Date.now();
+  for (const [room, g] of guestFiles) {
+    if (now - g.createdAt > config.publicUploadTtlMs) { deleteGuestFile(room); continue; }
+    const r = hub.rooms.get(room);
+    const empty = !r || r.members.size === 0;
+    if (empty) { if (!g.emptySince) g.emptySince = now; else if (now - g.emptySince > config.publicUploadGraceMs) deleteGuestFile(room); }
+    else g.emptySince = 0;
+  }
+}
+function bootSweepGuest() {
+  // a restart drops every WS/room, so any file on disk is an orphan of a dead session -> clean slate.
+  try { for (const f of fs.readdirSync(GUEST_DIR)) { try { fs.unlinkSync(path.join(GUEST_DIR, f)); } catch { /* ignore */ } } } catch { /* dir absent */ }
+}
+try { fs.mkdirSync(GUEST_DIR, { recursive: true }); } catch { /* ignore */ }
+bootSweepGuest();
+{ const t = setInterval(guestJanitor, config.publicUploadSweepMs); if (t.unref) t.unref(); }
+
 app.post('/api/console/upload', async (req, reply) => {
   const room = consoleRoom(req, reply); if (!room) return;
   if (!config.publicUploadEnabled) return reply.code(503).send({ error: 'public upload is disabled' });
@@ -387,6 +434,10 @@ app.post('/api/console/upload', async (req, reply) => {
   if (String(req.query.consent || '') !== '1') return reply.code(403).send({ error: 'consent required: you must confirm you hold the rights to this music' });
   const ip = String(req.headers['x-real-ip'] || req.ip || '');
   if (!uploadGuard(ip)) return reply.code(429).send({ error: 'too many uploads — try again later' });
+  // stored-file cap: a tester may KEEP at most N files (re-uploading in the same room replaces, so
+  // it doesn't count twice). Disk budget is recomputed from the kept files (du), not trusted state.
+  const hadThisRoom = guestFiles.has(room) && guestFiles.get(room).ip === ip ? 1 : 0;
+  if (guestFilesByIp(ip) - hadThisRoom >= config.publicUploadMaxFilesPerIp) return reply.code(429).send({ error: `you can keep at most ${config.publicUploadMaxFilesPerIp} uploaded files — close a session or wait for them to expire` });
   if (freeDiskBytes() < config.diskGuardMinBytes) return reply.code(507).send({ error: 'disk guard: low space' });
   if (uploadSem.active >= config.publicUploadConcurrency + 2) return reply.code(503).send({ error: 'busy — try again in a moment' });
 
@@ -394,28 +445,43 @@ app.post('/api/console/upload', async (req, reply) => {
   if (!mp) return reply.code(400).send({ error: 'no file' });
   const buf = await mp.toBuffer();
   if (mp.file.truncated) return reply.code(413).send({ error: 'file too large' });
+  if (guestDirBytes() + buf.length > config.publicUploadBudgetBytes) return reply.code(507).send({ error: 'upload budget full — try again later' });
   const kind = sniffAudio(buf.subarray(0, 16));
   if (!kind) return reply.code(415).send({ error: 'not a supported audio file' });
 
   fs.mkdirSync(GUEST_DIR, { recursive: true });
   const id = crypto.randomBytes(6).toString('hex');
-  const tmp = path.join(GUEST_DIR, `${id}${EXT_FOR[kind]}`);
-  fs.writeFileSync(tmp, buf);
+  const dest = path.join(GUEST_DIR, `${id}${EXT_FOR[kind]}`);
+  fs.writeFileSync(dest, buf);
   await uploadSem.acquire();
   try {
-    const { durationMs, envelope, beats } = await analyze(tmp);
-    if (durationMs > config.publicUploadMaxDurationMs) { return reply.code(413).send({ error: 'track too long (max 5 min)' }); }
+    const { durationMs, envelope, beats } = await analyze(dest);
+    if (durationMs > config.publicUploadMaxDurationMs) { try { fs.unlinkSync(dest); } catch { /* ignore */ } return reply.code(413).send({ error: 'track too long (max 6 min)' }); }
     const cues = compileFromEnvelope(envelope, { durationMs, beats }); // governor: <=3 flashes/s
     const timeline = { version: 1, trackId: 'g:' + room, fps: config.cueFps, durationMs, cues, beats };
-    hub.timelineCache.set('g:' + room, timeline);  // in-memory, keyed to the room — NO track row, NO DB
-    return { ok: true, trackId: 'g:' + room, durationMs, cueCount: cues.length, lightsOnly: true };
+    hub.timelineCache.set('g:' + room, timeline);  // in-memory light timeline, keyed to the room — NO DB row
+    deleteGuestFile(room);                          // replace any previous file for this room (one kept per room)
+    guestFiles.set(room, { path: dest, createdAt: Date.now(), durationMs, ip, emptySince: 0 }); // KEEP it so the sound plays
+    return { ok: true, trackId: 'g:' + room, durationMs, cueCount: cues.length, lightsOnly: false };
   } catch (e) {
     req.log.error(e);
+    try { fs.unlinkSync(dest); } catch { /* ignore */ }
     return reply.code(500).send({ error: 'could not analyze that audio' });
   } finally {
     uploadSem.release();
-    try { fs.unlinkSync(tmp); } catch { /* decode-then-discard: the audio is gone */ }
   }
+});
+// Serve a room's KEPT guest audio (one helper; used by the console monitor + audience phones).
+function serveGuestAudio(room, reply) {
+  const g = guestFiles.get(room);
+  if (!g || !fs.existsSync(g.path)) return reply.code(404).send({ error: 'no guest audio' });
+  reply.header('Accept-Ranges', 'bytes').header('Cache-Control', 'no-store');
+  return reply.type('application/octet-stream').send(fs.createReadStream(g.path));
+}
+// Console monitor: the operator hears their own uploaded track (room from the signed token).
+app.get('/api/console/guest-audio', { config: { rateLimit: { max: 60, timeWindow: '1 minute' } } }, (req, reply) => {
+  const room = consoleRoom(req, reply); if (!room) return;
+  return serveGuestAudio(room, reply);
 });
 
 // ---- per-phone synchronized audio: serve ONLY the currently-armed track, no auth,
@@ -428,6 +494,27 @@ app.get('/api/audience/audio', { config: { rateLimit: { max: 40, timeWindow: '1 
   if (trackId == null) return reply.code(409).send({ error: 'no armed track' });
   const t = db.prepare('SELECT * FROM track WHERE id=?').get(trackId);
   if (!t || !t.file_path || !fs.existsSync(t.file_path)) return reply.code(404).send({ error: 'no audio' });
+  if (!t.license_attested) return reply.code(403).send({ error: 'track not licensed for crowd playback' });
+  reply.header('Accept-Ranges', 'bytes').header('Cache-Control', 'public, max-age=3600');
+  return reply.type('application/octet-stream').send(fs.createReadStream(t.file_path));
+});
+
+// ---- per-phone synchronized audio for a PUBLIC ROOM (round 10: ALWAYS stream the room's music
+// to phones). Serves the room's currently-armed CURATED track only, behind the SAME crowd-licence
+// gate as /api/audience/audio (is_public + licence-attested). A guest upload (trackId 'g:'+room)
+// has NO stored audio (decode-then-discard) -> 409 -> the phone stays lights-only (honest: we never
+// serve a track we discarded). Room is read from the query and validated; no :id => no enumeration.
+app.get('/api/audience/room-audio', { config: { rateLimit: { max: 60, timeWindow: '1 minute' } } }, (req, reply) => {
+  if (!config.crowdAudioEnabled) return reply.code(503).send({ error: 'crowd audio disabled' });
+  const room = String(req.query.room || '');
+  if (!/^[a-z0-9]{6,24}$/.test(room)) return reply.code(400).send({ error: 'bad room' });
+  const r = hub.rooms.get(room);
+  const trackId = r && r.run ? r.run.trackId : null;
+  if (trackId == null) return reply.code(409).send({ error: 'no armed track' });
+  if (typeof trackId !== 'number') return serveGuestAudio(room, reply); // 'g:'+room: the room's KEPT guest upload (round 10 — it now plays)
+  const t = db.prepare('SELECT * FROM track WHERE id=?').get(trackId);
+  if (!t || !t.file_path || !fs.existsSync(t.file_path)) return reply.code(404).send({ error: 'no audio' });
+  if (!t.is_public) return reply.code(403).send({ error: 'not a public track' });
   if (!t.license_attested) return reply.code(403).send({ error: 'track not licensed for crowd playback' });
   reply.header('Accept-Ranges', 'bytes').header('Cache-Control', 'public, max-age=3600');
   return reply.type('application/octet-stream').send(fs.createReadStream(t.file_path));
@@ -594,6 +681,7 @@ app.post('/api/operator/public-config', (req, reply) => {
   if (b.welcome_text != null) set.welcome_text = String(b.welcome_text).slice(0, 300);
   if (b.allow_torch != null) set.allow_torch = b.allow_torch ? 1 : 0;
   if (b.allow_upload != null) set.allow_upload = b.allow_upload ? 1 : 0;
+  if (b.playlist_mode != null) set.playlist_mode = (b.playlist_mode === 'one' || b.playlist_mode === 'selected') ? b.playlist_mode : 'all'; // global default loop mode
   if (b.default_screen_preset != null) {
     const v = validatePreset(String(b.default_screen_preset), b.default_screen_params || {});
     if (!v.ok) return reply.code(400).send({ error: 'screen default: ' + v.error });

@@ -61,14 +61,19 @@ export const config = {
   // and a per-IP cap on how many rooms one client may mint per minute (anti-flood).
   publicMaxRooms: Number(process.env.PUBLIC_MAX_ROOMS || 300),
   publicMintPerIpPerMin: Number(process.env.PUBLIC_MINT_PER_IP || 12),
-  // Public own-music upload (req 3) ships DARK by default. When enabled it is
-  // decode-then-discard (lights only, the audio is never re-served), consent-gated,
-  // and bounded by its OWN small budget + a decode semaphore. Flip after legal review.
+  // Public own-music upload (round 10: KEEP-AND-SERVE — the audio is stored and streamed to the
+  // session's phones + console so it actually PLAYS, then deleted on tab-close (+grace) or after
+  // 24h, whichever first). Consent-gated (the uploader confirms they hold the rights), bounded by
+  // per-file size/duration, a per-IP file cap, a total disk budget, and a decode semaphore.
   publicUploadEnabled: process.env.PUBLIC_UPLOAD_ENABLED === '1',
-  publicUploadMaxBytes: Number(process.env.PUBLIC_UPLOAD_MAX_BYTES || 10 * 1024 * 1024),
-  publicUploadMaxDurationMs: Number(process.env.PUBLIC_UPLOAD_MAX_MS || 5 * 60 * 1000),
-  publicUploadBudgetBytes: Number(process.env.PUBLIC_UPLOAD_BUDGET || 500 * 1024 * 1024),
+  publicUploadMaxBytes: Number(process.env.PUBLIC_UPLOAD_MAX_BYTES || 15 * 1024 * 1024), // ~2x a normal MP3
+  publicUploadMaxDurationMs: Number(process.env.PUBLIC_UPLOAD_MAX_MS || 6 * 60 * 1000),
+  publicUploadBudgetBytes: Number(process.env.PUBLIC_UPLOAD_BUDGET || 750 * 1024 * 1024),
   publicUploadConcurrency: Number(process.env.PUBLIC_UPLOAD_CONCURRENCY || 2),
+  publicUploadMaxFilesPerIp: Number(process.env.PUBLIC_UPLOAD_MAX_FILES || 3),       // a tester may keep at most 3 files
+  publicUploadTtlMs: Number(process.env.PUBLIC_UPLOAD_TTL_MS || 24 * 60 * 60 * 1000), // force-delete after 24h
+  publicUploadGraceMs: Number(process.env.PUBLIC_UPLOAD_GRACE_MS || 120 * 1000),      // delete this long after the room empties (tab close)
+  publicUploadSweepMs: Number(process.env.PUBLIC_UPLOAD_SWEEP_MS || 30 * 1000),       // janitor tick (tests shorten this)
 };
 
 export function scryptVerify(plainPass, stored) {

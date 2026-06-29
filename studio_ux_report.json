@@ -1,0 +1,29 @@
+{
+  "base": "http://localhost:3011",
+  "ui": {
+    "playSoundVis": true,
+    "playerHidden": true,
+    "goHidden": true,
+    "soundBtnHidden": true,
+    "detPresent": true,
+    "detHasShow": true,
+    "detHasStudio": true,
+    "shareBeforePlaylist": true,
+    "activePreset": "pulse",
+    "consoleWidth": 1440
+  },
+  "afterTap": {
+    "playLabel": "🔊 Sound on",
+    "playDisabled": true,
+    "secondSound": false
+  },
+  "opUi": {
+    "player": true,
+    "go": true,
+    "nudge": true,
+    "apps": true,
+    "pubcfg": true,
+    "adv": false
+  },
+  "fails": []
+}

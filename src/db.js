@@ -112,7 +112,24 @@ CREATE TABLE IF NOT EXISTS public_config (
   updated_at INTEGER
 );
 `);
-db.prepare(`INSERT OR IGNORE INTO public_config (id, brand_name, allow_torch, updated_at) VALUES (1, 'Crowd Light Show', 1, ?)`).run(Date.now());
+// Round 10: seed REACTIVE public defaults so /studio opens with the screen + flash already
+// reacting to the music (pulse with audioDepth 0.6, beat torch). validatePreset/validateTorchPreset
+// re-fill the rest of the params + clamp on read, so a sparse seed normalizes to a full safe set.
+db.prepare(`INSERT OR IGNORE INTO public_config (id, brand_name, allow_torch, default_screen_preset, default_screen_params, default_torch_preset, default_torch_params, updated_at)
+  VALUES (1, 'Crowd Light Show', 1, 'pulse', '{"audioDepth":0.6}', 'beat', '{}', ?)`).run(Date.now());
+// On an ALREADY-seeded (live) DB the INSERT OR IGNORE no-ops, so fill the reactive defaults only
+// where they are still NULL (never overwrite a default Andrii has set from his console).
+db.prepare(`UPDATE public_config SET
+  default_screen_preset = COALESCE(default_screen_preset, 'pulse'),
+  default_screen_params = COALESCE(default_screen_params, '{"audioDepth":0.6}'),
+  default_torch_preset  = COALESCE(default_torch_preset,  'beat'),
+  default_torch_params  = COALESCE(default_torch_params,  '{}')
+  WHERE id = 1`).run();
+// Round 10: the public playlist loop mode a fresh /studio room STARTS in ('all' | 'selected' |
+// 'one'). Visitors switch it live per session; this column is just the seeded default.
+for (const col of ["playlist_mode TEXT NOT NULL DEFAULT 'all'"]) {
+  try { db.exec(`ALTER TABLE public_config ADD COLUMN ${col}`); } catch { /* column already exists */ }
+}
 
 export function now() { return Date.now(); }
 

@@ -110,7 +110,7 @@
   };
 
   var AUDIO_PARAMS = {
-    audioDepth: { min: 0, max: 1, step: 0.01, def: 0, label: 'Music reactivity' },
+    audioDepth: { min: 0, max: 1, step: 0.01, def: 0.6, label: 'Music reactivity' },
     audioGain: { min: 1, max: 6, step: 0.1, def: 2.5, label: 'Reactivity strength' },
     audioFloor: { min: 0, max: 0.5, step: 0.01, def: 0.12, label: 'Reactivity floor' },
     audioGamma: { min: 0.4, max: 1.6, step: 0.05, def: 0.8, label: 'Reactivity curve' },
@@ -246,6 +246,6 @@
     relLum: relLum, defaults: defaults, makeBackstop: makeBackstop,
     DEFAULT_PRESET: 'pulse', TYPES: Object.keys(PARAM_SCHEMA),
     TORCH_PRESETS: TORCH_PRESETS, TORCH_SCHEMA: TORCH_SCHEMA, torchDefaults: torchDefaults,
-    makeTorchGate: makeTorchGate, TORCH_TYPES: Object.keys(TORCH_SCHEMA), DEFAULT_TORCH: 'off',
+    makeTorchGate: makeTorchGate, TORCH_TYPES: Object.keys(TORCH_SCHEMA), DEFAULT_TORCH: 'beat',
   };
 })(typeof window !== 'undefined' ? window : this);

@@ -48,6 +48,8 @@
       })
     }).then(function (res) {
       if (!res.ok) throw new Error('bad status');
+      // GA (round 10): a lead was submitted. No PII in the event — only tier/event type/source.
+      if (window.clsGA) window.clsGA('lead_submitted', { tier: tier || '', event_type: form.eventType.value || '', source: (srcEl && srcEl.value) || src || '' });
       // NO echo of the submitted PII — swap the form out for a thank-you + share offer.
       form.style.display = 'none';
       if (thanks) thanks.className = 'lc-thanks show';

@@ -46,6 +46,8 @@
       'ev.party': 'Party', 'ev.concert': 'Concert / Festival', 'ev.club': 'Club / DJ', 'ev.wedding': 'Wedding', 'ev.corp': 'Corporate / Conference', 'ev.sport': 'Sports / Arena', 'ev.church': 'Church / Worship', 'ev.other': 'Other',
       'foot.free': 'Made by Andrii Shramko. Free & open-source (Apache-2.0).', 'foot.custom': 'Need custom work or integration?', 'foot.getintouch': 'Get in touch.',
       'foot.privacy': 'Privacy', 'foot.imprint': 'Imprint',
+      'cookie.text': 'We use Google Analytics — only with your consent — to understand in aggregate how the app is used (IP-anonymized, no advertising). It does not run until you accept.',
+      'cookie.accept': 'Accept', 'cookie.reject': 'Reject', 'cookie.more': 'Privacy & cookies', 'cookie.settings': 'Cookie settings',
     },
     pl: {
       'nav.try': 'Wypróbuj demo', 'nav.how': 'Jak to działa', 'nav.pricing': 'Cennik', 'nav.about': 'O projekcie i bezpieczeństwie', 'nav.source': 'Kod źródłowy', 'nav.contact': 'Kontakt',
@@ -75,6 +77,8 @@
       'ev.party': 'Impreza', 'ev.concert': 'Koncert / Festiwal', 'ev.club': 'Klub / DJ', 'ev.wedding': 'Wesele', 'ev.corp': 'Firmowe / Konferencja', 'ev.sport': 'Sport / Arena', 'ev.church': 'Kościół / Nabożeństwo', 'ev.other': 'Inne',
       'foot.free': 'Stworzone przez Andrii Shramko. Darmowe i open-source (Apache-2.0).', 'foot.custom': 'Potrzebujesz pracy na zamówienie lub integracji?', 'foot.getintouch': 'Napisz.',
       'foot.privacy': 'Prywatność', 'foot.imprint': 'Dane firmy',
+      'cookie.text': 'Używamy Google Analytics — wyłącznie za Twoją zgodą — aby zbiorczo rozumieć, jak korzysta się z aplikacji (IP anonimizowane, bez reklam). Nie działa, dopóki nie zaakceptujesz.',
+      'cookie.accept': 'Akceptuję', 'cookie.reject': 'Odrzuć', 'cookie.more': 'Prywatność i pliki cookie', 'cookie.settings': 'Ustawienia cookie',
     },
     es: {
       'nav.try': 'Probar la demo', 'nav.how': 'Cómo funciona', 'nav.pricing': 'Precios', 'nav.about': 'Acerca de y seguridad', 'nav.source': 'Código fuente', 'nav.contact': 'Contacto',
@@ -104,6 +108,8 @@
       'ev.party': 'Fiesta', 'ev.concert': 'Concierto / Festival', 'ev.club': 'Discoteca / DJ', 'ev.wedding': 'Boda', 'ev.corp': 'Corporativo / Congreso', 'ev.sport': 'Deporte / Estadio', 'ev.church': 'Iglesia / Culto', 'ev.other': 'Otro',
       'foot.free': 'Hecho por Andrii Shramko. Gratis y de código abierto (Apache-2.0).', 'foot.custom': '¿Necesitas trabajo a medida o integración?', 'foot.getintouch': 'Contacta.',
       'foot.privacy': 'Privacidad', 'foot.imprint': 'Aviso legal',
+      'cookie.text': 'Usamos Google Analytics — solo con tu consentimiento — para entender de forma agregada cómo se usa la app (IP anonimizada, sin publicidad). No se activa hasta que aceptes.',
+      'cookie.accept': 'Aceptar', 'cookie.reject': 'Rechazar', 'cookie.more': 'Privacidad y cookies', 'cookie.settings': 'Configurar cookies',
     },
     fr: {
       'nav.try': 'Essayer la démo', 'nav.how': 'Comment ça marche', 'nav.pricing': 'Tarifs', 'nav.about': 'À propos et sécurité', 'nav.source': 'Code source', 'nav.contact': 'Contact',
@@ -133,6 +139,8 @@
       'ev.party': 'Fête', 'ev.concert': 'Concert / Festival', 'ev.club': 'Club / DJ', 'ev.wedding': 'Mariage', 'ev.corp': 'Entreprise / Conférence', 'ev.sport': 'Sport / Arène', 'ev.church': 'Église / Culte', 'ev.other': 'Autre',
       'foot.free': 'Réalisé par Andrii Shramko. Gratuit et open-source (Apache-2.0).', 'foot.custom': 'Besoin de sur-mesure ou d’intégration ?', 'foot.getintouch': 'Contactez-nous.',
       'foot.privacy': 'Confidentialité', 'foot.imprint': 'Mentions légales',
+      'cookie.text': 'Nous utilisons Google Analytics — uniquement avec votre consentement — pour comprendre de façon agrégée l’usage de l’app (IP anonymisée, sans publicité). Il ne s’active qu’après votre acceptation.',
+      'cookie.accept': 'Accepter', 'cookie.reject': 'Refuser', 'cookie.more': 'Confidentialité et cookies', 'cookie.settings': 'Paramètres cookies',
     },
   };
 

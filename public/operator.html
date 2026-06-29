@@ -5,38 +5,49 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
 <title>Operator · Crowd Light Show</title>
+@@GA@@
 <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-<div class="wrap">
+<div class="wrap op-console">
   <h1 id="consoleTitle">Operator console</h1>
   <p id="pubWelcome" class="muted hidden"></p>
+  <button id="playSound" class="hidden" style="background:#2bc0ee;color:#04222c;font-weight:700;font-size:1.1rem;padding:14px">▶ Play with sound</button>
   <p class="muted">Connected: <span id="conn">…</span> · <span data-feature="applications">Audience: <b id="count">0</b> · Free disk: <span id="disk">–</span></span><span id="pubCount" class="hidden">Phones joined: <b id="count2">0</b></span></p>
 
-  <div class="card">
+  <div class="card" id="cardPlaylist">
     <h2 id="playlistTitle">1 · Playlist</h2>
     <div data-feature="upload">
       <p id="uploadConsentWrap" class="hidden" style="text-align:left">
         <label class="muted" style="display:flex;gap:8px;align-items:flex-start">
           <input type="checkbox" id="uploadConsent">
-          <span>I confirm I have the right to use this music — I own it or hold all necessary rights and licences to play it publicly. Public performance of music may require a separate licence from a collecting society (in Poland, ZAiKS); obtaining it is my responsibility, not the platform's. My file is processed only to generate the light show and is deleted automatically right after — it is <b>not stored, published or shared</b> (lights only; the audio is never kept or re-played).</span>
+          <span>I confirm I have the right to use this music — I own it or hold all necessary rights and licences to play it publicly. Public performance of music may require a separate licence from a collecting society (in Poland, ZAiKS); obtaining it is my responsibility, not the platform's. My file is <b>stored and streamed to the phones in this session</b> so everyone hears it, and is <b>deleted when I close this page (or within 24 hours)</b>, whichever comes first — it is not published anywhere beyond this session.</span>
         </label>
       </p>
       <input type="file" id="file" accept="audio/*">
       <button id="upload" class="primary">Upload &amp; analyze</button>
       <div id="uploadMsg" class="muted"></div>
     </div>
-    <p id="playlistHint" class="muted hidden">Pick a track to play it to your phones — no setup needed. The lights start automatically; tap “🔊 Sound” to add the music.</p>
+    <p id="playlistHint" class="muted hidden">The lights are already running. Share the code below so phones join — tap “▶ Play with sound” to hear the music. Pick another track here anytime.</p>
     <table id="tracks"><tbody></tbody></table>
+    <div id="playlistCtl" class="hidden" style="margin-top:10px">
+      <div class="muted" style="font-size:.85rem;margin-bottom:4px">When a track ends:</div>
+      <div class="row" id="plModes" style="flex-wrap:wrap;gap:6px">
+        <button data-plmode="all" style="width:auto">🔁 Loop all</button>
+        <button data-plmode="selected" style="width:auto">☑️ Loop selected</button>
+        <button data-plmode="one" style="width:auto">🔂 Loop one</button>
+      </div>
+      <p class="muted" id="plNowNext" style="margin:6px 0 0"></p>
+    </div>
   </div>
 
-  <div class="card">
+  <div class="card" id="cardJoin">
     <h2>2 · Join QR <button id="projector" style="width:auto;float:right;margin:0">Projector ⤢</button></h2>
     <div class="qrbox"><img id="qr" alt="Join QR"></div>
     <p class="muted">Join URL: <a id="joinurl" target="_blank"></a></p>
   </div>
 
-  <div class="card">
+  <div class="card" id="cardShow">
     <h2>3 · Show control</h2>
     <p>Armed: <b id="armed">—</b> · State: <span class="pill" id="state">idle</span></p>
     <p class="muted">The console is the audio source. On GO it plays the track and the lights lock to it. Tune sync with nudge at soundcheck.</p>
