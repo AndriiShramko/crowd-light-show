@@ -56,6 +56,19 @@ export const config = {
   // Capacity guard: refuse new audience past this with a graceful "venue full" so the
   // single process degrades instead of OOM-killing the container at stadium scale.
   maxAudience: Number(process.env.MAX_AUDIENCE || 1500),
+  // ROUND 9 — public operator console (/studio). Hard cap on concurrent ephemeral
+  // public rooms (each = members+alloc+run+presets, small, but bounded for the 512 MB box)
+  // and a per-IP cap on how many rooms one client may mint per minute (anti-flood).
+  publicMaxRooms: Number(process.env.PUBLIC_MAX_ROOMS || 300),
+  publicMintPerIpPerMin: Number(process.env.PUBLIC_MINT_PER_IP || 12),
+  // Public own-music upload (req 3) ships DARK by default. When enabled it is
+  // decode-then-discard (lights only, the audio is never re-served), consent-gated,
+  // and bounded by its OWN small budget + a decode semaphore. Flip after legal review.
+  publicUploadEnabled: process.env.PUBLIC_UPLOAD_ENABLED === '1',
+  publicUploadMaxBytes: Number(process.env.PUBLIC_UPLOAD_MAX_BYTES || 10 * 1024 * 1024),
+  publicUploadMaxDurationMs: Number(process.env.PUBLIC_UPLOAD_MAX_MS || 5 * 60 * 1000),
+  publicUploadBudgetBytes: Number(process.env.PUBLIC_UPLOAD_BUDGET || 500 * 1024 * 1024),
+  publicUploadConcurrency: Number(process.env.PUBLIC_UPLOAD_CONCURRENCY || 2),
 };
 
 export function scryptVerify(plainPass, stored) {
