@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-06-29
+
+Round 8A — screen engine: waveform-restart bug fixed, much stronger (operator-tunable) music reactivity, and a live preset preview in the operator console. Screen channel only; the separate torch channel is a later round.
+
+### Fixed
+
+- **Waveform vanished after a restart.** After the music ended and the operator pressed GO again on the same armed track, the loudness waveform disappeared on every phone and never returned until the app was restarted. Root cause (`public/audience.js`): a track-end calls `hideWave()`, and a fresh GO broadcasts only `{t:'start'}` (no new `{t:'timeline'}`, so `buildEnvelope()` — which un-hid the canvas — never ran). Fix: show/hide are decoupled from `buildEnvelope`, and `{t:'start'}` now calls `showWave()`. Proven by `test/waveform_restart.mjs` (stop→GO ×3 and a natural track-end→GO, no JS errors).
+
+### Changed
+
+- **Much stronger, operator-tunable music reactivity.** New `audioDrive()` conditions the governed loudness — floor-gate → normalize → **Reactivity strength (audioGain 1–6, def 2.5)** → **Reactivity curve (audioGamma)** — with a new **Reactivity floor (audioFloor)**, so the sliders have real range (measured ≥1.5× luminance-swing span from min→max strength on every hero preset, up to ~4.8× on Pulse; `test/reactivity_swing.mjs`). `audioDepth=0` stays byte-identical to the autonomous look for any params (parity invariant). The on-device safety governor still bounds every preset to ≤3 flashes/s at max strength (`test/presets_safety.test.mjs`).
+
+### Added
+
+- **Live preset preview in the operator console.** A safety-governed filmstrip (`CLS_PRESETS` + `clampColor` + `makeBackstop`, driven by a synthetic loudness) shows what the crowd's screen does — colour, brightness, flash — as the operator turns each value. The console now loads `presets.js`. Proven by `test/preview_op.mjs` (preview renders, changes per preset, reacts to sliders, ≤3 flashes/s — not a bypass).
+
 ## [0.6.0] - 2026-06-29
 
 Two audio fixes: restore tight same-model phone sync, and let the operator actually change the track.

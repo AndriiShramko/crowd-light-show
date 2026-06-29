@@ -46,20 +46,24 @@ test('PRESETS outputs identical (server vs browser) across a grid', () => {
   assert.ok(checked > 1000, 'checked ' + checked);
 });
 
-test('audio-reactive PRESETS identical (server vs browser) across level + audioDepth + audioGamma', () => {
+test('audio-reactive PRESETS identical (server vs browser) across level + audioDepth/Gain/Floor/Gamma', () => {
   let checked = 0;
   for (const type of Object.keys(PARAM_SCHEMA)) {
     for (const audioDepth of [0, 0.5, 1]) {
-      for (const audioGamma of [1, 1.6]) {
-        const p = Object.assign(defs(type), { audioDepth, audioGamma });
-        for (const N of [1, 12, 37]) {
-          for (const index of [0, Math.floor(N / 2), N - 1]) {
-            for (const level of [undefined, 0, 0.27, 0.5, 0.81, 1]) {
-              for (let pos = 0; pos <= 4000; pos += 311) {
-                const a = norm(clampS(S[type](pos, p, index, N, level)));
-                const b = norm(B.clampColor(B.PRESETS[type](pos, p, index, N, level)));
-                assert.deepEqual(b, a, `${type} depth=${audioDepth} gamma=${audioGamma} N=${N} idx=${index} level=${level} pos=${pos}: ${b} != ${a}`);
-                checked++;
+      for (const audioGain of [1, 6]) {                  // round-8A strength knob
+        for (const audioFloor of [0, 0.4]) {             // round-8A floor-gate
+          for (const audioGamma of [0.6, 1.2]) {
+            const p = Object.assign(defs(type), { audioDepth, audioGain, audioFloor, audioGamma });
+            for (const N of [1, 12, 37]) {
+              for (const index of [0, Math.floor(N / 2), N - 1]) {
+                for (const level of [undefined, 0, 0.5, 1]) {
+                  for (let pos = 0; pos <= 4000; pos += 411) {
+                    const a = norm(clampS(S[type](pos, p, index, N, level)));
+                    const b = norm(B.clampColor(B.PRESETS[type](pos, p, index, N, level)));
+                    assert.deepEqual(b, a, `${type} depth=${audioDepth} gain=${audioGain} floor=${audioFloor} gamma=${audioGamma} N=${N} idx=${index} level=${level} pos=${pos}: ${b} != ${a}`);
+                    checked++;
+                  }
+                }
               }
             }
           }
@@ -70,14 +74,16 @@ test('audio-reactive PRESETS identical (server vs browser) across level + audioD
   assert.ok(checked > 5000, 'checked ' + checked);
 });
 
-test('audioDepth=0 (or no level) reproduces the autonomous output exactly', () => {
+test('audioDepth=0 reproduces the autonomous output exactly (any gain/floor/gamma)', () => {
   for (const type of Object.keys(PARAM_SCHEMA)) {
-    const p0 = Object.assign(defs(type), { audioDepth: 0 });
-    for (const N of [12]) for (const index of [0, 5, 11]) for (let pos = 0; pos <= 4000; pos += 173) {
-      const auto = norm(clampS(S[type](pos, defs(type), index, N)));        // 4-arg, today's behaviour
-      for (const level of [0, 0.5, 1]) {
-        const withDepth0 = norm(clampS(S[type](pos, p0, index, N, level))); // depth 0 => music has no effect
-        assert.deepEqual(withDepth0, auto, `${type} depth0 level=${level} pos=${pos} drifted from autonomous`);
+    for (const audioGain of [1, 2.5, 6]) for (const audioFloor of [0, 0.12, 0.5]) {
+      const p0 = Object.assign(defs(type), { audioDepth: 0, audioGain, audioFloor });
+      for (const N of [12]) for (const index of [0, 5, 11]) for (let pos = 0; pos <= 4000; pos += 173) {
+        const auto = norm(clampS(S[type](pos, defs(type), index, N)));        // 4-arg, today's behaviour
+        for (const level of [0, 0.5, 1]) {
+          const withDepth0 = norm(clampS(S[type](pos, p0, index, N, level))); // depth 0 => music has no effect, any gain
+          assert.deepEqual(withDepth0, auto, `${type} depth0 gain=${audioGain} floor=${audioFloor} level=${level} pos=${pos} drifted from autonomous`);
+        }
       }
     }
   }

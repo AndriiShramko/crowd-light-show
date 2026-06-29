@@ -52,27 +52,33 @@
     return hsl2rgb(lerpHue(a[0], b[0], f), lerp(a[1], b[1], f), lerp(a[2], b[2], f));
   }
 
-  // Music reactivity drive (mirror of src/presets.js envL): level = governed loudness
-  // (sampleCue(trackPos).b, already <=3 fl/s) at the synced track position. Returns the
-  // effective drive 0..1; ZERO when audioDepth=0 OR no track -> preset == today exactly.
-  function envL(level, p) {
+  // Music reactivity drive (mirror of src/presets.js audioDrive — round 8A, stronger +
+  // operator-tunable): level = governed loudness (sampleCue(trackPos).b, already <=3 fl/s)
+  // at the synced track position. Conditions it (floor-gate -> normalize -> GAIN -> GAMMA)
+  // into { m, a }: m = drive 0..1, a = crossfade weight = audioDepth. audioDepth=0 returns
+  // { m:0, a:0 } -> preset == the autonomous look exactly for any gain/floor/gamma.
+  function audioDrive(level, p) {
+    var d = p.audioDepth == null ? 0 : (p.audioDepth < 0 ? 0 : p.audioDepth > 1 ? 1 : p.audioDepth);
+    if (d === 0) return { m: 0, a: 0 };
     var lv = (typeof level === 'number' && level === level) ? level : 0;
     lv = lv < 0 ? 0 : lv > 1 ? 1 : lv;
-    var d = p.audioDepth == null ? 0 : (p.audioDepth < 0 ? 0 : p.audioDepth > 1 ? 1 : p.audioDepth);
-    var a = d * lv;
-    var g = p.audioGamma == null ? 1 : p.audioGamma;
-    if (g !== 1) a = Math.pow(a, g);
-    return a;
+    var floor = p.audioFloor == null ? 0 : (p.audioFloor < 0 ? 0 : p.audioFloor > 0.9 ? 0.9 : p.audioFloor);
+    var gain = p.audioGain == null ? 1 : (p.audioGain < 0.1 ? 0.1 : p.audioGain > 8 ? 8 : p.audioGain);
+    var gamma = p.audioGamma == null ? 1 : p.audioGamma;
+    var x = (lv - floor) / (1 - floor);
+    if (x < 0) x = 0;
+    x = x * gain; if (x > 1) x = 1;
+    if (gamma !== 1) x = Math.pow(x, gamma);
+    return { m: x, a: d };
   }
-  function lvl01(level) { return (typeof level === 'number' && level === level) ? clamp01(level) : 0; }
 
   var PRESETS = {
     pulse: function (position, p, index, N, level) {
       var t = position / 1000;
-      var a = envL(level, p);
+      var dr = audioDrive(level, p);
       var gen = clamp01(p.base + p.depth * sin01(t * p.bpm / 60));
-      var music = clamp01(p.base + (1 - p.base) * lvl01(level));
-      var L = gen + a * (music - gen);                  // == gen when a==0
+      var music = clamp01(p.base + (1 - p.base) * dr.m);
+      var L = gen + dr.a * (music - gen);               // == gen when dr.a==0
       return hsl2rgb(p.hue, p.sat, L * 0.85 + 0.04);
     },
     color_waves: function (position, p, index, N, level) {
@@ -80,32 +86,34 @@
       var u = N > 1 ? index / (N - 1) : 0;
       var phase = p.dir * p.speed * t - u / p.wavelength;
       var rgb = palAt(WAVE_PAL, phase);
-      var a = envL(level, p);
-      var k = 1 - a * (1 - (0.35 + 0.65 * lvl01(level)));  // k==1 when a==0; k in [0.35,1]
+      var dr = audioDrive(level, p);
+      var k = 1 - dr.a * (1 - (0.30 + 0.70 * dr.m));    // k==1 when dr.a==0; k in [0.30,1]
       return [rgb[0] * k, rgb[1] * k, rgb[2] * k];
     },
     rainbow_chase: function (position, p, index, N, level) {
       var t = position / 1000;
       var u = N > 1 ? index / (N - 1) : 0;
       var h = 360 * frac(p.dir * p.speed * t + p.spread * u);
-      var a = envL(level, p);
-      var L = 0.5 - a * (0.5 - (0.18 + 0.42 * lvl01(level)));  // L==0.5 when a==0; L in [0.18,0.6]
+      var dr = audioDrive(level, p);
+      var L = 0.5 - dr.a * (0.5 - (0.15 + 0.45 * dr.m));  // L==0.5 when dr.a==0; L in [0.15,0.6]
       return hsl2rgb(h, 0.9, L);
     },
     ocean: function (position, p, index, N, level) {
       var t = position / 1000;
       var ph = sin01(t * p.speed);
-      var a = envL(level, p);
+      var dr = audioDrive(level, p);
       var lAuto = 0.30 + 0.35 * ph;
-      var lMusic = 0.30 + 0.35 * ph + 0.30 * lvl01(level);
-      var L = lAuto + a * (lMusic - lAuto);             // == lAuto when a==0
+      var lMusic = lAuto + 0.40 * dr.m;
+      var L = lAuto + dr.a * (lMusic - lAuto);          // == lAuto when dr.a==0
       return hsl2rgb(lerp(180, 205, ph), 0.7, clamp01(L));
     },
   };
 
   var AUDIO_PARAMS = {
     audioDepth: { min: 0, max: 1, step: 0.01, def: 0, label: 'Music reactivity' },
-    audioGamma: { min: 0.4, max: 2.5, step: 0.05, def: 1, label: 'Reactivity curve' },
+    audioGain: { min: 1, max: 6, step: 0.1, def: 2.5, label: 'Reactivity strength' },
+    audioFloor: { min: 0, max: 0.5, step: 0.01, def: 0.12, label: 'Reactivity floor' },
+    audioGamma: { min: 0.4, max: 1.6, step: 0.05, def: 0.8, label: 'Reactivity curve' },
   };
   var PARAM_SCHEMA = {
     pulse: { label: 'Pulse', spatial: false, params: {
@@ -114,20 +122,20 @@
       base: { min: 0.05, max: 0.5, step: 0.01, def: 0.18, label: 'Floor' },
       hue: { min: 0, max: 360, step: 1, def: 265, label: 'Hue' },
       sat: { min: 0, max: 1, step: 0.01, def: 0.7, label: 'Saturation' },
-      audioDepth: AUDIO_PARAMS.audioDepth, audioGamma: AUDIO_PARAMS.audioGamma } },
+      audioDepth: AUDIO_PARAMS.audioDepth, audioGain: AUDIO_PARAMS.audioGain, audioFloor: AUDIO_PARAMS.audioFloor, audioGamma: AUDIO_PARAMS.audioGamma } },
     color_waves: { label: 'Color Waves', spatial: true, params: {
       speed: { min: 0.02, max: 0.6, step: 0.01, def: 0.15, label: 'Speed' },
       wavelength: { min: 0.3, max: 3, step: 0.05, def: 1.0, label: 'Wavelength' },
       dir: { min: -1, max: 1, step: 2, def: 1, label: 'Direction' },
-      audioDepth: AUDIO_PARAMS.audioDepth, audioGamma: AUDIO_PARAMS.audioGamma } },
+      audioDepth: AUDIO_PARAMS.audioDepth, audioGain: AUDIO_PARAMS.audioGain, audioFloor: AUDIO_PARAMS.audioFloor, audioGamma: AUDIO_PARAMS.audioGamma } },
     rainbow_chase: { label: 'Rainbow Chase', spatial: true, params: {
       speed: { min: 0.02, max: 0.5, step: 0.01, def: 0.1, label: 'Speed' },
       spread: { min: 0.2, max: 3, step: 0.05, def: 1.0, label: 'Spread' },
       dir: { min: -1, max: 1, step: 2, def: 1, label: 'Direction' },
-      audioDepth: AUDIO_PARAMS.audioDepth, audioGamma: AUDIO_PARAMS.audioGamma } },
+      audioDepth: AUDIO_PARAMS.audioDepth, audioGain: AUDIO_PARAMS.audioGain, audioFloor: AUDIO_PARAMS.audioFloor, audioGamma: AUDIO_PARAMS.audioGamma } },
     ocean: { label: 'Ocean', spatial: false, params: {
       speed: { min: 0.04, max: 0.3, step: 0.01, def: 0.12, label: 'Speed' },
-      audioDepth: AUDIO_PARAMS.audioDepth, audioGamma: AUDIO_PARAMS.audioGamma } },
+      audioDepth: AUDIO_PARAMS.audioDepth, audioGain: AUDIO_PARAMS.audioGain, audioFloor: AUDIO_PARAMS.audioFloor, audioGamma: AUDIO_PARAMS.audioGamma } },
   };
 
   function defaults(type) {

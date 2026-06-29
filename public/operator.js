@@ -168,6 +168,46 @@
   // ---- live presets (studio) ----
   var presetSchema = null, activeType = null, activeParams = {};
   function defParams(type) { var o = {}, ps = presetSchema[type].params; for (var k in ps) o[k] = ps[k].def; return o; }
+
+  // ---- live preview (round 8A): SEE what each preset/param does to colour, brightness &
+  // flash, rendered through the EXACT phone pipeline (clampColor + makeBackstop = the same
+  // safety governor; the preview can NEVER show >3 flashes/s — it is not a bypass). A
+  // synthetic loudness drives the music-reactivity so the operator can watch the reactivity
+  // sliders bite even with no track running. Scrolls a filmstrip: time -> right.
+  var PV = window.CLS_PRESETS;
+  var pvCanvas = $('presetPreview'), pvCtx = pvCanvas ? pvCanvas.getContext('2d') : null;
+  var pvBackstop = null, pvT0 = null, pvLast = 0;
+  window.__opPreview = { ready: !!PV, type: null, frames: 0, changeSeq: 0, maxLum: 0, minLum: 1, hueMin: 360, hueMax: 0, hueSpread: 0, flashesPerSec: 0, lastBg: '', cross: [], _armed: true };
+  function simLoudness(ms) { var s = 0.10 + 0.30 * (0.5 + 0.5 * Math.sin(2 * Math.PI * ms / 1400)); var beat = (ms % 1400) < 110 ? 0.45 : 0; var v = s + beat; return v > 1 ? 1 : v; }
+  function rgbHue(r, g, b) { r /= 255; g /= 255; b /= 255; var mx = Math.max(r, g, b), mn = Math.min(r, g, b), d = mx - mn; if (d < 1e-6) return 0; var h; if (mx === r) h = ((g - b) / d) % 6; else if (mx === g) h = (b - r) / d + 2; else h = (r - g) / d + 4; h *= 60; return h < 0 ? h + 360 : h; }
+  function pvReset() {
+    var pv = window.__opPreview;
+    pv.frames = 0; pv.maxLum = 0; pv.minLum = 1; pv.hueMin = 360; pv.hueMax = 0; pv.hueSpread = 0; pv.cross = []; pv._armed = true; pv.changeSeq++;
+    pvBackstop = PV ? PV.makeBackstop(150) : null; pvT0 = null;
+    if (pvCtx && pvCanvas.width) pvCtx.clearRect(0, 0, pvCanvas.width, pvCanvas.height);
+  }
+  function pvShow(on) { var w = $('presetPreviewWrap'); if (w) w.className = on ? '' : 'hidden'; }
+  function pvFrame(now) {
+    requestAnimationFrame(pvFrame);
+    if (!pvCtx || !PV || !activeType || !presetSchema || !presetSchema[activeType]) return;
+    if (!pvCanvas.width || pvCanvas.width < 8) { pvCanvas.width = pvCanvas.clientWidth || 320; pvCanvas.height = 56; }
+    if (pvT0 == null) { pvT0 = now; pvLast = now; }
+    var ms = now - pvT0, dt = Math.max(1, now - pvLast); pvLast = now;
+    var rgb = PV.clampColor(PV.PRESETS[activeType](ms, activeParams, 0, 1, simLoudness(ms)));
+    if (pvBackstop) rgb = pvBackstop(rgb, dt);                 // GOVERNED — exactly the phone's output
+    var w = pvCanvas.width, h = pvCanvas.height, col = 3;
+    try { var img = pvCtx.getImageData(col, 0, w - col, h); pvCtx.putImageData(img, 0, 0); } catch (e) {}
+    var bg = 'rgb(' + rgb[0] + ',' + rgb[1] + ',' + rgb[2] + ')';
+    pvCtx.fillStyle = bg; pvCtx.fillRect(w - col, 0, col, h);
+    var pv = window.__opPreview, L = PV.relLum(rgb);
+    pv.frames++; pv.type = activeType; pv.lastBg = bg;
+    if (L > pv.maxLum) pv.maxLum = L; if (L < pv.minLum) pv.minLum = L;
+    if (L > 0.1) { var hue = rgbHue(rgb[0], rgb[1], rgb[2]); if (hue < pv.hueMin) pv.hueMin = hue; if (hue > pv.hueMax) pv.hueMax = hue; pv.hueSpread = pv.hueMax - pv.hueMin; }
+    if (L < 0.25) pv._armed = true; else if (L >= 0.6 && pv._armed) { pv._armed = false; pv.cross.push(ms); }
+    while (pv.cross.length && ms - pv.cross[0] > 1000) pv.cross.shift();
+    pv.flashesPerSec = pv.cross.length;
+  }
+  requestAnimationFrame(pvFrame);
   function highlightPreset() {
     Array.prototype.forEach.call($('presetBtns').querySelectorAll('button'), function (b) {
       var t = b.getAttribute('data-preset');
@@ -201,6 +241,7 @@
   }
   var paramTimer = null, pendingParam = {};
   function sendParam(k, v) {
+    if (window.__opPreview) window.__opPreview.changeSeq++;   // slider move -> preview re-renders live (reads activeParams)
     pendingParam[k] = v; if (paramTimer) return;
     paramTimer = setTimeout(function () {
       var pp = pendingParam; pendingParam = {}; paramTimer = null;
@@ -212,10 +253,12 @@
   function pickPreset(type) {
     if (type === 'off') {
       activeType = null; $('presetParams').innerHTML = ''; highlightPreset();
+      window.__opPreview.type = null; pvShow(false);
       api('/api/operator/preset', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'off' }) });
       $('presetMsg').textContent = 'Presets off.'; return;
     }
     activeType = type; activeParams = defParams(type); renderParams(); highlightPreset();
+    pvReset(); pvShow(true);   // live preview reflects the newly picked preset immediately
     api('/api/operator/preset', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: type, params: activeParams }) })
       .then(function (r) { return r.json(); })
       .then(function (j) { $('presetMsg').textContent = j.ok ? ('● LIVE: ' + presetSchema[type].label + ' — epoch ' + j.epoch) : ('Error: ' + (j.error || '')); });
@@ -228,7 +271,7 @@
         var b = document.createElement('button'); b.style.width = 'auto'; b.textContent = d.schema[type].label; b.setAttribute('data-preset', type); box.appendChild(b);
       });
       var off = document.createElement('button'); off.style.width = 'auto'; off.className = 'ghost'; off.textContent = '■ Off'; off.setAttribute('data-preset', 'off'); box.appendChild(off);
-      if (d.active && d.active.type && d.active.type !== 'off') { activeType = d.active.type; activeParams = Object.assign({}, d.active.params); renderParams(); }
+      if (d.active && d.active.type && d.active.type !== 'off') { activeType = d.active.type; activeParams = Object.assign({}, d.active.params); renderParams(); pvReset(); pvShow(true); }
       highlightPreset();
     });
   }

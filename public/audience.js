@@ -151,7 +151,7 @@
       }
       if (audioOn) cacheAudio(); showAudioBtn(); return;
     }
-    if (m.t === 'start') { runState = { status: 'running', T0: m.T0, epoch: m.epoch, pausePos: 0 }; window.__cls.status = 'running'; window.__cls.gotStart = m.T0; prevLum = 0; flashArmed = true; if (audio && audioOn) audio.start(m.T0); setStatus('st_play'); return; }
+    if (m.t === 'start') { runState = { status: 'running', T0: m.T0, epoch: m.epoch, pausePos: 0 }; window.__cls.status = 'running'; window.__cls.gotStart = m.T0; prevLum = 0; flashArmed = true; if (audio && audioOn) audio.start(m.T0); setStatus('st_play'); showWave(); return; }
     if (m.t === 'pause') { runState.status = 'paused'; runState.pausePos = m.pos; window.__cls.status = 'paused'; if (audio) audio.stop(); setStatus('st_paused'); return; }
     if (m.t === 'stop') { runState = { status: 'idle', T0: null, epoch: m.epoch, pausePos: 0 }; preset = null; window.__cls.preset = null; window.__cls.status = 'idle'; if (audio) audio.stop(); hideWave(); setStatus('st_wait'); return; }
     if (m.t === 'blackout') { runState = { status: 'blackout', T0: null, epoch: m.epoch }; preset = null; window.__cls.preset = null; window.__cls.status = 'blackout'; if (audio) audio.stop(); hideWave(); return; }
@@ -318,10 +318,17 @@
     if (!timeline || !timeline.cues || !timeline.durationMs) return;
     var N = 200, dur = timeline.durationMs, a = new Array(N);
     for (var i = 0; i < N; i++) a[i] = sampleCue(i / N * dur).b;
-    env = a; if (waveEl) waveEl.classList.remove('hidden');
+    env = a; showWave();
   }
   function initWave() { waveEl = document.getElementById('wave'); if (waveEl) waveCtx = waveEl.getContext('2d'); }
-  function hideWave() { if (waveEl) waveEl.classList.add('hidden'); }
+  // Show/hide are decoupled from buildEnvelope so a RESTART can re-reveal the waveform.
+  // The bug (round 8A): the track ends -> hideWave(); the operator presses GO again on the
+  // SAME armed track -> the server sends only {t:'start'} (no fresh {t:'timeline'}, so
+  // buildEnvelope is NOT called) -> the canvas stayed `hidden` forever until the phone app
+  // was restarted. So {t:'start'} now calls showWave() too. env/waveEl survive a restart
+  // (neither is nulled), so re-showing is safe.
+  function showWave() { if (waveEl && env) waveEl.classList.remove('hidden'); window.__cls.waveHidden = waveEl ? waveEl.classList.contains('hidden') : null; }
+  function hideWave() { if (waveEl) waveEl.classList.add('hidden'); window.__cls.waveHidden = waveEl ? waveEl.classList.contains('hidden') : null; }
   function drawWave(pos) {
     if (!waveCtx || !env) return;
     var cw = waveEl.clientWidth || 320, ch = waveEl.clientHeight || 44;

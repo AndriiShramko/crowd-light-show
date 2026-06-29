@@ -91,10 +91,20 @@ test('audio-reactive presets stay <=3 flashes/s on a beat-heavy track (rendered 
   assert.ok(maxFlashesPerWindow(cues) <= 3, 'fixture cue series must already be governed <=3/s');
 
   // Drive the EXACT phone render pipeline: clampColor + makeBackstop(150), level = governed b(t).
+  // round-8A: sweep includes the STRONGEST reactivity (max gain, min floor, min gamma) — the
+  // conditioned drive must never let a beat-heavy track strobe >3/s through the on-device backstop.
+  const audioConfigs = [
+    { audioDepth: 0.3, audioGamma: 1 },
+    { audioDepth: 0.6, audioGamma: 1 },
+    { audioDepth: 1, audioGamma: 1 },
+    { audioDepth: 1, audioGain: 6, audioFloor: 0, audioGamma: 0.4 },     // max strength / steepest
+    { audioDepth: 1, audioGain: 6, audioFloor: 0.5, audioGamma: 1.6 },   // max gain, high floor/gamma
+    { audioDepth: 0.7, audioGain: 4, audioFloor: 0.1, audioGamma: 0.8 }, // strong near-defaults
+  ];
   for (const type of PRESET_TYPES) {
-    for (const depth of [0.3, 0.6, 1]) {
-      const v = validatePreset(type, { audioDepth: depth, audioGamma: 1, bpm: 180, depth: 0.8, speed: 0.5 });
-      assert.ok(v.ok, `${type} depth ${depth} rejected`);
+    for (const ac of audioConfigs) {
+      const v = validatePreset(type, { ...ac, bpm: 180, depth: 0.8, speed: 0.5 });
+      assert.ok(v.ok, `${type} ${JSON.stringify(ac)} rejected`);
       for (const N of [12]) for (const idx of [0, 6, 11]) {
         const backstop = CLS.makeBackstop(150);
         const cross = []; let armed = true;
@@ -106,7 +116,7 @@ test('audio-reactive presets stay <=3 flashes/s on a beat-heavy track (rendered 
           if (L < LOW) armed = true; else if (L >= HIGH && armed) { cross.push(ms); armed = false; }
         }
         let j = 0, w = 0; for (let i = 0; i < cross.length; i++) { while (cross[i] - cross[j] >= 1000) j++; w = Math.max(w, i - j + 1); }
-        assert.ok(w <= 3, `${type} depth=${depth} N=${N} idx=${idx}: ${w} flashes/s on beat-heavy track`);
+        assert.ok(w <= 3, `${type} ${JSON.stringify(ac)} N=${N} idx=${idx}: ${w} flashes/s on beat-heavy track`);
       }
     }
   }
@@ -115,10 +125,13 @@ test('audio-reactive presets stay <=3 flashes/s on a beat-heavy track (rendered 
 test('validatePreset gate is safe with audio params (dual-pass level 0/1)', () => {
   const v = validatePreset('pulse', { audioDepth: 1, audioGamma: 1, depth: 0.8, bpm: 180 });
   assert.ok(v.ok && v.sim.maxFlashesPerWindow <= 3, 'reactive pulse must pass gate <=3/s');
-  // audioDepth/audioGamma are clamped to schema bounds by validateParam (live morph path)
+  // audio params are clamped to schema bounds by validateParam (live morph path)
   assert.equal(validateParam('pulse', 'audioDepth', 5).value, 1);
   assert.equal(validateParam('pulse', 'audioDepth', -1).value, 0);
-  assert.equal(validateParam('ocean', 'audioGamma', 99).value, 2.5);
+  assert.equal(validateParam('ocean', 'audioGamma', 99).value, 1.6);   // round-8A max
+  assert.equal(validateParam('pulse', 'audioGain', 99).value, 6);      // round-8A strength cap
+  assert.equal(validateParam('pulse', 'audioGain', 0).value, 1);
+  assert.equal(validateParam('pulse', 'audioFloor', 9).value, 0.5);
 });
 
 test('validatePreset rejects unknown; off is allowed; validateParam clamps', () => {

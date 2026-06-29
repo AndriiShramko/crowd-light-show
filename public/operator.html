@@ -45,6 +45,10 @@
     <p class="muted">Switch the whole crowd live. Spatial presets use each phone's place in the crowd. Every preset is safety-clamped on the server (≤3 flashes/s, no red strobe). Arm + GO a track, then raise “Music reactivity” to make a preset breathe with the song.</p>
     <div id="presetBtns" class="row" style="flex-wrap:wrap;gap:8px"></div>
     <div id="presetParams" style="margin-top:10px"></div>
+    <div id="presetPreviewWrap" class="hidden" style="margin-top:10px">
+      <span class="muted" style="font-size:.85rem">Live preview — what the crowd's screen does as you turn the values (safety-governed, ≤3 flashes/s):</span>
+      <canvas id="presetPreview" style="width:100%;height:56px;border-radius:8px;display:block;margin-top:4px;background:#000"></canvas>
+    </div>
     <p class="muted" id="reactHint" style="margin-top:6px"></p>
     <p class="muted" id="presetMsg">Pick a preset to go live. (This is separate from the music timeline above.)</p>
   </div>
@@ -70,6 +74,7 @@
 
 <script>window.__TOKEN__ = "@@OPTOKEN@@"; window.__LEAD__ = @@LEAD@@;</script>
 <script src="/static/clocksync.js"></script>
+<script src="/static/presets.js"></script>
 <script src="/static/operator.js"></script>
 </body>
 </html>

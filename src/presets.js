@@ -61,35 +61,45 @@ function palAt(pal, x) {
   return hsl2rgb(lerpHue(a[0], b[0], f), lerp(a[1], b[1], f), lerp(a[2], b[2], f));
 }
 
-// Music reactivity drive. `level` is the GOVERNED loudness (sampleCue(trackPos).b,
-// already <=3 flashes/s) sampled at the synced track position — identical on every
-// phone, so reactivity stays in sync for free. Returns the effective drive 0..1:
-// ZERO whenever audioDepth is 0 OR there is no track (level undefined/0), so a preset
-// with the default audioDepth=0 is BYTE-IDENTICAL to the pre-reactive behaviour.
-// audioGamma shapes the response curve (a "sensitivity" feel); 1 = linear = no effect.
-export function envL(level, p) {
+// Music reactivity drive (round 8A — much stronger, operator-tunable). `level` is the
+// GOVERNED loudness (sampleCue(trackPos).b, already <=3 flashes/s) at the synced track
+// position — identical on every phone, so reactivity stays in sync for free. It is
+// CONDITIONED so the slider has real bite: floor-gate drops the quiet-room baseline,
+// normalize re-spans 0..1, GAIN makes loud parts reach full sooner (punch), GAMMA lifts
+// the mids. Returns { m, a }:
+//   m = conditioned drive 0..1 (what the brightness tracks when reactive)
+//   a = crossfade weight = audioDepth (0 = autonomous look, 1 = fully music-driven)
+// When audioDepth is 0 it returns { m:0, a:0 } => the preset is BYTE-IDENTICAL to the
+// autonomous (pre-reactive) output for ANY audioGain/audioFloor/audioGamma — the depth=0
+// invariant proven by test/presets_parity.
+export function audioDrive(level, p) {
+  let d = p.audioDepth == null ? 0 : (p.audioDepth < 0 ? 0 : p.audioDepth > 1 ? 1 : p.audioDepth);
+  if (d === 0) return { m: 0, a: 0 };                         // exact autonomous output, any other params
   let lv = (typeof level === 'number' && level === level) ? level : 0; // NaN/undefined -> 0
   lv = lv < 0 ? 0 : lv > 1 ? 1 : lv;
-  let d = p.audioDepth == null ? 0 : (p.audioDepth < 0 ? 0 : p.audioDepth > 1 ? 1 : p.audioDepth);
-  let a = d * lv;
-  const g = p.audioGamma == null ? 1 : p.audioGamma;
-  if (g !== 1) a = Math.pow(a, g);
-  return a;
+  const floor = p.audioFloor == null ? 0 : (p.audioFloor < 0 ? 0 : p.audioFloor > 0.9 ? 0.9 : p.audioFloor);
+  const gain = p.audioGain == null ? 1 : (p.audioGain < 0.1 ? 0.1 : p.audioGain > 8 ? 8 : p.audioGain);
+  const gamma = p.audioGamma == null ? 1 : p.audioGamma;
+  let x = (lv - floor) / (1 - floor);                          // floor-gate + normalize
+  if (x < 0) x = 0;
+  x = x * gain; if (x > 1) x = 1;                              // gain: loud saturates sooner = punch
+  if (gamma !== 1) x = Math.pow(x, gamma);                     // gamma<1 lifts the mid response
+  return { m: x, a: d };
 }
-function lvl01(level) { return (typeof level === 'number' && level === level) ? clamp01(level) : 0; }
 
 // ---------- the ~4 hero presets (math: spec-studio-arch C) ----------
 // Each: (positionMs, params, index, N, level) -> [r,g,b] 0..255 (RAW; caller clampColors).
 // `level` (0..1, default 0) = the music's governed loudness at this instant; presets
-// fold it in via envL() so a=0 reproduces the autonomous (non-reactive) output exactly.
+// fold it in via audioDrive() so audioDepth=0 reproduces the autonomous output exactly,
+// and a higher audioDepth/audioGain swings the brightness hard with the beat.
 export const PRESETS = {
-  // Pulse — sinusoidal "breathing"; with audio it crossfades toward the music's loudness.
+  // Pulse — sinusoidal "breathing"; with audio it crossfades toward the conditioned loudness.
   pulse(position, p, index, N, level) {
     const t = position / 1000;
-    const a = envL(level, p);
+    const dr = audioDrive(level, p);
     const gen = clamp01(p.base + p.depth * sin01(t * p.bpm / 60));
-    const music = clamp01(p.base + (1 - p.base) * lvl01(level));
-    const L = gen + a * (music - gen);                  // == gen when a==0
+    const music = clamp01(p.base + (1 - p.base) * dr.m);
+    const L = gen + dr.a * (music - gen);               // == gen when dr.a==0
     return hsl2rgb(p.hue, p.sat, L * 0.85 + 0.04);
   },
   // Color Waves — spatial band rolls across the crowd (time-based); audio dims it when quiet.
@@ -98,8 +108,8 @@ export const PRESETS = {
     const u = N > 1 ? index / (N - 1) : 0;
     const phase = p.dir * p.speed * t - u / p.wavelength;
     const rgb = palAt(WAVE_PAL, phase);
-    const a = envL(level, p);
-    const k = 1 - a * (1 - (0.35 + 0.65 * lvl01(level)));  // k==1 when a==0; k in [0.35,1]
+    const dr = audioDrive(level, p);
+    const k = 1 - dr.a * (1 - (0.30 + 0.70 * dr.m));    // k==1 when dr.a==0; k in [0.30,1]
     return [rgb[0] * k, rgb[1] * k, rgb[2] * k];
   },
   // Rainbow Chase — rainbow wrapped over the crowd (hue time-based); audio lifts brightness.
@@ -107,18 +117,18 @@ export const PRESETS = {
     const t = position / 1000;
     const u = N > 1 ? index / (N - 1) : 0;
     const h = 360 * frac(p.dir * p.speed * t + p.spread * u);
-    const a = envL(level, p);
-    const L = 0.5 - a * (0.5 - (0.18 + 0.42 * lvl01(level)));  // L==0.5 when a==0; L in [0.18,0.6]
+    const dr = audioDrive(level, p);
+    const L = 0.5 - dr.a * (0.5 - (0.15 + 0.45 * dr.m));  // L==0.5 when dr.a==0; L in [0.15,0.6]
     return hsl2rgb(h, 0.9, L);
   },
   // Ocean — slow calm swell; audio lifts the crest brightness with loudness.
   ocean(position, p, index, N, level) {
     const t = position / 1000;
     const ph = sin01(t * p.speed);
-    const a = envL(level, p);
+    const dr = audioDrive(level, p);
     const lAuto = 0.30 + 0.35 * ph;
-    const lMusic = 0.30 + 0.35 * ph + 0.30 * lvl01(level);
-    const L = lAuto + a * (lMusic - lAuto);             // == lAuto when a==0
+    const lMusic = lAuto + 0.40 * dr.m;
+    const L = lAuto + dr.a * (lMusic - lAuto);          // == lAuto when dr.a==0
     return hsl2rgb(lerp(180, 205, ph), 0.7, clamp01(L));
   },
 };
@@ -129,7 +139,9 @@ export const PRESETS = {
 // audioDepth def 0 => a freshly-picked preset is NON-reactive until the operator drags it.
 const AUDIO_PARAMS = {
   audioDepth: { min: 0, max: 1, step: 0.01, def: 0, label: 'Music reactivity' },
-  audioGamma: { min: 0.4, max: 2.5, step: 0.05, def: 1, label: 'Reactivity curve' },
+  audioGain: { min: 1, max: 6, step: 0.1, def: 2.5, label: 'Reactivity strength' },
+  audioFloor: { min: 0, max: 0.5, step: 0.01, def: 0.12, label: 'Reactivity floor' },
+  audioGamma: { min: 0.4, max: 1.6, step: 0.05, def: 0.8, label: 'Reactivity curve' },
 };
 export const PARAM_SCHEMA = {
   pulse: {
