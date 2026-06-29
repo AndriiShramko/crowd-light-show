@@ -14,7 +14,7 @@
       bright_h: '🔆 Ustaw jasność na maksimum', bright_b: 'Przesuń jasność ekranu na maksimum i wyłącz jasność automatyczną (adaptacyjną) — w ciemnej sali telefon sam ją przyciemnia. Im jaśniej, tym mocniejszy wspólny efekt.', bright_toast: '🔆 Jasność na maks + wyłącz automatyczną', ios_torch: 'Na iPhone latarka w przeglądarce jest niedostępna — światłem jest ekran.',
       left_h: 'Wyszedłeś z pokazu', rejoin: 'Dołącz ponownie', stop: 'Stop',
       st_conn: 'łączenie…', st_sync: 'synchronizacja…', st_ready: 'gotowe • tryb ekranu', st_ready_t: 'gotowe • ekran + latarka', st_play: 'gra ▶', st_wait: 'czekam na start…', st_paused: 'pauza', st_resume: 'Dotknij, aby wrócić — nie blokuj ekranu',
-      audio_btn: '🔊 Odtwórz muzykę też na moim telefonie', audio_on: '🔊 Muzyka włączona — w rytmie z resztą', st_full: 'komplet — ponawiam…',
+      audio_btn: '🔊 Odtwórz muzykę też na moim telefonie', audio_on: '🔊 Muzyka włączona — w rytmie z resztą', audio_mute: '🔊 Wycisz muzykę', audio_unmute: '🔇 Włącz muzykę', st_full: 'komplet — ponawiam…',
     },
     en: {
       title: 'Crowd Light Show', sub: 'Your phone becomes part of one light show synchronized to the music.',
@@ -28,7 +28,7 @@
       bright_h: '🔆 Turn brightness up to max', bright_b: 'Slide your screen brightness to maximum and turn off auto (adaptive) brightness — in a dark room the phone dims itself. The brighter your screen, the stronger the crowd effect.', bright_toast: '🔆 Brightness to max + turn off auto', ios_torch: 'On iPhone the flashlight isn’t available in the browser — your screen is the light.',
       left_h: 'You left the show', rejoin: 'Join again', stop: 'Stop',
       st_conn: 'connecting…', st_sync: 'syncing…', st_ready: 'ready • screen mode', st_ready_t: 'ready • screen + torch', st_play: 'playing ▶', st_wait: 'waiting for start…', st_paused: 'paused', st_resume: 'Tap to return — keep the screen on',
-      audio_btn: '🔊 Play the music on my phone too', audio_on: '🔊 Music on — in sync with the crowd', st_full: 'venue full — retrying…',
+      audio_btn: '🔊 Play the music on my phone too', audio_on: '🔊 Music on — in sync with the crowd', audio_mute: '🔊 Mute music', audio_unmute: '🔇 Unmute music', st_full: 'venue full — retrying…',
     },
   };
   // The on-stage audience consent defaults to PL (a Polish event needs the PL epilepsy

@@ -438,6 +438,27 @@ app.get('/api/audience/audio', { config: { rateLimit: { max: 40, timeWindow: '1 
   return reply.type('application/octet-stream').send(fs.createReadStream(t.file_path));
 });
 
+// ---- per-phone synchronized audio for a PUBLIC ROOM (round 10: ALWAYS stream the room's music
+// to phones). Serves the room's currently-armed CURATED track only, behind the SAME crowd-licence
+// gate as /api/audience/audio (is_public + licence-attested). A guest upload (trackId 'g:'+room)
+// has NO stored audio (decode-then-discard) -> 409 -> the phone stays lights-only (honest: we never
+// serve a track we discarded). Room is read from the query and validated; no :id => no enumeration.
+app.get('/api/audience/room-audio', { config: { rateLimit: { max: 60, timeWindow: '1 minute' } } }, (req, reply) => {
+  if (!config.crowdAudioEnabled) return reply.code(503).send({ error: 'crowd audio disabled' });
+  const room = String(req.query.room || '');
+  if (!/^[a-z0-9]{6,24}$/.test(room)) return reply.code(400).send({ error: 'bad room' });
+  const r = hub.rooms.get(room);
+  const trackId = r && r.run ? r.run.trackId : null;
+  if (trackId == null) return reply.code(409).send({ error: 'no armed track' });
+  if (typeof trackId !== 'number') return reply.code(409).send({ error: 'lights-only (guest upload)' }); // 'g:'+room
+  const t = db.prepare('SELECT * FROM track WHERE id=?').get(trackId);
+  if (!t || !t.file_path || !fs.existsSync(t.file_path)) return reply.code(404).send({ error: 'no audio' });
+  if (!t.is_public) return reply.code(403).send({ error: 'not a public track' });
+  if (!t.license_attested) return reply.code(403).send({ error: 'track not licensed for crowd playback' });
+  reply.header('Accept-Ranges', 'bytes').header('Cache-Control', 'public, max-age=3600');
+  return reply.type('application/octet-stream').send(fs.createReadStream(t.file_path));
+});
+
 // ---- lead capture from the landing (public, rate-limited, honeypot) ----
 app.post('/api/apply', async (req, reply) => {
   const b = req.body || {};

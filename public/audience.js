@@ -63,7 +63,9 @@
   stopBtn.addEventListener('click', leave);
   document.getElementById('rejoin').addEventListener('click', function () { location.reload(); });
   var audioBtn = document.getElementById('audioBtn');
-  if (audioBtn) audioBtn.addEventListener('click', enableAudio); // user gesture creates+resumes AudioContext
+  // round 10: in a STUDIO room (or the demo) music streams automatically, so the button is a
+  // MUTE toggle; on the main timeline show it stays the opt-in "tap for sound" enable button.
+  if (audioBtn) audioBtn.addEventListener('click', function () { if (ROOM || DEMO) toggleMute(); else enableAudio(); });
 
   if (AUTO) { agree.checked = true; joinScreen.disabled = false; setTimeout(function () { join(false); }, 50); }
 
@@ -105,6 +107,7 @@
     // Spread the join thundering-herd at a stadium: stagger WS handshakes over a
     // window so thousands don't connect in the same instant (off for tests/demo).
     if (DEMO) demoAudioInit();    // create+resume the AudioContext IN this tap (autoplay policy)
+    else if (ROOM) roomAudioInit(); // round 10: a studio room ALWAYS streams its music — start the AudioContext in THIS tap (the only gesture), then auto-play when the timeline arrives
     setTimeout(connect, Math.random() * JOIN_SPREAD);
     if (AUDIO) enableAudio(); // headless auto opt-in
     if (!renderRunning) { renderRunning = true; requestAnimationFrame(render); } // start once; survives rejoin
@@ -122,6 +125,7 @@
     ws = new WebSocket(proto + '://' + location.host + '/ws');
     clock = new ClockSync(function (o) { try { ws.send(JSON.stringify(o)); } catch (e) {} });
     ws.onopen = function () {
+      if (audio) audio.clock = clock; // wire the freshly-created synced clock into an AudioSync built in the join tap (room/demo)
       ws.send(JSON.stringify({ t: 'hello', role: 'audience', room: ROOM || undefined, platform: isAndroid ? 'android' : (/iPhone|iPad|iPod/i.test(navigator.userAgent) ? 'ios' : 'other') }));
       setStatus('st_sync');
       resyncBurst();
@@ -192,15 +196,42 @@
     if (s.status === 'running' && s.T0 != null && audio && audioOn) audio.start(s.T0); // late-join audio
   }
 
-  // ---- per-phone synchronized music (opt-in) ----
+  // ---- per-phone synchronized music ----
+  var muted = false;
   function showAudioBtn() {
-    if (!audioBtn || ROOM || DEMO) return;            // only the main timeline show
-    if (timeline && runState.status !== 'blackout') audioBtn.classList.remove('hidden');
+    if (!audioBtn) return;
+    if (ROOM || DEMO) {                               // round 10: music auto-on -> the button is a MUTE toggle
+      if (window.__cls.audio.lightsOnly) { audioBtn.classList.add('hidden'); return; } // nothing to mute (guest upload / decode-fail)
+      audioBtn.classList.remove('hidden'); updateMuteBtn(); return;
+    }
+    if (timeline && runState.status !== 'blackout') audioBtn.classList.remove('hidden'); // main show: opt-in enable button
+  }
+  function updateMuteBtn() {
+    if (!audioBtn || !(ROOM || DEMO)) return;
+    audioBtn.disabled = false;
+    audioBtn.textContent = muted ? i18n.t('audio_unmute') : i18n.t('audio_mute');
+  }
+  function toggleMute() {
+    muted = !muted;
+    if (audio) audio.setVolume(muted ? 0 : 0.85);
+    window.__cls.audio.muted = muted;
+    updateMuteBtn();
+  }
+  // Studio room: build + resume the AudioContext INSIDE the join tap (iOS autoplay), mark audio on.
+  // The synced clock is wired in on ws.onopen; the room's music is fetched + played when its
+  // timeline/start arrive (see cacheAudio + the start handler).
+  function roomAudioInit() {
+    if (audio || !window.AudioSync) return;
+    audioOn = true; window.__cls.audio.wanted = true;
+    audio = new AudioSync(clock || new ClockSync(function () {}));
+    if (window.__forceLatComp) audio.compensateLatency = true;
+    audio.tele = function (o) { for (var k in o) window.__cls.audio[k] = o[k]; };
+    audio.init().catch(function () {});
   }
   function enableAudio() {
     if (audioOn || !window.AudioSync) return;
     audioOn = true; window.__cls.audio.wanted = true;
-    if (audioBtn) { audioBtn.textContent = i18n.t('audio_on'); audioBtn.disabled = true; }
+    if (audioBtn && !(ROOM || DEMO)) { audioBtn.textContent = i18n.t('audio_on'); audioBtn.disabled = true; }
     audio = new AudioSync(clock || new ClockSync(function () {}));
     if (window.__forceLatComp) audio.compensateLatency = true;   // opt-in (heterogeneous fleet / harness)
     audio.tele = function (o) { for (var k in o) window.__cls.audio[k] = o[k]; };
@@ -233,16 +264,27 @@
   }
   function cacheAudio() {
     if (!audio || !audioOn || audio.ready() || audioCaching) return;
+    if (clock) audio.clock = clock;   // ensure the live synced clock (room/demo AudioSync was built in the tap before connect())
     audioCaching = true;
-    // ?v=<trackId> busts the HTTP cache: the endpoint serves the ARMED track (same URL for
-    // all), so without a per-track key the browser would replay the previous track's cached
-    // audio when the operator arms a different one.
-    fetch('/api/audience/audio?v=' + (audioTrackId == null ? '' : audioTrackId)).then(function (r) { return r.ok ? r.arrayBuffer() : null; })
-      .then(function (ab) { audioCaching = false; if (!ab) return; return audio.cache(ab).then(function () {
-        // if the show is already running, jump in at the right position now
-        if (runState.status === 'running' && runState.T0 != null) audio.start(runState.T0);
-      }); })
-      .catch(function () { audioCaching = false; });
+    // A STUDIO room streams ITS room's armed track (room-audio, room from the URL); the main timeline
+    // show streams the global armed track. ?v=<trackId> busts the HTTP cache so arming a different
+    // track doesn't replay the previous one. A guest upload / decode-fail yields no audio -> the
+    // phone honestly stays lights-only (we never claim sound we don't have).
+    var url = ROOM
+      ? ('/api/audience/room-audio?room=' + encodeURIComponent(ROOM) + '&v=' + (audioTrackId == null ? '' : audioTrackId))
+      : ('/api/audience/audio?v=' + (audioTrackId == null ? '' : audioTrackId));
+    fetch(url).then(function (r) { return r.ok ? r.arrayBuffer() : null; })
+      .then(function (ab) {
+        audioCaching = false;
+        if (!ab) { window.__cls.audio.lightsOnly = true; showAudioBtn(); return; } // lights-only (no served audio)
+        window.__cls.audio.lightsOnly = false;
+        return audio.cache(ab).then(function () {
+          showAudioBtn();
+          // if the show is already running, jump in at the right position now
+          if (runState.status === 'running' && runState.T0 != null) audio.start(runState.T0);
+        });
+      })
+      .catch(function () { audioCaching = false; window.__cls.audio.lightsOnly = true; showAudioBtn(); });
   }
 
   function sampleCue(pos) {
