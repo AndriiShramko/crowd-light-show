@@ -66,12 +66,27 @@
     });
     if (PUBLIC) {
       var title = $('consoleTitle'); if (title) title.textContent = (S.brand || 'Light Show') + ' — live console';
-      var pw = $('pubWelcome'); if (pw) { pw.textContent = S.welcome || 'You are the operator. Pick a track, press GO, and the phones that join your QR light up together. Want your own? It is free — anyone can run one.'; pw.classList.remove('hidden'); }
-      var pc = $('pubCount'); if (pc) pc.classList.remove('hidden');
+      var pw = $('pubWelcome'); if (pw) { pw.textContent = S.welcome || 'The lights are already running. Share the code below so phones join. Tap “Play with sound” to hear the music. It is free — anyone can run their own.'; pw.classList.remove('hidden'); }
+      var pcc = $('pubCount'); if (pcc) pcc.classList.remove('hidden');
       var ph = $('playlistHint'); if (ph) ph.classList.remove('hidden');
       var pt = $('playlistTitle'); if (pt) pt.textContent = '1 · Music';
-      if (FEAT.upload) { var ucw = $('uploadConsentWrap'); if (ucw) ucw.classList.remove('hidden'); var ub = $('upload'); if (ub) ub.textContent = 'Use my music (lights only)'; }
-      if (FEAT.torch === false) { var tc = $('studioCard'); /* torch sub-section hidden below in setupTorch */ }
+      if (FEAT.upload) { var ucw = $('uploadConsentWrap'); if (ucw) ucw.classList.remove('hidden'); var ub = $('upload'); if (ub) ub.textContent = 'Use my music'; }
+      // ROUND 10 UX: collapse the 4 play-ish controls to ONE. Hide the dead native <audio>, the
+      // redundant GO (the default track already auto-GOes the lights) and the old Sound button —
+      // the single "▶ Play with sound" at the top is the one autoplay gesture.
+      ['player', 'go', 'soundBtn'].forEach(function (id) { var e = $(id); if (e) e.classList.add('hidden'); });
+      // Move Share to the top — it is the main goal (get phones into the room).
+      var share = $('shareBlock'), cardPl = $('cardPlaylist');
+      if (share && cardPl && cardPl.parentNode) cardPl.parentNode.insertBefore(share, cardPl);
+      // Tuck the operator transport (pause/stop/blackout/nudge) + live presets/torch under an
+      // "Advanced" disclosure — a casual host never needs them; one click reveals them.
+      var cardShow = $('cardShow'), studioCard = $('studioCard');
+      if (cardPl && cardShow && cardPl.parentNode) {
+        var det = document.createElement('details'); det.className = 'op-adv';
+        var sum = document.createElement('summary'); sum.textContent = '▸ Advanced — pause / stop, live presets & flash';
+        det.appendChild(sum); det.appendChild(cardShow); if (studioCard) det.appendChild(studioCard);
+        if (cardPl.nextSibling) cardPl.parentNode.insertBefore(det, cardPl.nextSibling); else cardPl.parentNode.appendChild(det);
+      }
     }
   }
 
@@ -109,7 +124,7 @@
         var tr = document.createElement('tr');
         if (isArmed) tr.style.background = 'rgba(90,160,255,.15)';
         tr.innerHTML = '<td><b>' + esc(t.title) + '</b>' + (isArmed ? ' <span style="color:#5aa0ff">● playing</span>' : '') + '<br><span class="muted">' + (t.cue_count ? Math.round((t.duration_ms || 0) / 1000) + 's' : '') + '</span></td>'
-          + '<td style="text-align:right"><button data-arm="' + t.id + '" class="' + (isArmed ? 'primary' : '') + '" style="width:auto">' + (isArmed ? '✓ Playing' : '▶ Play') + '</button></td>';
+          + '<td style="text-align:right"><button data-arm="' + t.id + '" class="' + (isArmed ? 'primary' : '') + '" style="width:auto">' + (isArmed ? '✓ Playing' : 'Switch') + '</button></td>';
         tb.appendChild(tr);
       });
       if (!(d.tracks || []).length) { tb.innerHTML = '<tr><td class="muted">The host has not published any tracks yet.</td></tr>'; }
@@ -217,20 +232,26 @@
     if (!window.AudioSync) return;
     ensureAudio();
     pubTrackId = id;
-    if ($('soundBtn')) $('soundBtn').classList.remove('hidden');
+    // round 10: the one prominent "▶ Play with sound" button is the single sound gesture.
+    if (!soundOn) { var ps = $('playSound'); if (ps) ps.classList.remove('hidden'); }
   }
   function startConsoleSound() {
     if (!ensureAudio() || pubTrackId == null) return;
     audio.clock = clock || audio.clock;
-    audio.init().then(function () {
-      return api('/api/operator/audio/' + pubTrackId).then(function (r) { return r.ok ? r.arrayBuffer() : null; });
-    }).then(function (ab) {
-      if (!ab) return; return audio.cache(ab).then(function () { if (curState === 'running' && pubT0 != null) audio.start(pubT0); });
-    }).catch(function () {});
+    var trackPath = (typeof pubTrackId === 'number') ? ('/api/operator/audio/' + pubTrackId) : null; // guest 'g:'+room has no curated audio path here
+    if (trackPath) {
+      audio.init().then(function () {
+        return api(trackPath).then(function (r) { return r.ok ? r.arrayBuffer() : null; });
+      }).then(function (ab) {
+        if (!ab) return; return audio.cache(ab).then(function () { if (curState === 'running' && pubT0 != null) audio.start(pubT0); });
+      }).catch(function () {});
+    } else { audio.init().catch(function () {}); }
     soundOn = true;
+    var ps = $('playSound'); if (ps) { ps.textContent = '🔊 Sound on'; ps.disabled = true; }
     if ($('soundBtn')) { $('soundBtn').textContent = '🔊 Sound on'; $('soundBtn').disabled = true; }
   }
   if ($('soundBtn')) $('soundBtn').addEventListener('click', startConsoleSound);
+  if ($('playSound')) $('playSound').addEventListener('click', startConsoleSound);
 
   function flashBtn(el) { el.style.boxShadow = '0 0 0 3px #fff'; setTimeout(function () { el.style.boxShadow = ''; }, 300); }
 
