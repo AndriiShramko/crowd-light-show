@@ -321,13 +321,19 @@ app.post('/api/console/preset/param', (req, reply) => {
   if (!v.ok) return reply.code(400).send({ error: v.error });
   return hub.setParam(room, v.key, v.value, channel);
 });
-// PUBLIC console may ONLY arm a curated is_public track (never a private one).
+// PUBLIC console may arm a curated is_public track, OR its OWN room's guest upload ('g:'+room).
 app.post('/api/console/arm', (req, reply) => {
   const room = consoleRoom(req, reply); if (!room) return;
-  const trackId = Number((req.body && req.body.trackId));
+  const raw = req.body && req.body.trackId;
+  const keepPreset = !!(req.body && req.body.keepPreset);
+  if (typeof raw === 'string' && raw === 'g:' + room) {            // this room's own discarded-audio light timeline
+    if (!hub.timelineCache.has(raw)) return reply.code(404).send({ error: 'no uploaded track for this room' });
+    return hub.arm(raw, { keepPreset }, room);
+  }
+  const trackId = Number(raw);
   const t = db.prepare("SELECT id FROM track WHERE id=? AND is_public=1 AND analysis_status='done' AND timeline_path IS NOT NULL").get(trackId);
   if (!t) return reply.code(403).send({ error: 'not a public track' });
-  return hub.arm(trackId, { keepPreset: !!(req.body && req.body.keepPreset) }, room);
+  return hub.arm(trackId, { keepPreset }, room);
 });
 app.post('/api/console/go', (req, reply) => { const room = consoleRoom(req, reply); if (!room) return; return hub.go(serverClock() + config.startLeadMs, room); });
 app.post('/api/console/pause', (req, reply) => { const room = consoleRoom(req, reply); if (!room) return; return hub.pause(room); });
@@ -347,6 +353,69 @@ app.get('/api/console/audio/:id', { config: { rateLimit: { max: 60, timeWindow: 
   if (!t || !t.file_path || !fs.existsSync(t.file_path)) return reply.code(404).send({ error: 'no audio' });
   reply.header('Accept-Ranges', 'bytes').header('Cache-Control', 'public, max-age=3600');
   return reply.type('application/octet-stream').send(fs.createReadStream(t.file_path));
+});
+
+// ---- PUBLIC own-music upload — DARK by default (PUBLIC_UPLOAD_ENABLED=0) ----
+// Contract (honest): the visitor's audio is DECODE-THEN-DISCARD — it is analyzed into a
+// safety-governed LIGHT timeline (held in memory, keyed to the room), then the audio file is
+// DELETED immediately. The sound is NEVER stored, re-served or published — own-music = lights
+// only. consent is server-mandatory; size/duration/rate/concurrency are all bounded.
+// A simple counting semaphore (NET-NEW) serializes ffmpeg decodes — the public path removed the
+// single-operator serialization, so without this an upload flood could fork-bomb ffmpeg.
+function makeSemaphore(max) {
+  let active = 0; const q = [];
+  return {
+    acquire() { return new Promise((res) => { if (active < max) { active++; res(); } else q.push(res); }); },
+    release() { active = Math.max(0, active - 1); if (q.length) { active++; q.shift()(); } },
+    get active() { return active; },
+  };
+}
+const uploadSem = makeSemaphore(config.publicUploadConcurrency);
+const _upLog = new Map(); // ip -> [timestamps], 3 per 10 min
+function uploadGuard(ip) {
+  const t = Date.now(), win = 10 * 60 * 1000;
+  const arr = (_upLog.get(ip) || []).filter((x) => t - x < win);
+  if (arr.length >= 3) { _upLog.set(ip, arr); return false; }
+  arr.push(t); _upLog.set(ip, arr);
+  return true;
+}
+const GUEST_DIR = path.join(config.dataDir, 'uploads', 'guest');
+app.post('/api/console/upload', async (req, reply) => {
+  const room = consoleRoom(req, reply); if (!room) return;
+  if (!config.publicUploadEnabled) return reply.code(503).send({ error: 'public upload is disabled' });
+  // consent is MANDATORY and checked BEFORE the file is read
+  if (String(req.query.consent || '') !== '1') return reply.code(403).send({ error: 'consent required: you must confirm you hold the rights to this music' });
+  const ip = String(req.headers['x-real-ip'] || req.ip || '');
+  if (!uploadGuard(ip)) return reply.code(429).send({ error: 'too many uploads — try again later' });
+  if (freeDiskBytes() < config.diskGuardMinBytes) return reply.code(507).send({ error: 'disk guard: low space' });
+  if (uploadSem.active >= config.publicUploadConcurrency + 2) return reply.code(503).send({ error: 'busy — try again in a moment' });
+
+  const mp = await req.file({ limits: { fileSize: config.publicUploadMaxBytes } });
+  if (!mp) return reply.code(400).send({ error: 'no file' });
+  const buf = await mp.toBuffer();
+  if (mp.file.truncated) return reply.code(413).send({ error: 'file too large' });
+  const kind = sniffAudio(buf.subarray(0, 16));
+  if (!kind) return reply.code(415).send({ error: 'not a supported audio file' });
+
+  fs.mkdirSync(GUEST_DIR, { recursive: true });
+  const id = crypto.randomBytes(6).toString('hex');
+  const tmp = path.join(GUEST_DIR, `${id}${EXT_FOR[kind]}`);
+  fs.writeFileSync(tmp, buf);
+  await uploadSem.acquire();
+  try {
+    const { durationMs, envelope, beats } = await analyze(tmp);
+    if (durationMs > config.publicUploadMaxDurationMs) { return reply.code(413).send({ error: 'track too long (max 5 min)' }); }
+    const cues = compileFromEnvelope(envelope, { durationMs, beats }); // governor: <=3 flashes/s
+    const timeline = { version: 1, trackId: 'g:' + room, fps: config.cueFps, durationMs, cues, beats };
+    hub.timelineCache.set('g:' + room, timeline);  // in-memory, keyed to the room — NO track row, NO DB
+    return { ok: true, trackId: 'g:' + room, durationMs, cueCount: cues.length, lightsOnly: true };
+  } catch (e) {
+    req.log.error(e);
+    return reply.code(500).send({ error: 'could not analyze that audio' });
+  } finally {
+    uploadSem.release();
+    try { fs.unlinkSync(tmp); } catch { /* decode-then-discard: the audio is gone */ }
+  }
 });
 
 // ---- per-phone synchronized audio: serve ONLY the currently-armed track, no auth,

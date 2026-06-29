@@ -101,6 +101,7 @@ export class ShowHub {
     for (const [id, r] of this.rooms) {
       if (r.members.size === 0 && (r.createdAt || 0) < cutoff) {
         if (r._endTimer) { clearTimeout(r._endTimer); r._endTimer = null; }
+        this.timelineCache.delete('g:' + id); // discard the room's guest-upload light timeline (audio was already discarded)
         this.rooms.delete(id);
       }
     }
@@ -206,6 +207,7 @@ export class ShowHub {
         r.members.delete(ws); r.alloc.free(ws);
         if (r.members.size === 0) {
           if (r._endTimer) { clearTimeout(r._endTimer); r._endTimer = null; } // no dangling auto-stop on a dead room
+          this.timelineCache.delete('g:' + roomId); // drop the room's guest-upload light timeline
           this.rooms.delete(roomId); // ephemeral: clean up empty rooms
         } else this.markIndexDirty(roomId);
       }

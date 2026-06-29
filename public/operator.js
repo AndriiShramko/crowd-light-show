@@ -70,6 +70,7 @@
       var pc = $('pubCount'); if (pc) pc.classList.remove('hidden');
       var ph = $('playlistHint'); if (ph) ph.classList.remove('hidden');
       var pt = $('playlistTitle'); if (pt) pt.textContent = '1 · Music';
+      if (FEAT.upload) { var ucw = $('uploadConsentWrap'); if (ucw) ucw.classList.remove('hidden'); var ub = $('upload'); if (ub) ub.textContent = 'Use my music (lights only)'; }
       if (FEAT.torch === false) { var tc = $('studioCard'); /* torch sub-section hidden below in setupTorch */ }
     }
   }
@@ -144,10 +145,19 @@
 
   if ($('upload')) $('upload').addEventListener('click', function () {
     var f = $('file').files[0]; if (!f) { $('uploadMsg').textContent = 'Choose a file first.'; return; }
+    var path = '/api/operator/upload';
+    if (PUBLIC) {
+      if (!($('uploadConsent') && $('uploadConsent').checked)) { $('uploadMsg').textContent = 'Please tick the rights confirmation first.'; return; }
+      path = '/api/operator/upload?consent=1'; // -> /api/console/upload?consent=1 (server-mandatory)
+    }
     var fd = new FormData(); fd.append('audio', f);
     $('uploadMsg').textContent = 'Uploading & analyzing…';
-    api('/api/operator/upload', { method: 'POST', body: fd }).then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
-      .then(function (res) { $('uploadMsg').textContent = res.ok ? ('Done: ' + res.j.cueCount + ' cues, ' + res.j.beats + ' beats') : ('Error: ' + (res.j.error || '')); loadState(); })
+    api(path, { method: 'POST', body: fd }).then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+      .then(function (res) {
+        if (!res.ok) { $('uploadMsg').textContent = 'Error: ' + (res.j.error || ''); return; }
+        if (PUBLIC) { $('uploadMsg').textContent = 'Ready — lights only (' + res.j.cueCount + ' cues). Playing…'; armTrack(res.j.trackId, true); }
+        else { $('uploadMsg').textContent = 'Done: ' + res.j.cueCount + ' cues, ' + res.j.beats + ' beats'; loadState(); }
+      })
       .catch(function (e) { $('uploadMsg').textContent = 'Upload failed: ' + e; });
   });
 
@@ -168,9 +178,9 @@
       // gets it as a previewer). Then auto-GO so the default music's LIGHTS start with no clicks.
       tx('arm', { trackId: id }).then(function (j) {
         if (!j || !j.ok) { if ($('armed')) $('armed').textContent = 'could not start that track'; return; }
-        if ($('armed')) $('armed').textContent = 'playing — lights live';
+        if ($('armed')) $('armed').textContent = (typeof id === 'number') ? 'playing — lights live' : 'playing your music — lights only';
         loadPublic();
-        fetchConsoleAudio(id);
+        if (typeof id === 'number') fetchConsoleAudio(id); // curated tracks have audio; guest uploads are lights-only (decode-then-discard)
         if (isDefault) setTimeout(function () { doGoPublic(); }, 250); // visuals roll immediately
       });
       return;
