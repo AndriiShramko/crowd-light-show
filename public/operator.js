@@ -213,6 +213,7 @@
     if (PUBLIC) {
       if (!($('uploadConsent') && $('uploadConsent').checked)) { $('uploadMsg').textContent = 'Please tick the rights confirmation first.'; return; }
       path = '/api/operator/upload?consent=1'; // -> /api/console/upload?consent=1 (server-mandatory)
+      var a0 = ensureAudio(); if (a0) a0.init().catch(function () {}); // create+resume the AudioContext IN this click so the uploaded sound can auto-play (autoplay policy)
     }
     var fd = new FormData(); fd.append('audio', f);
     $('uploadMsg').textContent = 'Uploading & analyzing…';
@@ -220,7 +221,7 @@
       .then(function (res) {
         if (!res.ok) { ga('upload_test', { result: 'error', reason: String(res.j.error || '').slice(0, 60) }); $('uploadMsg').textContent = 'Error: ' + (res.j.error || ''); return; }
         ga('upload_test', { result: 'ok', cue_count: res.j.cueCount });
-        if (PUBLIC) { $('uploadMsg').textContent = 'Ready — lights only (' + res.j.cueCount + ' cues). Playing…'; armTrack(res.j.trackId, true); }
+        if (PUBLIC) { $('uploadMsg').textContent = 'Ready — ' + res.j.cueCount + ' cues. Playing your music…'; armTrack(res.j.trackId, true); soundOn = false; setTimeout(startConsoleSound, 400); } // auto-play the uploaded sound (gesture = the Upload click)
         else { $('uploadMsg').textContent = 'Done: ' + res.j.cueCount + ' cues, ' + res.j.beats + ' beats'; loadState(); }
       })
       .catch(function (e) { ga('upload_test', { result: 'fail' }); $('uploadMsg').textContent = 'Upload failed: ' + e; });
@@ -244,9 +245,9 @@
       // gets it as a previewer). Then auto-GO so the default music's LIGHTS start with no clicks.
       tx('arm', { trackId: id }).then(function (j) {
         if (!j || !j.ok) { if ($('armed')) $('armed').textContent = 'could not start that track'; return; }
-        if ($('armed')) $('armed').textContent = (typeof id === 'number') ? 'playing — lights live' : 'playing your music — lights only';
+        if ($('armed')) $('armed').textContent = 'playing — lights live';
         loadPublic();
-        if (typeof id === 'number') fetchConsoleAudio(id); // curated tracks have audio; guest uploads are lights-only (decode-then-discard)
+        fetchConsoleAudio(id); // round 10: curated AND guest uploads now have served audio (keep-and-serve)
         if (isDefault) setTimeout(function () { doGoPublic(); }, 250); // visuals roll immediately
       });
       return;
@@ -286,10 +287,11 @@
     // round 10: the one prominent "▶ Play with sound" button is the single sound gesture.
     if (!soundOn) { var ps = $('playSound'); if (ps) ps.classList.remove('hidden'); }
   }
+  function guestPath(id) { return (typeof id === 'string' && id.indexOf('g:') === 0) ? '/api/operator/guest-audio' : null; } // -> /api/console/guest-audio (room from token)
   function startConsoleSound() {
     if (!ensureAudio() || pubTrackId == null) return;
     audio.clock = clock || audio.clock;
-    var trackPath = (typeof pubTrackId === 'number') ? ('/api/operator/audio/' + pubTrackId) : null; // guest 'g:'+room has no curated audio path here
+    var trackPath = (typeof pubTrackId === 'number') ? ('/api/operator/audio/' + pubTrackId) : guestPath(pubTrackId); // round 10: guest uploads are served too
     if (trackPath) {
       audio.init().then(function () {
         return api(trackPath).then(function (r) { return r.ok ? r.arrayBuffer() : null; });
