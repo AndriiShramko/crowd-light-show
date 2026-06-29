@@ -467,6 +467,10 @@
       else if (PUBLIC && DEFAULTS && DEFAULTS.screen && DEFAULTS.screen.type) { pickPreset(DEFAULTS.screen.type); } // public: start on the host's default look
       highlightPreset();
       setupTorch(d);
+      // round 10: public console auto-picks the host's default REACTIVE torch (beat) so the
+      // flash channel is alive on open too (mirror of the screen auto-pick above). Gated on
+      // FEAT.torch so a host who disabled torch isn't overridden.
+      if (PUBLIC && FEAT.torch !== false && DEFAULTS && DEFAULTS.torch && DEFAULTS.torch.type && DEFAULTS.torch.type !== 'off' && !activeTorch) pickTorch(DEFAULTS.torch.type);
     });
   }
   if ($('presetBtns')) $('presetBtns').addEventListener('click', function (e) { var t = e.target.getAttribute('data-preset'); if (t) pickPreset(t); });

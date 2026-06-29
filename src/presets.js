@@ -136,9 +136,12 @@ export const PRESETS = {
 // ---------- parameter schema (defaults + safe bounds; also drives the UI) ----------
 // maxHz reasoning is baked into the bounds; validatePreset() additionally SIMULATES.
 // Music reactivity, shared by every preset (so the operator gets the sliders for free).
-// audioDepth def 0 => a freshly-picked preset is NON-reactive until the operator drags it.
+// audioDepth def 0.6 (round 10) => presets react to the music OUT OF THE BOX (a visible swing
+// that still keeps the preset's own motion). depth=0 still == byte-identical autonomous output
+// (the d===0 short-circuit in audioDrive is untouched; the parity test asserts that with an
+// explicit 0), so this is a DEFAULT change only, not an engine change.
 const AUDIO_PARAMS = {
-  audioDepth: { min: 0, max: 1, step: 0.01, def: 0, label: 'Music reactivity' },
+  audioDepth: { min: 0, max: 1, step: 0.01, def: 0.6, label: 'Music reactivity' },
   audioGain: { min: 1, max: 6, step: 0.1, def: 2.5, label: 'Reactivity strength' },
   audioFloor: { min: 0, max: 0.5, step: 0.01, def: 0.12, label: 'Reactivity floor' },
   audioGamma: { min: 0.4, max: 1.6, step: 0.05, def: 0.8, label: 'Reactivity curve' },
@@ -333,7 +336,7 @@ export const TORCH_SCHEMA = {
   beat: { label: 'Beat (reactive)', params: { ...TORCH_AUDIO } },
 };
 export const TORCH_TYPES = Object.keys(TORCH_SCHEMA);
-export const DEFAULT_TORCH = 'off';
+export const DEFAULT_TORCH = 'beat'; // round 10: the default flash is reactive (beat) out of the box
 
 export function normalizeTorchParams(type, params) {
   const schema = TORCH_SCHEMA[type];

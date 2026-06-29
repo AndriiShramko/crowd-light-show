@@ -78,8 +78,12 @@ test('audioDepth=0 reproduces the autonomous output exactly (any gain/floor/gamm
   for (const type of Object.keys(PARAM_SCHEMA)) {
     for (const audioGain of [1, 2.5, 6]) for (const audioFloor of [0, 0.12, 0.5]) {
       const p0 = Object.assign(defs(type), { audioDepth: 0, audioGain, audioFloor });
+      // autonomous baseline = the preset with reactivity OFF (audioDepth 0). Round 10 changed the
+      // SCHEMA default to 0.6 (reactive out of the box), so the baseline must force depth 0 here
+      // rather than rely on defs() — the depth=0==autonomous invariant itself is unchanged.
+      const autoP = Object.assign(defs(type), { audioDepth: 0 });
       for (const N of [12]) for (const index of [0, 5, 11]) for (let pos = 0; pos <= 4000; pos += 173) {
-        const auto = norm(clampS(S[type](pos, defs(type), index, N)));        // 4-arg, today's behaviour
+        const auto = norm(clampS(S[type](pos, autoP, index, N)));             // 4-arg, depth 0 (autonomous)
         for (const level of [0, 0.5, 1]) {
           const withDepth0 = norm(clampS(S[type](pos, p0, index, N, level))); // depth 0 => music has no effect, any gain
           assert.deepEqual(withDepth0, auto, `${type} depth0 gain=${audioGain} floor=${audioFloor} level=${level} pos=${pos} drifted from autonomous`);
