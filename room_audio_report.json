@@ -1,6 +1,6 @@
 {
-  "base": "http://localhost:3011",
-  "room": "534756aa523bd271",
+  "base": "http://localhost:3012",
+  "room": "92790854d3c05392",
   "server": {
     "good": 200,
     "bad": 400,
@@ -12,15 +12,15 @@
     "scheduled": true,
     "lightsOnly": false,
     "durMs": 6000,
-    "scheduledShowInstant": 315810.98320001364,
-    "soundShowInstant": 315860.98320001364,
-    "outLatencyMs": 50,
+    "scheduledShowInstant": 99432.22870004177,
+    "soundShowInstant": 99498.22870004177,
+    "outLatencyMs": 66,
     "compMs": 0,
     "rate": 1,
-    "T0": 315810.98320001364,
+    "T0": 99432.22870004177,
     "offsetSec": 0,
     "driftMs": 0,
-    "startSeq": 1,
+    "startSeq": 2,
     "status": "running"
   },
   "fails": []

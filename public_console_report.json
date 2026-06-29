@@ -1,6 +1,6 @@
 {
-  "base": "http://127.0.0.1:3011",
-  "room": "63e7955478b93ab5",
+  "base": "http://localhost:3012",
+  "room": "1453cb715342ed67",
   "pubTrack": 1,
   "privTrack": 2,
   "fails": []

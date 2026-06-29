@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import { performance } from 'node:perf_hooks';
-import { db } from './db.js';
+import { db, listPublicTracks, getPublicConfig } from './db.js';
 import { config } from './config.js';
 
 // Master clock: a single monotonic source. Every client syncs its offset to this,
@@ -12,7 +12,11 @@ export const MAIN_ROOM = 'main';
 
 // Fresh per-room run-state. ROUND 9: every room (main + each ephemeral public/guest
 // room) owns its OWN run object, so arm/go/pause/stop/blackout never cross rooms.
-function newRun() { return { epoch: 0, status: 'idle', trackId: null, T0: null, pausePos: 0 }; }
+// plMode/plOrder/plIdx/plSelected (round 10): the per-room music playlist. On track end a public
+// room ADVANCES through plOrder (looping) instead of stopping. 'all' = loop every public track,
+// 'selected' = loop a chosen subset, 'one' = loop the current track. Main show: plOrder stays []
+// (ends -> stop, unchanged).
+function newRun() { return { epoch: 0, status: 'idle', trackId: null, T0: null, pausePos: 0, plMode: 'all', plOrder: [], plIdx: 0, plSelected: [] }; }
 
 // Sticky index allocator: hands each phone a stable 0-based index so spatial presets
 // (and, later, the pixel wall) can place it in the crowd. Indices are STICKY — a
@@ -88,6 +92,7 @@ export class ShowHub {
       // Hard ceiling: refuse to mint beyond the cap (memory guard for the 512 MB box).
       if (this.rooms.size >= config.publicMaxRooms) return null;
       r = { members: new Set(), preset: null, torch: null, alloc: new IndexAllocator(), run: newRun(), _endTimer: null, createdAt: serverClock() };
+      try { const pc = getPublicConfig(); if (pc && pc.playlist_mode) r.run.plMode = pc.playlist_mode; } catch { /* default 'all' */ } // seed the owner's default loop mode
       this.rooms.set(roomId, r);
     }
     if (r && !r.run) r.run = newRun();   // defensive: older rooms always get a run slot
@@ -190,6 +195,7 @@ export class ShowHub {
         const tl = this.loadTimeline(r.run.trackId);
         if (tl) this.send(ws, { t: 'timeline', trackId: r.run.trackId, data: tl });
       }
+      if (r.run && r.run.plOrder && r.run.plOrder.length) this.send(ws, { t: 'playlist', ...this.playlistState(roomId) }); // late-join now/next
       this.send(ws, { t: 'index', index: r.alloc.indexOf(ws), total: r.alloc.total() });
       this.markIndexDirty(roomId);
     }
@@ -272,10 +278,81 @@ export class ShowHub {
     const remaining = (h.run.T0 + dur) - serverClock() + 300; // +tail
     const timer = setTimeout(() => {
       const hh = this._rt(roomId, false);
-      if (hh && hh.run.status === 'running') this.stop(roomId);
+      if (!hh || hh.run.status !== 'running') return;
+      // Round 10: a public room with a playlist ADVANCES (looping) instead of stopping.
+      if (hh.run.plOrder && hh.run.plOrder.length) this.advance(roomId);
+      else this.stop(roomId);
     }, Math.max(0, remaining));
     if (timer.unref) timer.unref();
     h.setEnd(timer);
+  }
+
+  // ---- playlist (round 10): per-room music loop. order = curated public-track ids. ----
+  // Rebuild plOrder/plIdx for the just-armed track per the room's current mode.
+  _syncPlaylist(roomId, trackId) {
+    const h = this._rt(roomId, false);
+    if (!h) return;
+    const run = h.run;
+    if (typeof trackId !== 'number') { run.plOrder = []; run.plIdx = 0; return; } // guest upload: no playlist (ends -> stop)
+    const mode = run.plMode || 'all';
+    let order;
+    if (mode === 'one') order = [trackId];
+    else if (mode === 'selected' && Array.isArray(run.plSelected) && run.plSelected.length) {
+      const pub = new Set(listPublicTracks().map((t) => t.id));
+      order = run.plSelected.filter((id) => pub.has(id));
+      if (!order.length) order = listPublicTracks().map((t) => t.id); // empty selection -> fall back to all
+    } else order = listPublicTracks().map((t) => t.id);
+    const at = order.indexOf(trackId);
+    run.plOrder = order;
+    run.plIdx = at >= 0 ? at : 0;
+  }
+
+  // Set the live playlist mode (and, for 'selected', the chosen ids). Returns the new now/next.
+  // If the currently-playing track isn't in the new order, jump to the first item.
+  setPlaylist(roomId, mode, selected) {
+    const h = this._rt(roomId, true);
+    if (!h) return { ok: false, error: 'room unavailable' };
+    if (h.isMain) return { ok: false, error: 'no playlist on the main show' };
+    const run = h.run;
+    run.plMode = (mode === 'one' || mode === 'selected') ? mode : 'all';
+    if (Array.isArray(selected)) run.plSelected = selected.map(Number).filter(Number.isFinite);
+    this._syncPlaylist(roomId, typeof run.trackId === 'number' ? run.trackId : (run.plOrder[0] || null));
+    // if the current track fell out of the order (e.g. switched to 'selected' without it), play order[0]
+    if (run.plOrder.length && (typeof run.trackId !== 'number' || run.plOrder.indexOf(run.trackId) < 0)) {
+      run.plIdx = 0;
+      this.arm(run.plOrder[0], { keepPreset: true, _noPlaylistSync: true }, roomId);
+      this.go(serverClock() + config.startLeadMs, roomId);
+    } else {
+      this.broadcastPlaylist(roomId);
+    }
+    return { ok: true, ...this.playlistState(roomId) };
+  }
+
+  // Advance to the next track in the loop (called on track end). keepPreset so the reactive
+  // screen/torch presets keep rendering over the new track (the round-10 default).
+  advance(roomId) {
+    const h = this._rt(roomId, false);
+    if (!h || !h.run.plOrder || !h.run.plOrder.length) return this.stop(roomId);
+    h.run.plIdx = (h.run.plIdx + 1) % h.run.plOrder.length;
+    const nextId = h.run.plOrder[h.run.plIdx];
+    if (!this.loadTimeline(nextId)) return this.stop(roomId); // a track lost its timeline -> stop, don't wedge
+    this.arm(nextId, { keepPreset: true, _noPlaylistSync: true }, roomId);
+    return this.go(serverClock() + config.startLeadMs, roomId);
+  }
+
+  playlistState(roomId) {
+    const h = this._rt(roomId, false);
+    if (!h || !h.run) return { mode: 'all', idx: 0, len: 0, nowId: null, nextId: null };
+    const run = h.run;
+    const len = run.plOrder.length;
+    const nowId = len ? run.plOrder[run.plIdx] : (run.trackId == null ? null : run.trackId);
+    const nextId = len ? run.plOrder[(run.plIdx + 1) % len] : null;
+    return { mode: run.plMode || 'all', idx: run.plIdx, len, nowId, nextId, order: run.plOrder.slice() };
+  }
+  broadcastPlaylist(roomId) {
+    const h = this._rt(roomId, false);
+    if (!h || h.isMain) return; // playlist is a public-room concept
+    h.broadcast({ t: 'playlist', ...this.playlistState(roomId) });
   }
 
   addOperator(ws) { this.operators.add(ws); this.send(ws, { t: 'state', state: this.publicState() }); this.broadcastCount(); }
@@ -317,9 +394,13 @@ export class ShowHub {
     h.run.trackId = trackId;
     h.run.status = 'idle';
     h.run.T0 = null;
+    // Round 10: keep the room's playlist coherent with what's armed (skip when arm() is itself
+    // called from advance()/setPlaylist, which manage plIdx). Main show: no playlist.
+    if (!h.isMain && !opts._noPlaylistSync) this._syncPlaylist(roomId, trackId);
     // Distribute the WHOLE timeline once (P0-5: a phone that gets this single
     // message can run the show locally even if its socket later drops).
     h.broadcast({ t: 'timeline', trackId, data: tl });
+    this.broadcastPlaylist(roomId);
     h.announceState();
     return { ok: true };
   }

@@ -125,6 +125,11 @@ db.prepare(`UPDATE public_config SET
   default_torch_preset  = COALESCE(default_torch_preset,  'beat'),
   default_torch_params  = COALESCE(default_torch_params,  '{}')
   WHERE id = 1`).run();
+// Round 10: the public playlist loop mode a fresh /studio room STARTS in ('all' | 'selected' |
+// 'one'). Visitors switch it live per session; this column is just the seeded default.
+for (const col of ["playlist_mode TEXT NOT NULL DEFAULT 'all'"]) {
+  try { db.exec(`ALTER TABLE public_config ADD COLUMN ${col}`); } catch { /* column already exists */ }
+}
 
 export function now() { return Date.now(); }
 

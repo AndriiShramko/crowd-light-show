@@ -20,6 +20,8 @@
   var pubT0 = null, pubTrackId = null, soundOn = false; // public: armed-track audio T0 + opt-in sound
   var audio = null, audioBuf = null;                    // AudioSync + the armed track's raw bytes (decoded lazily)
   var wantLiveAudio = false, lastAudioT0 = null;        // personal: drive audio start off the running-state echo
+  var plMode = (DEFAULTS && DEFAULTS.playlist_mode) || 'all', plNow = null, plNext = null, plSelected = []; // round 10 playlist (public)
+  var pubTracks = [];                                   // last-loaded public track list (for now/next titles + selected checkboxes)
   var player = document.getElementById('player');
 
   // ROUND 9 AUDIO FIX: the console's lights were already synced (T0 carries clock.offset+nudge),
@@ -126,22 +128,57 @@
   function loadPublic() {
     api('/api/operator/playlist').then(function (r) { return r.ok ? r.json() : null; }).then(function (d) {
       if (!d) { var tb0 = $('tracks').querySelector('tbody'); if (tb0) tb0.innerHTML = '<tr><td class="muted">No public tracks yet.</td></tr>'; return; }
+      pubTracks = d.tracks || [];
+      if (d.playlist && d.playlist.mode) { plMode = d.playlist.mode; plNow = d.playlist.nowId; plNext = d.playlist.nextId; }
+      if (d.defaults && d.defaults.playlist_mode && plNow == null) plMode = plMode || d.defaults.playlist_mode;
       var tb = $('tracks').querySelector('tbody'); tb.innerHTML = '';
-      (d.tracks || []).forEach(function (t) {
+      pubTracks.forEach(function (t) {
         var isArmed = t.id === armedId;
         var tr = document.createElement('tr');
         if (isArmed) tr.style.background = 'rgba(90,160,255,.15)';
-        tr.innerHTML = '<td><b>' + esc(t.title) + '</b>' + (isArmed ? ' <span style="color:#5aa0ff">● playing</span>' : '') + '<br><span class="muted">' + (t.cue_count ? Math.round((t.duration_ms || 0) / 1000) + 's' : '') + '</span></td>'
+        var pick = (plMode === 'selected') ? '<input type="checkbox" data-plsel="' + t.id + '"' + (plSelected.indexOf(t.id) >= 0 ? ' checked' : '') + ' style="margin-right:6px">' : '';
+        tr.innerHTML = '<td>' + pick + '<b>' + esc(t.title) + '</b>' + (isArmed ? ' <span style="color:#5aa0ff">● playing</span>' : '') + '<br><span class="muted">' + (t.cue_count ? Math.round((t.duration_ms || 0) / 1000) + 's' : '') + '</span></td>'
           + '<td style="text-align:right"><button data-arm="' + t.id + '" class="' + (isArmed ? 'primary' : '') + '" style="width:auto">' + (isArmed ? '✓ Playing' : 'Switch') + '</button></td>';
         tb.appendChild(tr);
       });
-      if (!(d.tracks || []).length) { tb.innerHTML = '<tr><td class="muted">The host has not published any tracks yet.</td></tr>'; }
+      if (!pubTracks.length) { tb.innerHTML = '<tr><td class="muted">The host has not published any tracks yet.</td></tr>'; }
+      renderPlaylistCtl();
       // default music: auto-arm the default track (LIGHTS start now; SOUND waits for one tap)
       var def = (DEFAULTS && DEFAULTS.default_track_id) || (d.defaults && d.defaults.default_track_id);
       if (def && armedId == null) armTrack(Number(def), true);
     });
     api('/api/operator/qr').then(function (r) { return r.ok ? r.blob() : null; }).then(function (b) { if (!b) return; var u = URL.createObjectURL(b); if ($('qr')) $('qr').src = u; if ($('qrBig')) $('qrBig').src = u; });
   }
+
+  // ---- playlist controls (public console, round 10) ----
+  function plTitle(id) { for (var i = 0; i < pubTracks.length; i++) if (pubTracks[i].id === id) return pubTracks[i].title; return id == null ? '—' : ('#' + id); }
+  function renderPlaylistCtl() {
+    if (!PUBLIC) return;
+    var ctl = $('playlistCtl'); if (!ctl) return;
+    if (!pubTracks.length) { ctl.classList.add('hidden'); return; }
+    ctl.classList.remove('hidden');
+    var btns = ctl.querySelectorAll('[data-plmode]');
+    for (var i = 0; i < btns.length; i++) { var on = btns[i].getAttribute('data-plmode') === plMode; btns[i].className = on ? 'primary' : ''; }
+    var nn = $('plNowNext');
+    if (nn) {
+      var label = plMode === 'one' ? 'Looping' : (plMode === 'selected' ? 'Selected loop' : 'Loop all');
+      nn.textContent = label + ' · Now: ' + plTitle(plNow == null ? armedId : plNow) + (plMode === 'one' ? '' : ' · Next: ' + plTitle(plNext));
+    }
+  }
+  function applyPlMode(mode) {
+    plMode = mode;
+    // collect ticked ids for 'selected'
+    if (mode === 'selected') { plSelected = []; var cbs = document.querySelectorAll('[data-plsel]'); for (var i = 0; i < cbs.length; i++) if (cbs[i].checked) plSelected.push(Number(cbs[i].getAttribute('data-plsel'))); }
+    api('/api/operator/playlist', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode: mode, selected: plSelected }) })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (p) { if (p && p.ok) { plNow = p.nowId; plNext = p.nextId; if (typeof p.idx === 'number' && p.nowId != null) armedId = p.nowId; } loadPublic(); });
+    renderPlaylistCtl();
+  }
+  if ($('plModes')) $('plModes').addEventListener('click', function (e) { var m = e.target.getAttribute('data-plmode'); if (m) applyPlMode(m); });
+  if ($('tracks')) $('tracks').addEventListener('change', function (e) {
+    if (!PUBLIC) return; var sel = e.target.getAttribute('data-plsel');
+    if (sel && plMode === 'selected') applyPlMode('selected'); // re-post the new selection
+  });
 
   function renderState(st) {
     var prevState = curState;
@@ -267,6 +304,16 @@
   if ($('soundBtn')) $('soundBtn').addEventListener('click', startConsoleSound);
   if ($('playSound')) $('playSound').addEventListener('click', startConsoleSound);
 
+  // playlist advanced to a new curated track while the console sound is on — swap the monitor audio.
+  function reloadConsoleSound(id) {
+    if (!ensureAudio() || typeof id !== 'number') return;
+    audio.clock = clock || audio.clock;
+    if (audio.dropBuffer) audio.dropBuffer();
+    audio.init().then(function () { return api('/api/operator/audio/' + id).then(function (r) { return r.ok ? r.arrayBuffer() : null; }); })
+      .then(function (ab) { if (!ab) return; return audio.cache(ab).then(function () { if (curState === 'running' && pubT0 != null) audio.start(pubT0); }); })
+      .catch(function () {});
+  }
+
   function flashBtn(el) { el.style.boxShadow = '0 0 0 3px #fff'; setTimeout(function () { el.style.boxShadow = ''; }, 300); }
 
   // personal GO: client-computed, audio-aligned T0 over the operator WS. The audio is NOT
@@ -347,7 +394,12 @@
     // ---- public console: derive transport state from the room messages it receives ----
     if (m.t === 'welcome' || m.t === 'state') { if (m.state) { renderState({ status: m.state.status }); if (m.state.status === 'running' && m.state.T0 != null) { pubT0 = m.state.T0; if (audio && soundOn) audio.start(pubT0); } } return; }
     if (m.t === 'index') { var n = Math.max(0, (m.total | 0) - 1); gaPeakUpdate(n); if ($('count2')) $('count2').textContent = n; if ($('countBig')) $('countBig').textContent = n; return; } // -1: the console itself is a member
-    if (m.t === 'timeline') { pubTrackId = m.trackId; return; }
+    if (m.t === 'timeline') { var chg = (m.trackId !== pubTrackId); pubTrackId = m.trackId; if (chg && soundOn && typeof m.trackId === 'number') reloadConsoleSound(m.trackId); return; }
+    if (m.t === 'playlist') { // round 10: the room advanced (or mode changed) — follow now/next
+      plMode = m.mode || plMode; plNow = m.nowId; plNext = m.nextId;
+      if (m.nowId != null && m.nowId !== armedId) { armedId = m.nowId; loadPublic(); } else renderPlaylistCtl();
+      return;
+    }
     if (m.t === 'start') { renderState({ status: 'running' }); pubT0 = m.T0; if (audio && soundOn) audio.start(m.T0); return; }
     if (m.t === 'pause') { renderState({ status: 'paused' }); if (audio) audio.stop(); return; }
     if (m.t === 'stop') { renderState({ status: 'idle' }); armedId = armedId; if (audio) audio.stop(); return; }

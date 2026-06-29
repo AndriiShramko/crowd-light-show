@@ -111,6 +111,7 @@ function readValidatedDefaults() {
     welcome_text: pc.welcome_text || '',
     allow_torch: pc.allow_torch !== 0,
     allow_upload: !!pc.allow_upload && config.publicUploadEnabled,
+    playlist_mode: (pc.playlist_mode === 'one' || pc.playlist_mode === 'selected') ? pc.playlist_mode : 'all',
   };
   if (pc.default_screen_preset) {
     let params = {}; try { params = pc.default_screen_params ? JSON.parse(pc.default_screen_params) : {}; } catch { /* bad json */ }
@@ -139,7 +140,7 @@ function publicSession(room, token) {
     mode: 'public', token, room, apiBase: '/api/console', lead: config.startLeadMs,
     features: { applications: false, upload: d.allow_upload, torch: d.allow_torch, transport: true, publicConfig: false, playlist: true, defaultMusic: true },
     brand: d.brand_name, welcome: d.welcome_text,
-    defaults: { screen: d.screen || null, torch: d.torch || null, default_track_id: d.default_track_id || null },
+    defaults: { screen: d.screen || null, torch: d.torch || null, default_track_id: d.default_track_id || null, playlist_mode: d.playlist_mode || 'all' },
     playlist: listPublicTracks(),
   };
 }
@@ -303,7 +304,18 @@ app.get('/api/console/presets', (req, reply) => {
 app.get('/api/console/playlist', (req, reply) => {
   const room = consoleRoom(req, reply); if (!room) return;
   const d = readValidatedDefaults();
-  return { tracks: listPublicTracks(), defaults: { default_track_id: d.default_track_id || null, screen: d.screen || null, torch: d.torch || null, allow_torch: d.allow_torch, brand_name: d.brand_name } };
+  return { tracks: listPublicTracks(), defaults: { default_track_id: d.default_track_id || null, screen: d.screen || null, torch: d.torch || null, allow_torch: d.allow_torch, brand_name: d.brand_name, playlist_mode: d.playlist_mode || 'all' }, playlist: hub.playlistState(room) };
+});
+// Round 10: set the room's LIVE playlist loop mode ('all'|'selected'|'one'). Per-room only — a
+// public visitor tunes THEIR session; it never rewrites the global default (that's owner-only via
+// /api/operator/public-config). 'selected' carries the chosen public-track ids.
+app.post('/api/console/playlist', (req, reply) => {
+  const room = consoleRoom(req, reply); if (!room) return;
+  const mode = String((req.body && req.body.mode) || 'all');
+  const selected = Array.isArray(req.body && req.body.selected) ? req.body.selected : undefined;
+  const res = hub.setPlaylist(room, mode, selected);
+  if (!res.ok) return reply.code(400).send(res);
+  return res;
 });
 app.post('/api/console/preset', (req, reply) => {
   const room = consoleRoom(req, reply); if (!room) return;
@@ -620,6 +632,7 @@ app.post('/api/operator/public-config', (req, reply) => {
   if (b.welcome_text != null) set.welcome_text = String(b.welcome_text).slice(0, 300);
   if (b.allow_torch != null) set.allow_torch = b.allow_torch ? 1 : 0;
   if (b.allow_upload != null) set.allow_upload = b.allow_upload ? 1 : 0;
+  if (b.playlist_mode != null) set.playlist_mode = (b.playlist_mode === 'one' || b.playlist_mode === 'selected') ? b.playlist_mode : 'all'; // global default loop mode
   if (b.default_screen_preset != null) {
     const v = validatePreset(String(b.default_screen_preset), b.default_screen_params || {});
     if (!v.ok) return reply.code(400).send({ error: 'screen default: ' + v.error });

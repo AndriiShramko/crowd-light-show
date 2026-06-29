@@ -30,6 +30,15 @@
     </div>
     <p id="playlistHint" class="muted hidden">The lights are already running. Share the code below so phones join — tap “▶ Play with sound” to hear the music. Pick another track here anytime.</p>
     <table id="tracks"><tbody></tbody></table>
+    <div id="playlistCtl" class="hidden" style="margin-top:10px">
+      <div class="muted" style="font-size:.85rem;margin-bottom:4px">When a track ends:</div>
+      <div class="row" id="plModes" style="flex-wrap:wrap;gap:6px">
+        <button data-plmode="all" style="width:auto">🔁 Loop all</button>
+        <button data-plmode="selected" style="width:auto">☑️ Loop selected</button>
+        <button data-plmode="one" style="width:auto">🔂 Loop one</button>
+      </div>
+      <p class="muted" id="plNowNext" style="margin:6px 0 0"></p>
+    </div>
   </div>
 
   <div class="card" id="cardJoin">
