@@ -64,6 +64,11 @@ async function main() {
   check('public_config_authed', noAuthCfg.status === 401, 'status=' + noAuthCfg.status);
   const cfg = await opPost('/api/operator/public-config', { default_track_id: pubTrack.id, default_screen_preset: 'pulse', default_screen_params: {}, brand_name: 'Test Lights' }, token).then(j);
   check('public_config_save', cfg.ok && cfg.config.default_track_id === pubTrack.id, 'defaultTrack=' + (cfg.config && cfg.config.default_track_id));
+  // round 9 fix: the default track can be CLEARED (null), not only set
+  await opPost('/api/operator/public-config', { default_track_id: null }, token).then(j);
+  const cleared = await opGet('/api/operator/public-config', token).then(j);
+  check('public_config_clear', cleared.config.default_track_id === null, 'cleared=' + cleared.config.default_track_id);
+  await opPost('/api/operator/public-config', { default_track_id: pubTrack.id }, token).then(j); // re-set for the rest
 
   // mint a public console session
   const html = await fetch(BASE + '/studio').then((r) => r.text());

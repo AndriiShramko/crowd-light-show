@@ -604,8 +604,8 @@ app.post('/api/operator/public-config', (req, reply) => {
     if (!v.ok) return reply.code(400).send({ error: 'torch default: ' + v.error });
     set.default_torch_preset = v.type; set.default_torch_params = JSON.stringify(v.params);
   }
-  if (b.default_track_id != null) {
-    const id = Number(b.default_track_id);
+  if (b.default_track_id !== undefined) {   // null/0/'' clears the default; a real id is validated
+    const id = Number(b.default_track_id) || 0;
     if (id) { const t = db.prepare("SELECT id FROM track WHERE id=? AND is_public=1 AND analysis_status='done'").get(id); if (!t) return reply.code(400).send({ error: 'default track must be a public, analyzed track' }); set.default_track_id = id; }
     else set.default_track_id = null;
   }
