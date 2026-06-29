@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-06-29
+
+Round 9 — the **public operator console**: one landing CTA opens a full operator console (everything `/operator` has except the leads) on its own ephemeral room, plus sharing with GEO/SEO, default music, and a fix for the operator-console audio desync.
+
+### Added
+
+- **Public console at `/studio`.** One primary landing CTA now opens a full operator console — playlist, transport (play/pause/stop/blackout), screen presets, the autonomous torch channel, live preview, join QR and share — on its own private, ephemeral room, with no sign-up. It is the SAME `operator.html`/`operator.js` component as `/operator`, parameterized by a server-injected `__SESSION__` (so new features land in both consoles automatically); the public mode simply has no leads. `studio.js` retired.
+- **Console session model.** A signed console token carries a `room` claim read server-side (never from the request body); a public console can only ever drive its own room. New `/api/console/*` router (presets/torch re-validated through the same safety governor, transport, playlist, QR, curated audio).
+- **Public defaults you control.** `public_config` singleton + a `Public console defaults` card in your own authed console: brand, welcome text, default screen/torch preset (validated on write), default track, allow-torch. A `track.is_public` flag curates tracks into the public playlist (requires analyzed + licence-attested). Your personal shows stay separate; the public side reads the defaults read-only and re-validates on read.
+- **Default music.** The public console auto-arms the default curated track so the lights roll instantly; sound is one tap (browser autoplay policy — honest: lights immediately, sound on tap).
+- **Sharing (both consoles + `/join`).** A share block to invite people by link/code to WhatsApp, Telegram, X, Facebook, email, the native share sheet, or copy — carrying the JOIN url + invite text, plus a separate static "start your own" so people see they can become operators too. Honest copy: "a synced light show", never "perfectly synced".
+- **GEO/SEO.** `robots.txt` now disallows `/studio`; `sitemap.xml` lists `/privacy`; landing gains `og:image` + `twitter:summary_large_image` + hreflang + a HowTo JSON-LD; `llms.txt` gains "Run your own" / "Share" sections. **Fix:** `robots.txt`/`sitemap.xml`/`llms.txt`/`og-cover.png` now serve at the ROOT (they 404'd there before — only `/static/*` worked — so `robots.txt` was never effective for crawlers).
+- **Own-music upload — DARK (off by default, `PUBLIC_UPLOAD_ENABLED=0`).** When enabled, a visitor's audio is decode-then-discard: analyzed into a safety-governed light timeline (held in memory, keyed to the room) and the file deleted immediately — the sound is never stored, re-served or published (lights only). Consent is server-mandatory; size/duration/rate/concurrency are bounded by a new decode semaphore. A `/privacy` clause (EN + PL) describes it.
+
+### Fixed
+
+- **Operator-console audio desync.** The console's lights were always synced, but the monitor audio was started by a bare `setTimeout` that ignored the clock offset + nudge, so it drifted from the on-air audio. The console now plays through `AudioSync.start(T0)` on the same show clock as the phones (the visible `<audio>` is muted during live). Honest: the scheduled instant matches the phones (≤50 ms in headless), not the acoustics — the operator still hears their own speaker.
+
+### Changed
+
+- **Room-scoped run-state.** Every room (the main show + each ephemeral public room) now owns its own run-state, screen/torch presets and auto-stop timer, so a public console drives its room with zero cross-room leakage and the main show is unaffected. A per-room cap and per-IP mint cap bound the ephemeral rooms.
+
 ## [0.9.0] - 2026-06-29
 
 Round 8C — the public site: a managed-service pricing section, a redesigned mobile lead form, the same lead/contact block on every page, a four-language UI, and a RODO privacy + imprint page.

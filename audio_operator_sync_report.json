@@ -1,0 +1,30 @@
+{
+  "base": "http://127.0.0.1:3009",
+  "nudge0": {
+    "diffMs": 0,
+    "op": {
+      "si": 260048.95450004935,
+      "T0": 260048.95450004935,
+      "ready": true
+    },
+    "phone": {
+      "si": 260048.95450004938,
+      "scheduled": true
+    }
+  },
+  "nudge200": {
+    "diffMs": 0,
+    "op": {
+      "si": 266001.65450003743,
+      "T0": 266001.65450003743,
+      "ready": true
+    },
+    "phone": {
+      "si": 266001.65450003743,
+      "scheduled": true
+    },
+    "opVsT0Ms": 0
+  },
+  "note": "scheduled-instant agreement (schedule, not acoustics). A non-zero nudge proves the console now honors offset+nudge — the old setTimeout did not.",
+  "fails": []
+}

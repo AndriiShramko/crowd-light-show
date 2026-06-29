@@ -86,6 +86,21 @@ async function main() {
   const armPriv = await opPost('/api/console/arm', { trackId: privTrack.id }, cTok);
   check('console_refuses_private', armPriv.status === 403, 'status=' + armPriv.status);
 
+  // ---- SAFETY SWEEP: the governor sits BELOW the console layer and is never bypassed ----
+  // (done before the flash test; sets presets on the room then turns them off — no track armed)
+  await opPost('/api/console/preset', { type: 'pulse', params: { bpm: 600, depth: 5 } }, cTok).then(j);
+  let cat = await opGet('/api/console/presets', cTok).then(j);
+  check('console_screen_clamped', cat.active && cat.active.params.bpm <= 180 && cat.active.params.depth <= 0.8, 'bpm=' + (cat.active && cat.active.params.bpm) + ' depth=' + (cat.active && cat.active.params.depth));
+  await opPost('/api/console/preset', { channel: 'torch', type: 'strobe', params: { rate: 20 } }, cTok).then(j);
+  cat = await opGet('/api/console/presets', cTok).then(j);
+  check('console_torch_clamped', cat.torchActive && cat.torchActive.params.rate <= 2.8, 'rate=' + (cat.torchActive && cat.torchActive.params.rate));
+  // NO bypass: debug/raw/unsafe query flags do not loosen the clamp
+  await fetch(BASE + '/api/console/preset?debug=1&raw=1&unsafe=1&next=1', { method: 'POST', headers: { Authorization: 'Bearer ' + cTok, 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'pulse', params: { bpm: 999 } }) }).then(j);
+  cat = await opGet('/api/console/presets', cTok).then(j);
+  check('console_no_bypass', cat.active && cat.active.params.bpm <= 180, 'bpm=' + (cat.active && cat.active.params.bpm));
+  await opPost('/api/console/preset', { type: 'off' }, cTok);
+  await opPost('/api/console/preset', { channel: 'torch', type: 'off' }, cTok);
+
   // a phone joins the room, THEN the console runs the public track -> the phone must flash
   const b = await chromium.launch();
   const ph = await (await b.newContext()).newPage();

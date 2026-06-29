@@ -1,0 +1,7 @@
+{
+  "base": "http://127.0.0.1:3009",
+  "room": "761ba55726e9d61d",
+  "pubTrack": 1,
+  "privTrack": 2,
+  "fails": []
+}
