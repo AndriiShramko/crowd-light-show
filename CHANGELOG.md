@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-06-29
+
+Round 10 — the public `/studio` console, made effortless and honest: fewer clicks, music that actually plays on phones, a per-second audio stutter fixed, a real playlist, own-music upload that you can hear, Google Analytics, and a responsive desktop layout.
+
+### Added
+
+- **Always-on music for phones.** A phone that joins a `/studio` room now auto-streams the room's music (started by the join tap), synced to the lights — previously room phones were frozen out of audio entirely. New `/api/audience/room-audio` serves the room's armed track behind the same crowd-licence gate; a mute toggle is provided. Honest fallback: if there's no served audio the phone stays lights-only (no false "playing").
+- **Playlist with auto-advance.** When a track ends, a public room now advances through its playlist and loops instead of stopping. Three live modes from the console — **Loop all** (every public track), **Loop selected** (a chosen subset), **Loop one** — with a Now/Next display. The owner sets the default loop mode; visitors tune their own session. Phones follow each advance automatically.
+- **Own-music upload that actually plays.** The public own-music upload is now **keep-and-serve**: the uploaded file is analyzed into a safety-governed light timeline *and* streamed to the session's phones + console so the music is heard. Consent-mandatory (the uploader confirms they hold the rights; ZAiKS is their responsibility), bounded by per-file size (15 MB) / duration (6 min) / a per-IP file cap (3) / a 750 MB disk budget, and deleted on tab-close (+grace) or after 24h. Off unless the operator enables it.
+- **Google Analytics 4** (`G-46C2GKVHPR`) on every page **except** the `/join` epilepsy gate, with **Consent Mode v2 default-denied** + an Accept/Reject cookie banner and a reopener. IP-anonymized, no advertising signals; analytics run only after consent. Events: `studio_open`, `track_played`, `preset_changed`, `show_started`/`show_stopped` (with `duration_sec` + `peak_phones`), `upload_test`, `share_clicked`, `lead_submitted` (no PII in events).
+- **Responsive desktop layout** for `/studio`: a wide screen now uses a 2–3 column grid instead of a narrow phone-width strip.
+
+### Changed
+
+- **Fewer clicks on `/studio`.** The default track's lights and sound start with a single prominent **▶ Play with sound** gesture; the redundant native `<audio>`, duplicate GO and old Sound button are hidden; transport + presets moved under an **Advanced** disclosure; Share is on top.
+- **Reactive by default.** Screen and torch presets ship pre-tuned to react to the music (pulse with `audioDepth` 0.6, beat torch) so phones visibly respond out of the box.
+- **Privacy notice** rewritten (EN + PL): Google Analytics disclosure (consent-gated, SCC, anonymized) and the own-music keep-and-serve retention; the stale "no analytics" claim removed.
+
+### Fixed
+
+- **The per-second audio stutter** (phones + the console monitor). The drift loop measured playback progress from the wrong anchor, computing a constant ~120 ms phantom drift and **reseating the audio source every second** (an audible gap). Now it measures from the real buffer-start instant, anchors in the same slewed clock basis as the scheduler, accounts for the intentional latency-compensation lead, and replaces reseat-only with a deadband + bounded one-shot ±2% nudge (reseat only on a big jump). Verified: zero reseats over 5 s, cursor locked across phones.
+
 ## [0.10.0] - 2026-06-29
 
 Round 9 — the **public operator console**: one landing CTA opens a full operator console (everything `/operator` has except the leads) on its own ephemeral room, plus sharing with GEO/SEO, default music, and a fix for the operator-console audio desync.
