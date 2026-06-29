@@ -85,22 +85,30 @@ function joinUrl(show) {
 }
 
 // ---------- public pages ----------
-// Inject the studio feature flag so the landing only surfaces the "Try it live"
-// studio CTA when enabled (or when the URL forces it with ?next=1, for staged rollout).
-function serveLanding(reply) {
-  let html = fs.readFileSync(path.join(config.publicDir, 'index.html'), 'utf8');
-  html = html.replaceAll('@@STUDIO@@', config.studioEnabled ? 'true' : 'false');
-  return reply.type('text/html').send(html);
+// One renderer for EVERY public page (round 8C) so the shared lead/contact block
+// (@@CONTACT@@) and the studio flag (@@STUDIO@@) are injected consistently. Before 8C only
+// "/" did token replacement; /try /join /about /studio were served raw, so a @@CONTACT@@
+// there would have rendered as literal text. The contact partial is read once at boot.
+const CONTACT_PARTIAL = fs.readFileSync(path.join(config.publicDir, 'partials', 'contact.html'), 'utf8');
+function renderPage(file, extra) {
+  let html = fs.readFileSync(path.join(config.publicDir, file), 'utf8');
+  const tokens = Object.assign({
+    '@@STUDIO@@': config.studioEnabled ? 'true' : 'false',
+    '@@CONTACT@@': CONTACT_PARTIAL,
+  }, extra || {});
+  for (const [k, v] of Object.entries(tokens)) html = html.replaceAll(k, String(v));
+  return html;
 }
-app.get('/', (req, reply) => serveLanding(reply));
-app.get('/join', (req, reply) => reply.type('text/html').send(fs.readFileSync(path.join(config.publicDir, 'audience.html'))));
-app.get('/about', (req, reply) => reply.type('text/html').send(fs.readFileSync(path.join(config.publicDir, 'about.html'))));
-app.get('/try', (req, reply) => reply.type('text/html').send(fs.readFileSync(path.join(config.publicDir, 'try.html'))));
+app.get('/', (req, reply) => reply.type('text/html').send(renderPage('index.html')));
+app.get('/join', (req, reply) => reply.type('text/html').send(renderPage('audience.html')));
+app.get('/about', (req, reply) => reply.type('text/html').send(renderPage('about.html')));
+app.get('/try', (req, reply) => reply.type('text/html').send(renderPage('try.html')));
+app.get('/privacy', (req, reply) => reply.type('text/html').send(renderPage('privacy.html')));
 // Studio = guest-controlled live preset demo (no auth, ephemeral room). The "Try it
 // live" target: switch presets in real time and see your own phones change.
 app.get('/studio', (req, reply) => {
   if (!config.studioEnabled) return reply.code(503).type('text/html').send('<h1>Studio is currently disabled.</h1>');
-  return reply.type('text/html').send(fs.readFileSync(path.join(config.publicDir, 'studio.html')));
+  return reply.type('text/html').send(renderPage('studio.html'));
 });
 app.get('/healthz', () => ({ ok: true, freeDiskBytes: freeDiskBytes(), audience: hub.audience.size, status: hub.state.status }));
 app.get('/api/public/show', () => { const s = getOrCreateDefaultShow(); return { code: s.join_code, status: hub.state.status }; });
@@ -195,15 +203,22 @@ app.post('/api/apply', async (req, reply) => {
   const b = req.body || {};
   if (b.website) return { ok: true }; // honeypot — silently drop bots
   const name = String(b.name || '').trim().slice(0, 200);
-  const contact = String(b.contact || '').trim().slice(0, 200);
+  const email = String(b.email || b.contact || '').trim().slice(0, 200);  // 'contact' kept for back-compat
+  const phone = String(b.phone || '').trim().slice(0, 80);
+  const company = String(b.company || '').trim().slice(0, 200);
   const eventType = String(b.eventType || '').trim().slice(0, 80);
+  const tier = String(b.tier || '').trim().slice(0, 40);
+  const source = String(b.source || '').trim().slice(0, 80);
   const message = String(b.message || '').trim().slice(0, 2000);
-  if (!name || !contact) return reply.code(400).send({ error: 'name and contact are required' });
+  // RODO minimization: required = name + email only (phone/company optional).
+  if (!name || !email) return reply.code(400).send({ error: 'name and email are required' });
   const ip = String(req.headers['x-real-ip'] || req.ip || '').slice(0, 64);
-  const info = db.prepare(`INSERT INTO application (name, contact, event_type, message, ip, created_at) VALUES (?,?,?,?,?,?)`)
-    .run(name, contact, eventType, message, ip, now());
-  const text = `🎆 <b>New Crowd Light Show lead</b>\n<b>Name:</b> ${esc(name)}\n<b>Contact:</b> ${esc(contact)}\n<b>Event:</b> ${esc(eventType) || '—'}\n<b>Message:</b> ${esc(message) || '—'}`;
-  notifyTelegram(text).then((ok) => { if (ok) db.prepare('UPDATE application SET notified=1 WHERE id=?').run(info.lastInsertRowid); });
+  const info = db.prepare(`INSERT INTO application (name, contact, email, phone, company, event_type, source, tier, message, ip, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)`)
+    .run(name, email, email, phone, company, eventType, source, tier, message, ip, now());
+  // RODO minimization: the Telegram DM does NOT carry the lead's PII (it leaves the EU to a
+  // third-party processor) — it only nudges the owner to open the authed admin panel to view it.
+  notifyTelegram('🎆 <b>New Crowd Light Show lead</b> — open the operator console → Applications to view it (no personal data is sent over Telegram).')
+    .then((ok) => { if (ok) db.prepare('UPDATE application SET notified=1 WHERE id=?').run(info.lastInsertRowid); });
   return { ok: true };
 });
 

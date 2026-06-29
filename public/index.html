@@ -509,6 +509,70 @@ img, svg { max-width: 100%; }
   </div>
 </section>
 
+<!-- ===================== PRICING (managed service) ===================== -->
+<section class="pr" id="pricing">
+  <style>
+    .pr{box-sizing:border-box;background:#0b0e17;border-top:1px solid rgba(255,255,255,.06);padding:clamp(40px,6vw,80px) 14px}
+    .pr *{box-sizing:border-box}
+    .pr-wrap{max-width:1100px;margin:0 auto}
+    .pr-head{text-align:center;max-width:680px;margin:0 auto clamp(22px,3vw,36px)}
+    .pr-kicker{text-transform:uppercase;letter-spacing:.14em;font-size:.74rem;color:#7c8bdc;font-weight:700;margin:0 0 8px}
+    .pr-head h2{font-size:clamp(1.6rem,4.6vw,2.4rem);margin:0 0 12px;font-weight:800;letter-spacing:-.02em;color:#fff}
+    .pr-head p{margin:0;color:#aab3c7;line-height:1.6}
+    .pr-grid{display:grid;grid-template-columns:1fr;gap:14px}
+    @media(min-width:640px){.pr-grid{grid-template-columns:1fr 1fr}}
+    @media(min-width:1000px){.pr-grid{grid-template-columns:repeat(4,1fr)}}
+    .pr-card{min-width:0;display:flex;flex-direction:column;background:#121726;border:1px solid rgba(255,255,255,.09);border-radius:16px;padding:22px 20px}
+    .pr-card.feat{border-color:rgba(124,77,255,.45);box-shadow:0 0 0 1px rgba(124,77,255,.25)}
+    .pr-name{font-size:1.15rem;font-weight:800;color:#fff;margin:0}
+    .pr-cap{color:#8b93a7;font-size:.86rem;margin:2px 0 14px}
+    .pr-price{font-size:1.7rem;font-weight:800;color:#fff;letter-spacing:-.02em}
+    .pr-price .from{font-size:.8rem;color:#8b93a7;font-weight:600;display:block;letter-spacing:.02em}
+    .pr-desc{color:#aab3c7;font-size:.9rem;line-height:1.5;margin:14px 0 18px;flex:1}
+    .pr-cta{margin-top:auto;text-align:center;text-decoration:none;font-weight:700;color:#fff;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.16);border-radius:10px;padding:11px 14px}
+    .pr-card.feat .pr-cta{background:linear-gradient(135deg,#5a7bff,#7c4dff);border:0}
+    .pr-note{max-width:760px;margin:clamp(20px,3vw,30px) auto 0;text-align:center;color:#7e879b;font-size:.85rem;line-height:1.6}
+  </style>
+  <div class="pr-wrap">
+    <div class="pr-head">
+      <p class="pr-kicker" data-i18n="price.kicker">Done-for-you</p>
+      <h2 data-i18n="price.title">Want the show run for you?</h2>
+      <p data-i18n="price.lead">The app is free and open-source — run it yourself any time. These tiers are a managed service: we plan, set up, operate and tune your light show on the night. Final scope is confirmed on a quick call.</p>
+    </div>
+    <div class="pr-grid">
+      <div class="pr-card">
+        <p class="pr-name" data-i18n="price.spark">Spark</p>
+        <p class="pr-cap" data-i18n="price.spark.cap">up to 100 phones</p>
+        <div class="pr-price"><span class="from" data-i18n="price.from">from</span>€1 900</div>
+        <p class="pr-desc" data-i18n="price.spark.desc">Parties, weddings, small venues — one operator, on good Wi-Fi.</p>
+        <a class="pr-cta" href="?tier=spark#contact" data-i18n="price.cta">Discuss my event</a>
+      </div>
+      <div class="pr-card feat">
+        <p class="pr-name" data-i18n="price.surge">Surge</p>
+        <p class="pr-cap" data-i18n="price.surge.cap">up to 1,000 phones</p>
+        <div class="pr-price"><span class="from" data-i18n="price.from">from</span>€9 900</div>
+        <p class="pr-desc" data-i18n="price.surge.desc">Clubs, mid-size concerts, conferences — soundcheck + on-site operation.</p>
+        <a class="pr-cta" href="?tier=surge#contact" data-i18n="price.cta">Discuss my event</a>
+      </div>
+      <div class="pr-card">
+        <p class="pr-name" data-i18n="price.stadium">Stadium</p>
+        <p class="pr-cap" data-i18n="price.stadium.cap">up to 10,000 phones</p>
+        <div class="pr-price"><span class="from" data-i18n="price.from">from</span>€50 000</div>
+        <p class="pr-desc" data-i18n="price.stadium.desc">Large events — subject to infrastructure provisioning for the crowd size.</p>
+        <a class="pr-cta" href="?tier=stadium#contact" data-i18n="price.cta">Discuss my event</a>
+      </div>
+      <div class="pr-card">
+        <p class="pr-name" data-i18n="price.beyond">Beyond</p>
+        <p class="pr-cap" data-i18n="price.beyond.cap">Need more?</p>
+        <div class="pr-price" data-i18n="price.talk">Let’s talk</div>
+        <p class="pr-desc" data-i18n="price.beyond.desc">Bigger or bespoke? Let’s talk it through and scope it to your event.</p>
+        <a class="pr-cta" href="?tier=beyond#contact" data-i18n="price.cta">Discuss my event</a>
+      </div>
+    </div>
+    <p class="pr-note" data-i18n="price.note">Prices are starting points and depend on venue, audience size and network conditions — confirmed on a consult call. No payment here; every tier starts with a conversation.</p>
+  </div>
+</section>
+
 <!-- ===================== TRY BAND ===================== -->
 <section class="m-section" id="try">
   <div class="m-container m-tryband">
@@ -521,67 +585,8 @@ img, svg { max-width: 100%; }
   </div>
 </section>
 
-<!-- ===================== CONTACT / FORM ===================== -->
-<section class="m-section alt" id="contact">
-  <div class="m-container">
-    <div class="m-section-head">
-      <p class="m-kicker">Request access</p>
-      <h2>Bring it to your event</h2>
-      <p class="m-lead">Tell us a little about your event and we'll get you set up — or get you a quote for custom work.</p>
-    </div>
-    <div class="m-form-wrap">
-      <form class="m-form" id="applyForm" novalidate>
-        <div class="m-field">
-          <label for="f-name">Name <span class="m-req" aria-hidden="true">*</span></label>
-          <input type="text" id="f-name" name="name" autocomplete="name" required aria-required="true">
-        </div>
-        <div class="m-field">
-          <label for="f-contact">Email, phone or Telegram <span class="m-req" aria-hidden="true">*</span></label>
-          <input type="email" id="f-contact" name="contact" autocomplete="email" inputmode="email" autocapitalize="off" autocorrect="off" required aria-required="true" placeholder="How should we reach you?">
-        </div>
-        <div class="m-field">
-          <label for="f-type">Event type</label>
-          <select id="f-type" name="eventType">
-            <option value="Party">Party</option>
-            <option value="Concert/Festival">Concert / Festival</option>
-            <option value="Club/DJ">Club / DJ</option>
-            <option value="Wedding">Wedding</option>
-            <option value="Corporate/Conference">Corporate / Conference</option>
-            <option value="Sports/Arena">Sports / Arena</option>
-            <option value="Church/Worship">Church / Worship</option>
-            <option value="Other">Other</option>
-          </select>
-        </div>
-        <div class="m-field">
-          <label for="f-message">Tell us about your event</label>
-          <textarea id="f-message" name="message" placeholder="Date, venue, crowd size — anything that helps."></textarea>
-        </div>
-        <!-- honeypot: hidden from real users, catches bots -->
-        <div class="m-hp" aria-hidden="true">
-          <label for="f-website">Leave this empty</label>
-          <input type="text" id="f-website" name="website" tabindex="-1" autocomplete="off">
-        </div>
-        <button type="submit" class="m-btn m-btn-primary" id="applyBtn">Send request</button>
-        <p class="m-form-msg" id="applyMsg" role="status" aria-live="polite"></p>
-      </form>
-
-      <aside class="m-contact-card">
-        <h3>Or reach Andrii Shramko directly:</h3>
-        <p class="m-sub">Happy to talk through your event, integrations or custom work.</p>
-        <ul class="m-contact-list">
-          <li><a href="https://www.linkedin.com/in/andrii-shramko/" target="_blank" rel="noopener">
-            <span class="ci" aria-hidden="true">in</span><span class="ct">LinkedIn<small>andrii-shramko</small></span></a></li>
-          <li><a href="mailto:zmei116@gmail.com">
-            <span class="ci" aria-hidden="true">✉️</span><span class="ct">Email<small>zmei116@gmail.com</small></span></a></li>
-          <li><a href="https://calendar.app.google/Ff729HqGk4RpzPNDA" target="_blank" rel="noopener">
-            <span class="ci" aria-hidden="true">📅</span><span class="ct">Book a call<small>Pick a time that suits you</small></span></a></li>
-          <li><a href="tel:+48729361054">
-            <span class="ci" aria-hidden="true">📞</span><span class="ct">Phone<small>+48 729 361 054</small></span></a></li>
-        </ul>
-      </aside>
-    </div>
-  </div>
-</section>
+<!-- ===================== CONTACT / FORM (shared partial, round 8C) ===================== -->
+@@CONTACT@@
 </main>
 
 <!-- ===================== FOOTER ===================== -->
@@ -602,57 +607,9 @@ img, svg { max-width: 100%; }
 </footer>
 
 <script>
-(function () {
-  var form = document.getElementById('applyForm');
-  var btn = document.getElementById('applyBtn');
-  var msg = document.getElementById('applyMsg');
-  if (!form) return;
-
-  form.addEventListener('submit', function (e) {
-    e.preventDefault();
-    msg.className = 'm-form-msg';
-    msg.textContent = '';
-
-    var name = form.name.value.trim();
-    var contact = form.contact.value.trim();
-    var eventType = form.eventType.value;
-    var message = form.message.value.trim();
-    var website = form.website.value; // honeypot
-
-    if (!name || !contact) {
-      msg.className = 'm-form-msg err';
-      msg.textContent = 'Please fill in your name and a way to reach you.';
-      return;
-    }
-
-    btn.disabled = true;
-    var original = btn.textContent;
-    btn.textContent = 'Sending…';
-
-    fetch('/api/apply', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: name, contact: contact, eventType: eventType, message: message, website: website })
-    })
-      .then(function (res) {
-        if (!res.ok) throw new Error('bad status');
-        msg.className = 'm-form-msg ok';
-        msg.textContent = "Thanks! We'll get back to you shortly.";
-        form.reset();
-      })
-      .catch(function () {
-        msg.className = 'm-form-msg err';
-        msg.textContent = "Something went wrong sending that. Please try again, or email zmei116@gmail.com.";
-      })
-      .finally(function () {
-        btn.disabled = false;
-        btn.textContent = original;
-      });
-  });
-})();
-
 // Studio "Try it live" CTA — dormant by default; revealed only when the studio
 // feature is enabled server-side (@@STUDIO@@) or forced for staged rollout (?next=1).
+// The lead form is handled by /static/lead.js (loaded inside the shared contact block, server-injected).
 (function () {
   var enabled = ('@@STUDIO@@' === 'true') || /[?&]next=1\b/.test(location.search);
   if (!enabled) return;
@@ -660,5 +617,6 @@ img, svg { max-width: 100%; }
   for (var i = 0; i < els.length; i++) els[i].style.display = '';
 })();
 </script>
+<script src="/static/site-i18n.js"></script>
 </body>
 </html>

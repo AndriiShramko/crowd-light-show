@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-06-29
+
+Round 8C — the public site: a managed-service pricing section, a redesigned mobile lead form, the same lead/contact block on every page, a four-language UI, and a RODO privacy + imprint page.
+
+### Added
+
+- **Pricing (managed service).** Four honest tiers on the landing — Spark (up to 100 phones, from €1,900), Surge (up to 1,000, from €9,900), Stadium (up to 10,000, from €50,000, subject to infrastructure provisioning) and Beyond ("let's talk"). Framed as a service (people + production + tuning), not a guarantee; "from / subject to venue, audience size and network conditions"; every tier routes to the contact form — no payment here. A copy-guard test fails the build on over-promise wording (`test/site_8c.mjs`).
+- **Shared lead/contact block on all 5 pages** (`/`, `/try`, `/studio`, `/join`, `/about`) plus `/privacy`, injected via a single server-side renderer. Before, only `/` did token replacement, so the other pages were served raw — a server `renderPage()` now drives every public page.
+- **`/privacy`** — RODO privacy notice (controller, lawful basis 6(1)(b), storage, 12-month retention, rights, UODO) + EU imprint (provider, NIP). EN + PL authoritative; ES/FR marked pending native review.
+- **Four-language UI (EN / PL / ES / FR)** via a site-wide i18n layer with a floating switcher, `?lang=` / navigator-language detection, and localStorage persistence across navigation. The in-show epilepsy consent (PL-default) is unchanged and not weakened.
+
+### Changed
+
+- **Redesigned lead form.** Root cause of the mobile overflow fixed (the form CSS only styled `input[type=text]`). Fields are now Name + Email (required) and Phone + Company (optional), all with proper `type`/`autocomplete` for browser autofill; no horizontal overflow at 360px or 320px. After submit it does **not** echo the submitted details — it thanks you and offers to share the live demo with friends ("a synced light show you can share").
+- **Lead data + privacy.** The `application` table gains email/phone/company/source/tier (idempotent migration on the live DB). The Telegram owner notification no longer carries the lead's personal data — it only says "a new lead arrived, open the admin panel".
+
 ## [0.8.0] - 2026-06-29
 
 Round 8B — the torch (camera-LED flash) becomes a fully AUTONOMOUS channel, independent of the screen: its own patterns, its own reactivity sliders, its own safety-governed preview. Honest about iPhone.

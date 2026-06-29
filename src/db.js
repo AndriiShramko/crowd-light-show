@@ -82,6 +82,13 @@ CREATE INDEX IF NOT EXISTS idx_seat_map ON seat(seatmap_id);
 CREATE INDEX IF NOT EXISTS idx_app_created ON application(created_at DESC);
 `);
 
+// Round 8C — idempotent migration. CREATE TABLE IF NOT EXISTS does NOT add columns to an
+// already-existing (populated, live) table, so add the new lead fields one-by-one, each
+// wrapped so a re-run on a DB that already has the column is a silent no-op.
+for (const col of ['email TEXT', 'phone TEXT', 'company TEXT', 'source TEXT', 'tier TEXT']) {
+  try { db.exec(`ALTER TABLE application ADD COLUMN ${col}`); } catch { /* column already exists */ }
+}
+
 export function now() { return Date.now(); }
 
 export function getOrCreateDefaultShow() {

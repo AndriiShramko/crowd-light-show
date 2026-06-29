@@ -1,0 +1,117 @@
+<!-- Shared lead/contact block (round 8C). Server-injected on /, /try, /studio, /join and
+     /about by src/server.js renderPage(). Fully self-contained (own scoped .lc-* CSS +
+     data-i18n keys) so it renders consistently on every page regardless of that page's own
+     styles. Submit logic lives in /static/lead.js. -->
+<section class="lc-contact" id="contact" aria-labelledby="lc-title">
+  <style>
+    .lc-contact{box-sizing:border-box;width:100%;background:#0b0e17;color:#e8ecf6;border-top:1px solid rgba(255,255,255,.07);padding:clamp(36px,6vw,72px) 14px;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+    .lc-contact *,.lc-contact *::before,.lc-contact *::after{box-sizing:border-box}
+    .lc-wrap{max-width:1040px;margin:0 auto}
+    .lc-head{text-align:center;margin:0 auto clamp(20px,3vw,34px);max-width:680px}
+    .lc-head h2{font-size:clamp(1.5rem,4.4vw,2.3rem);line-height:1.15;margin:0 0 10px;font-weight:800;letter-spacing:-.02em}
+    .lc-head p{margin:0;color:#aab3c7;font-size:clamp(.96rem,2.4vw,1.05rem);line-height:1.55}
+    .lc-grid{display:grid;grid-template-columns:1fr;gap:clamp(20px,3vw,36px)}
+    @media(min-width:860px){.lc-grid{grid-template-columns:1.12fr .88fr;align-items:start}}
+    .lc-form,.lc-card{min-width:0;background:#121726;border:1px solid rgba(255,255,255,.09);border-radius:16px;padding:clamp(16px,3vw,24px)}
+    .lc-row{display:grid;grid-template-columns:1fr;gap:12px}
+    @media(min-width:520px){.lc-row{grid-template-columns:1fr 1fr}}
+    .lc-field{min-width:0;display:flex;flex-direction:column;gap:5px;margin-bottom:12px}
+    .lc-field label{font-size:.82rem;color:#aab3c7;font-weight:600}
+    .lc-field .opt{color:#6b7488;font-weight:400}
+    .lc-contact input,.lc-contact select,.lc-contact textarea{width:100%;max-width:100%;min-width:0;font:inherit;font-size:16px;color:#fff;background:#0c1019;border:1px solid rgba(255,255,255,.14);border-radius:10px;padding:11px 12px;outline:none;-webkit-appearance:none;appearance:none}
+    .lc-contact textarea{min-height:84px;resize:vertical}
+    .lc-contact input:focus,.lc-contact select:focus,.lc-contact textarea:focus{border-color:#5a7bff;box-shadow:0 0 0 3px rgba(90,123,255,.25)}
+    .lc-req{color:#ff8a8a}
+    .lc-btn{width:100%;margin-top:4px;cursor:pointer;font:inherit;font-weight:700;color:#fff;background:linear-gradient(135deg,#5a7bff,#7c4dff);border:0;border-radius:10px;padding:13px 16px}
+    .lc-btn[disabled]{opacity:.6;cursor:default}
+    .lc-msg{margin-top:10px;font-size:.92rem;line-height:1.5;min-height:1.1em}
+    .lc-msg.err{color:#ff8a8a}
+    .lc-hp{position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden}
+    .lc-priv{margin:12px 2px 0;font-size:.8rem;color:#7e879b;line-height:1.5}
+    .lc-priv a{color:#9fb0ff}
+    .lc-card h3{margin:0 0 4px;font-size:1.05rem}
+    .lc-card .sub{margin:0 0 14px;color:#aab3c7;font-size:.92rem;line-height:1.5}
+    .lc-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:10px}
+    .lc-list a{display:flex;align-items:center;gap:11px;color:#e8ecf6;text-decoration:none;padding:10px;border-radius:10px;border:1px solid rgba(255,255,255,.07)}
+    .lc-list a:hover{background:rgba(255,255,255,.04);border-color:rgba(255,255,255,.16)}
+    .lc-ic{flex:0 0 34px;width:34px;height:34px;display:grid;place-items:center;border-radius:9px;background:rgba(90,123,255,.16);font-size:15px}
+    .lc-ct{display:flex;flex-direction:column;min-width:0}
+    .lc-ct b{font-size:.93rem}.lc-ct small{color:#8b93a7;font-size:.8rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .lc-thanks{display:none;text-align:center;padding:8px 4px}
+    .lc-thanks.show{display:block}
+    .lc-thanks h3{font-size:1.35rem;margin:0 0 8px}
+    .lc-thanks p{color:#aab3c7;line-height:1.6;margin:0 auto 16px;max-width:420px}
+    .lc-share{margin-top:14px;padding-top:16px;border-top:1px solid rgba(255,255,255,.09)}
+    .lc-share h4{margin:0 0 6px;font-size:1rem}
+    .lc-share p{font-size:.92rem}
+    .lc-share-row{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin-top:10px}
+    .lc-share-row a,.lc-share-row button{font:inherit;font-weight:600;font-size:.9rem;cursor:pointer;text-decoration:none;color:#fff;background:rgba(255,255,255,.10);border:1px solid rgba(255,255,255,.16);border-radius:999px;padding:9px 16px}
+    .lc-share-row a.primary{background:linear-gradient(135deg,#5a7bff,#7c4dff);border:0}
+  </style>
+  <div class="lc-wrap">
+    <div class="lc-head">
+      <h2 id="lc-title" data-i18n="contact.title">Interested? Let’s talk about your event</h2>
+      <p data-i18n="contact.sub">Tell us a little about your event and we’ll get you set up — or get you a quote for managed work.</p>
+    </div>
+    <div class="lc-grid">
+      <div class="lc-form">
+        <form id="leadForm" novalidate>
+          <div class="lc-row">
+            <div class="lc-field"><label for="lc-name"><span data-i18n="form.name">Name</span> <span class="lc-req" aria-hidden="true">*</span></label>
+              <input id="lc-name" name="name" type="text" autocomplete="name" required aria-required="true"></div>
+            <div class="lc-field"><label for="lc-email"><span data-i18n="form.email">Email</span> <span class="lc-req" aria-hidden="true">*</span></label>
+              <input id="lc-email" name="email" type="email" autocomplete="email" inputmode="email" autocapitalize="off" autocorrect="off" required aria-required="true"></div>
+          </div>
+          <div class="lc-row">
+            <div class="lc-field"><label for="lc-phone"><span data-i18n="form.phone">Phone</span> <span class="opt" data-i18n="form.optional">optional</span></label>
+              <input id="lc-phone" name="phone" type="tel" autocomplete="tel" inputmode="tel"></div>
+            <div class="lc-field"><label for="lc-company"><span data-i18n="form.company">Company / organization</span> <span class="opt" data-i18n="form.optional">optional</span></label>
+              <input id="lc-company" name="company" type="text" autocomplete="organization"></div>
+          </div>
+          <div class="lc-field"><label for="lc-event" data-i18n="form.event">Event type</label>
+            <select id="lc-event" name="eventType">
+              <option value="Party" data-i18n="ev.party">Party</option>
+              <option value="Concert/Festival" data-i18n="ev.concert">Concert / Festival</option>
+              <option value="Club/DJ" data-i18n="ev.club">Club / DJ</option>
+              <option value="Wedding" data-i18n="ev.wedding">Wedding</option>
+              <option value="Corporate/Conference" data-i18n="ev.corp">Corporate / Conference</option>
+              <option value="Sports/Arena" data-i18n="ev.sport">Sports / Arena</option>
+              <option value="Church/Worship" data-i18n="ev.church">Church / Worship</option>
+              <option value="Other" data-i18n="ev.other">Other</option>
+            </select></div>
+          <div class="lc-field"><label for="lc-message" data-i18n="form.message">About your event</label>
+            <textarea id="lc-message" name="message" data-i18n-ph="form.msg_ph" placeholder="Date, venue, crowd size — anything that helps."></textarea></div>
+          <div class="lc-hp" aria-hidden="true"><label for="lc-website">Leave this empty</label><input id="lc-website" name="website" type="text" tabindex="-1" autocomplete="off"></div>
+          <input type="hidden" name="source" id="lc-source" value="">
+          <button type="submit" class="lc-btn" id="lc-send" data-i18n="form.send">Send request</button>
+          <p class="lc-msg" id="lc-msg" role="status" aria-live="polite"></p>
+          <p class="lc-priv"><span data-i18n="contact.privacy">We use your details only to reply about your event. See our</span>
+            <a href="/privacy" data-i18n="contact.privacy_link">privacy notice</a>.</p>
+        </form>
+        <div class="lc-thanks" id="lc-thanks">
+          <h3 data-i18n="form.thanks_title">Thank you! 🎉</h3>
+          <p data-i18n="form.thanks_body">Got it — we’ll get back to you within one business day. Talk soon!</p>
+          <div class="lc-share">
+            <h4 data-i18n="share.title">While you’re here — show your friends</h4>
+            <p data-i18n="share.body">Open the live demo together: it’s a synced light show you can share. Send this link and watch your phones light up as one.</p>
+            <div class="lc-share-row">
+              <a class="primary" id="lc-share-try" href="/try" data-i18n="share.cta_try">Open the demo</a>
+              <button type="button" id="lc-share-copy" data-i18n="share.cta_copy">Copy share link</button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <aside class="lc-card">
+        <h3 data-i18n="contact.or">Or reach Andrii Shramko directly:</h3>
+        <p class="sub" data-i18n="contact.or_sub">Happy to talk through your event, integrations or custom work.</p>
+        <ul class="lc-list">
+          <li><a href="https://www.linkedin.com/in/andrii-shramko/" target="_blank" rel="noopener"><span class="lc-ic" aria-hidden="true">in</span><span class="lc-ct"><b data-i18n="contact.linkedin">LinkedIn</b><small>andrii-shramko</small></span></a></li>
+          <li><a href="mailto:zmei116@gmail.com"><span class="lc-ic" aria-hidden="true">✉</span><span class="lc-ct"><b data-i18n="contact.email">Email</b><small>zmei116@gmail.com</small></span></a></li>
+          <li><a href="https://calendar.app.google/Ff729HqGk4RpzPNDA" target="_blank" rel="noopener"><span class="lc-ic" aria-hidden="true">📅</span><span class="lc-ct"><b data-i18n="contact.book">Book a call</b><small data-i18n="contact.book_sub">Pick a time that suits you</small></span></a></li>
+          <li><a href="tel:+48729361054"><span class="lc-ic" aria-hidden="true">📞</span><span class="lc-ct"><b data-i18n="contact.phone">Phone</b><small>+48 729 361 054</small></span></a></li>
+        </ul>
+      </aside>
+    </div>
+  </div>
+</section>
+<script src="/static/lead.js"></script>

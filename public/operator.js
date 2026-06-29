@@ -158,7 +158,8 @@
       d.applications.forEach(function (a) {
         var when = new Date(a.created_at).toLocaleString();
         var tr = document.createElement('tr');
-        tr.innerHTML = '<td><b>' + esc(a.name) + '</b> · ' + esc(a.contact) + '<br><span class="muted">' + esc(a.event_type || '') + (a.message ? ' · ' + esc(a.message) : '') + '<br>' + when + (a.notified ? ' · ✓ TG' : '') + '</span></td>'
+        var bits = [esc(a.event_type || ''), a.phone ? '📞 ' + esc(a.phone) : '', a.company ? '🏢 ' + esc(a.company) : '', a.tier ? '💶 ' + esc(a.tier) : '', a.source ? 'via ' + esc(a.source) : ''].filter(Boolean).join(' · ');
+        tr.innerHTML = '<td><b>' + esc(a.name) + '</b> · ' + esc(a.contact) + '<br><span class="muted">' + bits + (a.message ? '<br>' + esc(a.message) : '') + '<br>' + when + (a.notified ? ' · ✓ TG' : '') + '</span></td>'
           + '<td style="text-align:right;vertical-align:top"><button data-delapp="' + a.id + '" class="ghost" style="width:auto">✕</button></td>';
         tb.appendChild(tr);
       });
