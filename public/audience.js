@@ -229,6 +229,12 @@
     if (m.t === 'blackout') { runState = { status: 'blackout', T0: null, epoch: m.epoch }; preset = null; torchPreset = null; window.__cls.preset = null; window.__cls.screen.preset = null; window.__cls.torch.preset = null; window.__cls.status = 'blackout'; if (audio) audio.stop(); hideWave(); return; }
     // ---- studio: live parametric presets ----
     if (m.t === 'index') { myIndex = m.index | 0; N = Math.max(1, m.total | 0); window.__cls.idx = myIndex; window.__cls.total = N; return; }
+    if (m.t === 'marquee') { // round 11 (pt 19): scrolling text overlay — text ONLY, never touches the flash/preset/run-state
+      var mq = document.getElementById('marquee'), inner = document.getElementById('marqueeInner');
+      var txt = String(m.text || '').slice(0, 200); window.__cls.marquee = txt;
+      if (mq && inner) { if (!txt) { mq.classList.add('hidden'); inner.textContent = ''; } else { inner.textContent = txt; mq.classList.remove('hidden'); } }
+      return;
+    }
     if (m.t === 'preset') {
       if (m.channel === 'torch') {                 // round 8B: autonomous torch channel — never touches the screen
         if (m.type === 'off' || !P || !P.TORCH_PRESETS || !P.TORCH_PRESETS[m.type]) { torchPreset = null; window.__cls.torch.preset = null; window.__cls.torch.epoch = m.epoch | 0; return; }

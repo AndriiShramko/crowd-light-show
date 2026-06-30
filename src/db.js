@@ -130,6 +130,10 @@ db.prepare(`UPDATE public_config SET
 for (const col of ["playlist_mode TEXT NOT NULL DEFAULT 'all'"]) {
   try { db.exec(`ALTER TABLE public_config ADD COLUMN ${col}`); } catch { /* column already exists */ }
 }
+// Round 11 (pt 19): a scrolling marquee text shown on every phone (looping). Empty = none.
+for (const col of ["marquee_text TEXT NOT NULL DEFAULT ''"]) {
+  try { db.exec(`ALTER TABLE public_config ADD COLUMN ${col}`); } catch { /* column already exists */ }
+}
 
 export function now() { return Date.now(); }
 

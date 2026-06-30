@@ -8,8 +8,8 @@
     "shareHidden": true,
     "stopRowHidden": true,
     "stateText": "idle",
-    "joinUrl": "http://localhost:3030/join?room=597cd877efae3695",
-    "joinHref": "http://localhost:3030/join?room=597cd877efae3695",
+    "joinUrl": "http://localhost:3030/join?room=bd27edba946841e2",
+    "joinHref": "http://localhost:3030/join?room=bd27edba946841e2",
     "advOpen": true,
     "nudgeHidden": true,
     "goHidden": true,
@@ -17,7 +17,7 @@
     "soundBtnHidden": true,
     "muteExists": true,
     "mutePrimary": "ghost reveal",
-    "preset": "pulse"
+    "preset": "rainbow_chase"
   },
   "afterStart": {
     "btn": "⏸ Pause Light Show ",

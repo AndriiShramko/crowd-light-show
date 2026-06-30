@@ -92,7 +92,7 @@ export class ShowHub {
       // Hard ceiling: refuse to mint beyond the cap (memory guard for the 512 MB box).
       if (this.rooms.size >= config.publicMaxRooms) return null;
       r = { members: new Set(), preset: null, torch: null, alloc: new IndexAllocator(), run: newRun(), _endTimer: null, createdAt: serverClock() };
-      try { const pc = getPublicConfig(); if (pc && pc.playlist_mode) r.run.plMode = pc.playlist_mode; } catch { /* default 'all' */ } // seed the owner's default loop mode
+      try { const pc = getPublicConfig(); if (pc && pc.playlist_mode) r.run.plMode = pc.playlist_mode; if (pc && pc.marquee_text) r.marquee = pc.marquee_text; } catch { /* defaults */ } // seed the owner's default loop mode + marquee
       this.rooms.set(roomId, r);
     }
     if (r && !r.run) r.run = newRun();   // defensive: older rooms always get a run slot
@@ -178,6 +178,7 @@ export class ShowHub {
         const tl = this.loadTimeline(this.state.trackId);
         if (tl) this.send(ws, { t: 'timeline', trackId: this.state.trackId, data: tl });
       }
+      if (this.marquee) this.send(ws, { t: 'marquee', text: this.marquee }); // late-join marquee (pt 19)
       this.send(ws, { t: 'index', index: this.alloc.indexOf(ws), total: this.alloc.total() }); // joiner gets its index now
       this.markIndexDirty(MAIN_ROOM);   // others refresh total on the coalesced flush
       this.broadcastCount();
@@ -196,6 +197,7 @@ export class ShowHub {
         if (tl) this.send(ws, { t: 'timeline', trackId: r.run.trackId, data: tl });
       }
       if (r.run && r.run.plOrder && r.run.plOrder.length) this.send(ws, { t: 'playlist', ...this.playlistState(roomId) }); // late-join now/next
+      if (r.marquee) this.send(ws, { t: 'marquee', text: r.marquee }); // late-join marquee (pt 19)
       this.send(ws, { t: 'index', index: r.alloc.indexOf(ws), total: r.alloc.total() });
       this.markIndexDirty(roomId);
     }
@@ -353,6 +355,18 @@ export class ShowHub {
     const h = this._rt(roomId, false);
     if (!h || h.isMain) return; // playlist is a public-room concept
     h.broadcast({ t: 'playlist', ...this.playlistState(roomId) });
+  }
+
+  // Round 11 (pt 19): scrolling marquee text, broadcast to a room (or main). Stored so late joiners
+  // get it. It is ONLY text on a separate overlay — it never touches the flash/preset/run-state, so
+  // it cannot affect the epilepsy flash cap.
+  setMarquee(roomId, text) {
+    const h = this._rt(roomId, true);
+    if (!h) return { ok: false, error: 'room unavailable' };
+    const t = String(text || '').slice(0, 200);
+    if (h.isMain) this.marquee = t; else { const r = this.rooms.get(roomId); if (r) r.marquee = t; }
+    h.broadcast({ t: 'marquee', text: t });
+    return h.isMain ? { ok: true } : { ok: true, members: h.members.size };
   }
 
   addOperator(ws) { this.operators.add(ws); this.send(ws, { t: 'state', state: this.publicState() }); this.broadcastCount(); }

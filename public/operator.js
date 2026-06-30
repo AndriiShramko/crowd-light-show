@@ -298,9 +298,10 @@
     armedId = id; audioReady = false;
     ga('track_played', { track_id: id == null ? '' : id, track_kind: (typeof id === 'number') ? 'curated' : 'guest', is_default: !!isDefault });
     if (PUBLIC) {
-      // public console: arm over HTTP (the server broadcasts timeline to the room; the console
-      // gets it as a previewer). Then auto-GO so the default music's LIGHTS start with no clicks.
-      tx('arm', { trackId: id }).then(function (j) {
+      // public console: arm over HTTP. keepPreset so the host's default REACTIVE preset (e.g. Rainbow
+      // Chase) keeps rendering OVER the track, reading its loudness — that's the default crowd LOOK
+      // (round 11 pt 17). The track supplies the music + envelope; the preset is the visual.
+      tx('arm', { trackId: id, keepPreset: true }).then(function (j) {
         if (!j || !j.ok) { if ($('armed')) $('armed').textContent = 'could not start that track'; return; }
         if ($('armed')) $('armed').textContent = 'playing — lights live';
         loadPublic();
@@ -501,14 +502,50 @@
         sel.innerHTML = '<option value="">— none —</option>';
         (d.publicTracks || []).forEach(function (t) { var o = document.createElement('option'); o.value = t.id; o.textContent = t.title; if (c.default_track_id === t.id) o.selected = true; sel.appendChild(o); });
       }
+      if ($('pcMarquee')) $('pcMarquee').value = c.marquee_text || '';
+      pcLastConfig = c; pcApplyPresetDefaults(); // populate default-preset pickers (hydrates if schemas already loaded)
     });
   }
   if ($('pcSave')) $('pcSave').addEventListener('click', function () {
     var body = { brand_name: $('pcBrand').value, welcome_text: $('pcWelcome').value, allow_torch: $('pcTorch').checked, default_track_id: $('pcTrack').value ? Number($('pcTrack').value) : null };
     if ($('pcUpload') && !$('pcUpload').disabled) body.allow_upload = $('pcUpload').checked;
+    if ($('pcScreenPreset') && $('pcScreenPreset').value) { body.default_screen_preset = $('pcScreenPreset').value; body.default_screen_params = pcScreenParams; } // round 11 pt 17 (server validates)
+    if ($('pcTorchPreset') && $('pcTorchPreset').value) { body.default_torch_preset = $('pcTorchPreset').value; body.default_torch_params = pcTorchParams; }
+    if ($('pcMarquee')) body.marquee_text = $('pcMarquee').value; // round 11 pt 19
     api('/api/operator/public-config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
       .then(function (r) { return r.json(); }).then(function (j) { $('pcMsg').textContent = j.ok ? 'Saved ✓' : ('Error: ' + (j.error || '')); setTimeout(function () { $('pcMsg').textContent = ''; }, 2500); });
   });
+  // ---- round 11 (pt 17): default screen/torch preset PICKER + param sliders in the defaults card.
+  // Reuses the same schema-driven rows as Live presets; the server re-validates on save.
+  var pcScreenParams = {}, pcTorchParams = {}, pcLastConfig = null;
+  function pcBuildParamRows(container, schema, values) {
+    container.innerHTML = ''; if (!schema || !schema.params) return;
+    Object.keys(schema.params).forEach(function (k) {
+      var spec = schema.params[k];
+      var row = document.createElement('div'); row.className = 'nudge';
+      var lab = document.createElement('span'); lab.textContent = spec.label; lab.style.minWidth = '110px'; lab.style.fontSize = '.85rem';
+      var inp = document.createElement('input'); inp.type = 'range'; inp.min = spec.min; inp.max = spec.max; inp.step = spec.step;
+      inp.value = values[k] != null ? values[k] : spec.def;
+      var val = document.createElement('span'); val.textContent = inp.value; val.style.minWidth = '46px';
+      inp.addEventListener('input', function () { val.textContent = inp.value; values[k] = Number(inp.value); });
+      row.appendChild(lab); row.appendChild(inp); row.appendChild(val); container.appendChild(row);
+    });
+  }
+  function pcDefaultsFor(schema) { var o = {}; if (schema && schema.params) for (var k in schema.params) o[k] = schema.params[k].def; return o; }
+  function pcRenderScreen() { var s = $('pcScreenPreset'); if (!s) return; var t = s.value; if (t && presetSchema && presetSchema[t]) pcBuildParamRows($('pcScreenParams'), presetSchema[t], pcScreenParams); else if ($('pcScreenParams')) $('pcScreenParams').innerHTML = ''; }
+  function pcRenderTorch() { var s = $('pcTorchPreset'); if (!s) return; var t = s.value; if (t && t !== 'off' && torchSchema && torchSchema[t]) pcBuildParamRows($('pcTorchParams'), torchSchema[t], pcTorchParams); else if ($('pcTorchParams')) $('pcTorchParams').innerHTML = ''; }
+  function pcApplyPresetDefaults() {  // populate selects (once schemas are loaded) + hydrate from the last config
+    if (!FEAT.publicConfig) return;
+    var ss = $('pcScreenPreset');
+    if (ss && presetSchema && ss.options.length === 0) Object.keys(presetSchema).forEach(function (t) { var o = document.createElement('option'); o.value = t; o.textContent = presetSchema[t].label || t; ss.appendChild(o); });
+    var ts = $('pcTorchPreset');
+    if (ts && torchSchema && ts.options.length === 0) { var off = document.createElement('option'); off.value = 'off'; off.textContent = 'Off'; ts.appendChild(off); Object.keys(torchSchema).forEach(function (t) { if (t === 'off') return; var o = document.createElement('option'); o.value = t; o.textContent = (torchSchema[t] && torchSchema[t].label) || t; ts.appendChild(o); }); }
+    var c = pcLastConfig; if (!c) return;
+    if (ss && presetSchema && c.default_screen_preset && presetSchema[c.default_screen_preset]) { ss.value = c.default_screen_preset; try { pcScreenParams = c.default_screen_params ? JSON.parse(c.default_screen_params) : {}; } catch (e) { pcScreenParams = {}; } pcRenderScreen(); }
+    if (ts && torchSchema && c.default_torch_preset) { ts.value = c.default_torch_preset; try { pcTorchParams = c.default_torch_params ? JSON.parse(c.default_torch_params) : {}; } catch (e) { pcTorchParams = {}; } pcRenderTorch(); }
+  }
+  if ($('pcScreenPreset')) $('pcScreenPreset').addEventListener('change', function () { pcScreenParams = pcDefaultsFor(presetSchema && presetSchema[$('pcScreenPreset').value]); pcRenderScreen(); });
+  if ($('pcTorchPreset')) $('pcTorchPreset').addEventListener('change', function () { pcTorchParams = pcDefaultsFor(torchSchema && torchSchema[$('pcTorchPreset').value]); pcRenderTorch(); });
 
   // ---- live presets (studio) ----
   var presetSchema = null, activeType = null, activeParams = {};
@@ -635,6 +672,7 @@
       // flash channel is alive on open too (mirror of the screen auto-pick above). Gated on
       // FEAT.torch so a host who disabled torch isn't overridden.
       if (PUBLIC && FEAT.torch !== false && DEFAULTS && DEFAULTS.torch && DEFAULTS.torch.type && DEFAULTS.torch.type !== 'off' && !activeTorch) pickTorch(DEFAULTS.torch.type);
+      pcApplyPresetDefaults(); // schemas now loaded -> fill the default-preset pickers (operator console)
     });
   }
   if ($('presetBtns')) $('presetBtns').addEventListener('click', function (e) { var t = e.target.getAttribute('data-preset'); if (t) pickPreset(t); });

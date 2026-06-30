@@ -1,0 +1,10 @@
+{
+  "base": "http://localhost:3030",
+  "room": "3969ca2afded4f7e",
+  "mq": {
+    "cls": "HELLO BYDGOSZCZ ✨",
+    "dom": "HELLO BYDGOSZCZ ✨",
+    "vis": true
+  },
+  "fails": []
+}

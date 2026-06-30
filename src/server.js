@@ -112,6 +112,7 @@ function readValidatedDefaults() {
     allow_torch: pc.allow_torch !== 0,
     allow_upload: !!pc.allow_upload && config.publicUploadEnabled,
     playlist_mode: (pc.playlist_mode === 'one' || pc.playlist_mode === 'selected') ? pc.playlist_mode : 'all',
+    marquee: String(pc.marquee_text || '').slice(0, 200),
   };
   if (pc.default_screen_preset) {
     let params = {}; try { params = pc.default_screen_params ? JSON.parse(pc.default_screen_params) : {}; } catch { /* bad json */ }
@@ -316,6 +317,15 @@ app.post('/api/console/playlist', (req, reply) => {
   const res = hub.setPlaylist(room, mode, selected);
   if (!res.ok) return reply.code(400).send(res);
   return res;
+});
+// Round 11 (pt 19): set the room's LIVE scrolling marquee text (per-room; <=200 chars, sanitized).
+app.post('/api/console/marquee', (req, reply) => {
+  const room = consoleRoom(req, reply); if (!room) return;
+  return hub.setMarquee(room, String((req.body && req.body.text) || '').slice(0, 200));
+});
+app.post('/api/operator/marquee', (req, reply) => {
+  if (!requireOperator(req, reply)) return;
+  return hub.setMarquee('main', String((req.body && req.body.text) || '').slice(0, 200));
 });
 app.post('/api/console/preset', (req, reply) => {
   const room = consoleRoom(req, reply); if (!room) return;
@@ -679,6 +689,7 @@ app.post('/api/operator/public-config', (req, reply) => {
   const set = {};
   if (b.brand_name != null) set.brand_name = String(b.brand_name).slice(0, 80) || 'Crowd Light Show';
   if (b.welcome_text != null) set.welcome_text = String(b.welcome_text).slice(0, 300);
+  if (b.marquee_text != null) set.marquee_text = String(b.marquee_text).slice(0, 200); // round 11 pt 19 (global default marquee)
   if (b.allow_torch != null) set.allow_torch = b.allow_torch ? 1 : 0;
   if (b.allow_upload != null) set.allow_upload = b.allow_upload ? 1 : 0;
   if (b.playlist_mode != null) set.playlist_mode = (b.playlist_mode === 'one' || b.playlist_mode === 'selected') ? b.playlist_mode : 'all'; // global default loop mode

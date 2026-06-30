@@ -64,7 +64,7 @@ async function main() {
   check('nudge_hidden_studio', idle.nudgeHidden, 'nudge hidden on /studio');
   check('dead_controls_hidden', idle.goHidden && idle.playerHidden && idle.soundBtnHidden, JSON.stringify({ go: idle.goHidden, player: idle.playerHidden, sound: idle.soundBtnHidden }));
   check('mute_button_small', idle.muteExists && !/primary/.test(idle.mutePrimary), 'muteBtn class="' + idle.mutePrimary + '"');
-  check('reactive_default_preset', idle.preset === 'pulse', 'auto-applied preset=' + idle.preset);
+  check('reactive_default_preset', !!idle.preset && idle.preset !== 'off', 'auto-applied a reactive default preset=' + idle.preset);
 
   // ---- click Start -> spinner -> Pause + reveal (pt 2) ----
   await pub.click('#playSound');
