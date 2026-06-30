@@ -884,6 +884,191 @@
     } catch (e) {}
   });
 
+  // ===== round 14: VJ pult — live manual control (saturation / colour / brightness / flash), four
+  // touch-first widget variants in tabs, fullscreen, a palette restriction, and optional WebMIDI. It
+  // emits through tx('manual'/'palette') — WS 'op' on /operator, HTTP on /studio — RAF-coalesced to
+  // ~20 Hz. The epilepsy governors live on the PHONE; the pult is just input. =====
+  function setupVJ() {
+    var stage = $('vjStage'); if (!stage) return;
+    var clamp01 = function (x) { return x < 0 ? 0 : x > 1 ? 1 : x; };
+    var st = { hue: 200, sat: 1, bri: 0.9, flash: 0 };
+    var vjOn = false, vjMode = 'intervene', tab = 'faders';
+    var palette = { on: false, colors: [] };
+    window.__opVJ = { on: false, mode: 'intervene', hue: 200, sat: 1, bri: 0.9, flash: 0, palette: palette, tab: 'faders' }; // test seam
+
+    var dirty = false, raf = false, lastSent = 0, MIN = 50; // ~20 Hz
+    function emit() {
+      raf = false; if (!dirty) return; var nowt = (window.performance ? performance.now() : Date.now());
+      if (nowt - lastSent < MIN) { raf = true; requestAnimationFrame(emit); return; }
+      lastSent = nowt; dirty = false;
+      tx('manual', { on: vjOn, mode: vjMode, hue: st.hue, sat: st.sat, bri: st.bri, flash: st.flash });
+      var s = window.__opVJ; s.on = vjOn; s.mode = vjMode; s.hue = st.hue; s.sat = st.sat; s.bri = st.bri; s.flash = st.flash; s.tab = tab;
+    }
+    function push() { dirty = true; if (!raf) { raf = true; requestAnimationFrame(emit); } readout(); paint(); }
+    function readout() { var r = $('vjReadout'); if (r) r.textContent = (vjOn ? '● LIVE  ' : '○ off  ') + 'hue ' + Math.round(st.hue) + '° · sat ' + Math.round(st.sat * 100) + '% · bri ' + Math.round(st.bri * 100) + '% · flash ' + Math.round(st.flash * 100) + '%  ·  ' + (vjMode === 'full' ? 'manual only (presets off)' : 'intervene in preset'); }
+
+    function bindDrag(el, onMove, onDown, onUp) {
+      el.addEventListener('pointerdown', function (e) { try { el.setPointerCapture(e.pointerId); } catch (x) {} el.__cap = e.pointerId; if (onDown) onDown(e); onMove(e); e.preventDefault(); });
+      el.addEventListener('pointermove', function (e) { if (el.__cap == null) return; onMove(e); });
+      function end(e) { if (el.__cap == null) return; el.__cap = null; try { el.releasePointerCapture(e.pointerId); } catch (x) {} if (onUp) onUp(e); }
+      el.addEventListener('pointerup', end); el.addEventListener('pointercancel', end); el.addEventListener('lostpointercapture', function () { el.__cap = null; if (onUp) onUp(); });
+    }
+    function killFlash() { if (st.flash !== 0) { st.flash = 0; push(); } } // dropped finger / backgrounded tab must never leave the crowd strobing
+    window.addEventListener('blur', killFlash);
+    document.addEventListener('visibilitychange', function () { if (document.hidden) killFlash(); });
+    // round 14 fix: best-effort release of the manual override + palette when the console tab closes, so a
+    // /studio guest leaving doesn't freeze the crowd on their last frame. (On /operator the server also
+    // releases on the WS drop; this covers the HTTP-only /studio path where there is no operator socket.)
+    window.addEventListener('pagehide', function () { try { if (vjOn) tx('manual', { on: false, mode: vjMode, hue: st.hue, sat: st.sat, bri: st.bri, flash: 0 }); if (palette.on) tx('palette', { on: false, colors: [] }); } catch (e) {} });
+
+    var painters = [];
+    function paint() { for (var i = 0; i < painters.length; i++) { try { painters[i](); } catch (e) {} } }
+    function clearStage() { painters = []; stage.innerHTML = ''; }
+
+    var HUEGRAD = 'linear-gradient(to top,' + [0, 60, 120, 180, 240, 300, 360].map(function (h) { return 'hsl(' + h + ',100%,50%)'; }).join(',') + ')';
+    function vFader(label, get, set, grad, isHue) {
+      var col = document.createElement('div'); col.style.cssText = 'display:flex;flex-direction:column;align-items:center;gap:6px;flex:1;min-width:56px';
+      var track = document.createElement('div'); track.style.cssText = 'position:relative;width:52px;height:170px;border-radius:12px;background:' + (grad || '#1b2030') + ';border:1px solid rgba(255,255,255,.15);touch-action:none;overflow:hidden;cursor:ns-resize';
+      var fill = document.createElement('div'); if (!grad) fill.style.cssText = 'position:absolute;left:0;right:0;bottom:0;background:rgba(120,160,255,.30)';
+      var thumb = document.createElement('div'); thumb.style.cssText = 'position:absolute;left:3px;right:3px;height:26px;border-radius:8px;background:#eaf2ff;box-shadow:0 1px 5px rgba(0,0,0,.6)';
+      if (!grad) track.appendChild(fill); track.appendChild(thumb);
+      var lab = document.createElement('div'); lab.style.cssText = 'font:600 12px system-ui;color:#cfd6e6'; lab.textContent = label;
+      var val = document.createElement('div'); val.style.cssText = 'font:600 12px system-ui;color:#9fb0cc';
+      col.appendChild(lab); col.appendChild(track); col.appendChild(val);
+      bindDrag(track, function (e) { var r = track.getBoundingClientRect(); set(clamp01((r.bottom - e.clientY) / r.height)); push(); });
+      painters.push(function () { var v = get(); thumb.style.bottom = (v * (170 - 26)) + 'px'; if (!grad) fill.style.height = (v * 170) + 'px'; val.textContent = isHue ? Math.round(v * 360) + '°' : Math.round(v * 100) + '%'; });
+      return col;
+    }
+    var satF = function () { return vFader('Sat', function () { return st.sat; }, function (v) { st.sat = v; }); };
+    var hueF = function () { return vFader('Hue', function () { return st.hue / 360; }, function (v) { st.hue = v * 360; }, HUEGRAD, true); };
+    var briF = function () { return vFader('Bri', function () { return st.bri; }, function (v) { st.bri = v; }); };
+    var flashF = function () { return vFader('Flash', function () { return st.flash; }, function (v) { st.flash = v; }); };
+
+    function row(children) { var d = document.createElement('div'); d.style.cssText = 'display:flex;gap:10px;align-items:stretch;justify-content:center'; children.forEach(function (c) { d.appendChild(c); }); return d; }
+
+    // colour wheel: angle -> hue, radius -> sat. Drawn once to a canvas; a cursor dot moves over it.
+    function wheel() {
+      var box = document.createElement('div'); box.style.cssText = 'position:relative;width:200px;height:200px;flex:0 0 auto';
+      var cv = document.createElement('canvas'); cv.width = 200; cv.height = 200; cv.style.cssText = 'width:200px;height:200px;border-radius:50%;touch-action:none;cursor:crosshair';
+      var dot = document.createElement('div'); dot.style.cssText = 'position:absolute;width:18px;height:18px;border-radius:50%;border:3px solid #fff;box-shadow:0 0 4px #000;pointer-events:none;transform:translate(-50%,-50%)';
+      box.appendChild(cv); box.appendChild(dot);
+      var cx = 100, cy = 100, R = 98, cc = cv.getContext('2d'), img = cc.createImageData(200, 200), D = img.data;
+      for (var y = 0; y < 200; y++) for (var x = 0; x < 200; x++) { var dx = x - cx, dy = y - cy, dist = Math.sqrt(dx * dx + dy * dy), i4 = (y * 200 + x) * 4; if (dist > R) { D[i4 + 3] = 0; continue; } var h = (Math.atan2(dy, dx) * 180 / Math.PI + 360) % 360, s = Math.min(1, dist / R); var rgb = (window.CLS_PRESETS ? window.CLS_PRESETS.hsl2rgb(h, s, 0.5) : [0, 0, 0]); D[i4] = rgb[0]; D[i4 + 1] = rgb[1]; D[i4 + 2] = rgb[2]; D[i4 + 3] = 255; }
+      cc.putImageData(img, 0, 0);
+      bindDrag(cv, function (e) { var r = cv.getBoundingClientRect(); var dx = e.clientX - (r.left + r.width / 2), dy = e.clientY - (r.top + r.height / 2); st.hue = (Math.atan2(dy, dx) * 180 / Math.PI + 360) % 360; st.sat = clamp01(Math.sqrt(dx * dx + dy * dy) / (r.width / 2)); push(); });
+      painters.push(function () { var a = st.hue * Math.PI / 180, rr = st.sat * R; dot.style.left = (cx + rr * Math.cos(a)) + 'px'; dot.style.top = (cy + rr * Math.sin(a)) + 'px'; });
+      return box;
+    }
+    // XY pad: x -> hue, y -> brightness. Background painted as a hue x value gradient.
+    function xyPad() {
+      var box = document.createElement('div'); box.style.cssText = 'position:relative;width:210px;height:180px;flex:0 0 auto;border-radius:12px;overflow:hidden;border:1px solid rgba(255,255,255,.15);touch-action:none;background:' +
+        'linear-gradient(to top,#000,rgba(0,0,0,0)),linear-gradient(to right,' + [0, 60, 120, 180, 240, 300, 360].map(function (h) { return 'hsl(' + h + ',100%,50%)'; }).join(',') + ')';
+      var dot = document.createElement('div'); dot.style.cssText = 'position:absolute;width:18px;height:18px;border-radius:50%;border:3px solid #fff;box-shadow:0 0 4px #000;pointer-events:none;transform:translate(-50%,-50%)';
+      box.appendChild(dot);
+      bindDrag(box, function (e) { var r = box.getBoundingClientRect(); st.hue = clamp01((e.clientX - r.left) / r.width) * 360; st.bri = clamp01((r.bottom - e.clientY) / r.height); push(); });
+      painters.push(function () { dot.style.left = (st.hue / 360 * 210) + 'px'; dot.style.top = ((1 - st.bri) * 180) + 'px'; });
+      return box;
+    }
+    // momentary flash pad: hold -> flash on, release -> off (double-tap latches)
+    function flashPad() {
+      var pad = document.createElement('div'); pad.style.cssText = 'width:120px;height:180px;border-radius:14px;background:#241a10;border:1px solid rgba(255,200,80,.4);display:flex;align-items:center;justify-content:center;font:700 14px system-ui;color:#ffd98a;text-align:center;touch-action:none;cursor:pointer;flex:0 0 auto';
+      pad.textContent = 'FLASH\n(hold)'; pad.style.whiteSpace = 'pre-line'; var latched = false;
+      bindDrag(pad, function (e) { var r = pad.getBoundingClientRect(); st.flash = clamp01((r.bottom - e.clientY) / r.height) || 1; if (st.flash < 0.2) st.flash = 1; pad.style.background = '#ffd98a'; push(); },
+        function () { st.flash = 1; pad.style.background = '#ffd98a'; push(); },
+        function () { if (!latched) { st.flash = 0; pad.style.background = '#241a10'; push(); } });
+      pad.addEventListener('dblclick', function () { latched = !latched; pad.style.outline = latched ? '3px solid #ffd98a' : 'none'; if (!latched) { st.flash = 0; pad.style.background = '#241a10'; push(); } });
+      return pad;
+    }
+    function bigPad(label, color, onHold, latch) {
+      var pad = document.createElement('div'); pad.style.cssText = 'flex:1;min-width:120px;height:84px;border-radius:14px;background:' + color + ';border:1px solid rgba(255,255,255,.2);display:flex;align-items:center;justify-content:center;font:700 14px system-ui;color:#06121f;text-align:center;touch-action:none;cursor:pointer';
+      pad.textContent = label; var lt = false;
+      bindDrag(pad, function () {}, function () { if (latch) { lt = !lt; pad.style.outline = lt ? '3px solid #fff' : 'none'; onHold(lt); } else { onHold(true); pad.style.filter = 'brightness(1.3)'; } }, function () { if (!latch) { onHold(false); pad.style.filter = 'none'; } });
+      return pad;
+    }
+    function hueSwatches() {
+      var box = document.createElement('div'); box.style.cssText = 'display:flex;flex-wrap:wrap;gap:6px;justify-content:center;margin-top:6px';
+      [0, 30, 60, 120, 180, 210, 270, 300].forEach(function (h) {
+        var s = document.createElement('button'); s.style.cssText = 'width:38px;height:38px;border-radius:50%;border:2px solid rgba(255,255,255,.3);background:hsl(' + h + ',100%,50%);cursor:pointer';
+        s.addEventListener('click', function () { st.hue = h; st.sat = 1; push(); }); box.appendChild(s);
+      });
+      return box;
+    }
+
+    function buildTab() {
+      clearStage();
+      if (tab === 'faders') { stage.appendChild(row([satF(), hueF(), briF(), flashF()])); }
+      else if (tab === 'wheel') { stage.appendChild(row([wheel(), briF(), flashF()])); }
+      else if (tab === 'xy') { stage.appendChild(row([satF(), xyPad(), flashPad()])); }
+      else { // big pads
+        var wrap = document.createElement('div'); wrap.style.cssText = 'display:flex;flex-direction:column;gap:8px';
+        var r1 = document.createElement('div'); r1.style.cssText = 'display:flex;gap:8px;flex-wrap:wrap';
+        r1.appendChild(bigPad('FLASH (hold)', '#ffd98a', function (v) { st.flash = v ? 1 : 0; push(); }, false));
+        r1.appendChild(bigPad('WHITE STAB', '#ffffff', function (v) { if (v) { st.sat = 0; st.bri = 1; } push(); }, false));
+        r1.appendChild(bigPad('BLACK (hold)', '#33405a', function (v) { st._sav = v ? st.bri : st._sav; st.bri = v ? 0 : (st._sav != null ? st._sav : st.bri); push(); }, false));
+        r1.appendChild(bigPad('FULL (latch)', '#8ad', function (v) { st.bri = v ? 1 : 0.6; push(); }, true));
+        wrap.appendChild(r1); wrap.appendChild(hueSwatches());
+        wrap.appendChild(row([vFader('Bri', function () { return st.bri; }, function (v) { st.bri = v; }), vFader('Sat', function () { return st.sat; }, function (v) { st.sat = v; })]));
+        stage.appendChild(wrap);
+      }
+      paint();
+    }
+
+    // ---- tabs ----
+    if ($('vjTabs')) $('vjTabs').addEventListener('click', function (e) { var t = e.target.getAttribute('data-vjtab'); if (!t) return; tab = t; Array.prototype.forEach.call($('vjTabs').children, function (b) { b.className = (b.getAttribute('data-vjtab') === t) ? 'on' : ''; }); buildTab(); });
+    // ---- enable / mode ----
+    function setEnable(v) { vjOn = v; $('vjEnable').textContent = tr(v ? 'console.vj_on' : 'console.vj_off', v ? '● Manual control: ON' : 'Manual control: OFF'); $('vjEnable').className = v ? 'primary' : 'ghost'; $('vjEnable').style.width = 'auto'; push(); }
+    if ($('vjEnable')) $('vjEnable').addEventListener('click', function () { setEnable(!vjOn); });
+    if ($('vjModeBtn')) $('vjModeBtn').addEventListener('click', function () { vjMode = (vjMode === 'full') ? 'intervene' : 'full'; $('vjModeBtn').textContent = tr(vjMode === 'full' ? 'console.vj_mode_full' : 'console.vj_mode_intervene', vjMode === 'full' ? 'Mode: manual only (presets off)' : 'Mode: intervene in preset'); push(); });
+    // ---- fullscreen ----
+    if ($('vjFull')) $('vjFull').addEventListener('click', function () {
+      var card = $('vjCard');
+      if (document.fullscreenElement || document.webkitFullscreenElement) { var ex = document.exitFullscreen || document.webkitExitFullscreen; if (ex) ex.call(document); card.classList.remove('vj-faux-full'); return; }
+      var fn = card.requestFullscreen || card.webkitRequestFullscreen;
+      if (fn) {
+        var p = fn.call(card); if (p && p['catch']) p['catch'](function () { card.classList.add('vj-faux-full'); });
+        try { if (window.screen && screen.orientation && screen.orientation.lock) { var lp = screen.orientation.lock('landscape'); if (lp && lp['catch']) lp['catch'](function () {}); } } catch (e) {}
+      } else { card.classList.add('vj-faux-full'); }
+    });
+
+    // ---- palette ----
+    var PALS = [
+      { n: '🇵🇱 Poland', c: [[255, 255, 255], [228, 0, 43]] },
+      { n: '🇺🇦 Ukraine', c: [[0, 87, 183], [255, 221, 0]] },
+      { n: '🇪🇺 EU', c: [[0, 51, 153], [255, 204, 0]] },
+      { n: '🏳️‍🌈 Pride', c: [[228, 3, 3], [255, 140, 0], [255, 237, 0], [0, 128, 38], [0, 76, 255], [117, 7, 135]] },
+      { n: '🇩🇪 DE', c: [[10, 10, 10], [221, 0, 0], [255, 206, 0]] },
+      { n: '🔵 Cool', c: [[0, 90, 200], [0, 200, 220], [120, 80, 255]] },
+      { n: '🔥 Warm', c: [[255, 60, 0], [255, 160, 0], [255, 30, 90]] }
+    ];
+    function swEl(c) { var s = document.createElement('span'); s.style.cssText = 'display:inline-block;width:16px;height:16px;border-radius:4px;margin-right:3px;vertical-align:middle;border:1px solid rgba(255,255,255,.25);background:rgb(' + c[0] + ',' + c[1] + ',' + c[2] + ')'; return s; }
+    function sendPalette() { tx('palette', { on: palette.on, colors: palette.colors }); window.__opVJ.palette = { on: palette.on, colors: palette.colors }; var sw = $('vjPalSwatches'); if (sw) { sw.innerHTML = ''; palette.colors.forEach(function (c) { sw.appendChild(swEl(c)); }); } if ($('vjPalToggle')) { $('vjPalToggle').textContent = tr(palette.on ? 'console.vj_pal_on' : 'console.vj_pal_off', palette.on ? '● Palette: ON' : 'Palette: OFF'); $('vjPalToggle').className = palette.on ? 'primary' : 'ghost'; $('vjPalToggle').style.width = 'auto'; } }
+    if ($('vjPalPresets')) PALS.forEach(function (p) { var b = document.createElement('button'); b.style.width = 'auto'; b.textContent = p.n; b.addEventListener('click', function () { palette = { on: true, colors: p.c.slice(0, 8) }; sendPalette(); }); $('vjPalPresets').appendChild(b); });
+    function parseHex(s) { var out = []; (s || '').split(/[\s,]+/).forEach(function (t) { t = t.replace('#', '').trim(); if (/^[0-9a-fA-F]{3}$/.test(t)) t = t[0] + t[0] + t[1] + t[1] + t[2] + t[2]; if (/^[0-9a-fA-F]{6}$/.test(t) && out.length < 8) out.push([parseInt(t.slice(0, 2), 16), parseInt(t.slice(2, 4), 16), parseInt(t.slice(4, 6), 16)]); }); return out; }
+    if ($('vjPalApply')) $('vjPalApply').addEventListener('click', function () { var c = parseHex($('vjPalHex').value); if (c.length) { palette = { on: true, colors: c }; sendPalette(); } });
+    if ($('vjPalToggle')) $('vjPalToggle').addEventListener('click', function () { palette.on = !palette.on && palette.colors.length > 0 ? true : false; if (!palette.colors.length) palette.on = false; sendPalette(); });
+
+    // ---- WebMIDI (progressive enhancement; Chrome/Edge desktop) ----
+    var midiMap = {}; try { midiMap = JSON.parse(localStorage.getItem('cls_midi_map') || '{}'); } catch (e) {}
+    var learn = null;
+    function onMidi(ev) {
+      var status = ev.data[0] & 0xF0, d1 = ev.data[1], d2 = ev.data[2];
+      if (status === 0xB0) { if (learn) { midiMap[d1] = learn; try { localStorage.setItem('cls_midi_map', JSON.stringify(midiMap)); } catch (e) {} if ($('vjMidiStatus')) $('vjMidiStatus').textContent = 'learned CC' + d1 + ' -> ' + learn; learn = null; return; } var name = midiMap[d1]; if (!name) return; var nz = d2 / 127; if (name === 'hue') st.hue = nz * 360; else st[name] = nz; if (!vjOn) setEnable(true); push(); }
+      else if (status === 0x90 && d2 > 0) { st.flash = 1; if (!vjOn) setEnable(true); push(); }
+      else if (status === 0x80 || (status === 0x90 && d2 === 0)) { st.flash = 0; push(); }
+    }
+    if ($('vjMidiConnect')) $('vjMidiConnect').addEventListener('click', function () {
+      if (!navigator.requestMIDIAccess) { if ($('vjMidiStatus')) $('vjMidiStatus').textContent = 'Web MIDI not supported in this browser (use Chrome/Edge desktop)'; return; }
+      navigator.requestMIDIAccess().then(function (access) {
+        if ($('vjMidiStatus')) $('vjMidiStatus').textContent = 'connected — wiggle a fader after pressing Learn'; if ($('vjMidiLearn')) $('vjMidiLearn').className = 'row';
+        access.inputs.forEach(function (inp) { inp.onmidimessage = onMidi; });
+        access.onstatechange = function (e) { if (e.port.type === 'input' && e.port.state === 'connected') e.port.onmidimessage = onMidi; };
+      })['catch'](function () { if ($('vjMidiStatus')) $('vjMidiStatus').textContent = 'MIDI permission denied'; });
+    });
+    if ($('vjMidiLearn')) $('vjMidiLearn').addEventListener('click', function (e) { var t = e.target.getAttribute('data-midilearn'); if (t) { learn = t; if ($('vjMidiStatus')) $('vjMidiStatus').textContent = 'learning ' + t + ' — move a control…'; } });
+
+    buildTab(); readout();
+  }
+
   // ---- boot ----
   window.__opMode = { mode: MODE, room: ROOM, features: FEAT }; // test seam
   if (PUBLIC) window.__opRefreshPublic = loadPublic; // test seam: re-fetch the room playlist (a real UI upload calls this via armTrack)
@@ -891,6 +1076,7 @@
   ga('studio_open', { is_public: !!PUBLIC });
   connect();
   loadPresets();
+  setupVJ(); // round 14: the VJ pult (manual control + palette + MIDI)
   if (PUBLIC) { loadPublic(); }
   else { loadState(); loadApps(); loadPublicConfig(); setInterval(loadState, 8000); setInterval(loadApps, 20000); }
 })();

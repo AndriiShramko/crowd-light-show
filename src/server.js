@@ -349,6 +349,15 @@ app.post('/api/console/seek', (req, reply) => { const room = consoleRoom(req, re
 app.post('/api/operator/seek', (req, reply) => { if (!requireOperator(req, reply)) return; return hub.seek('main', Number(req.body && req.body.offsetMs)); });
 app.post('/api/console/mute-all', (req, reply) => { const room = consoleRoom(req, reply); if (!room) return; return hub.muteAll(room, !!(req.body && req.body.muted)); });
 app.post('/api/operator/mute-all', (req, reply) => { if (!requireOperator(req, reply)) return; return hub.muteAll('main', !!(req.body && req.body.muted)); });
+// Round 14: live MANUAL OVERRIDE (VJ pult) + PALETTE restriction. Room comes from the verified
+// console token (never the body); values are clamped server-side and the phone re-governs anyway.
+// The manual drag is a high-frequency channel (a VJ sweeping a fader at ~20 Hz over HTTP on /studio),
+// so it gets its OWN generous rate bucket — the operation is trivial (clamp + broadcast) and room-scoped.
+const MANUAL_RL = { config: { rateLimit: { max: 1800, timeWindow: '1 minute' } } };
+app.post('/api/console/manual', MANUAL_RL, (req, reply) => { const room = consoleRoom(req, reply); if (!room) return; return hub.setManual(room, req.body || {}); });
+app.post('/api/operator/manual', MANUAL_RL, (req, reply) => { if (!requireOperator(req, reply)) return; return hub.setManual('main', req.body || {}); });
+app.post('/api/console/palette', (req, reply) => { const room = consoleRoom(req, reply); if (!room) return; return hub.setPalette(room, !!(req.body && req.body.on), req.body && req.body.colors); });
+app.post('/api/operator/palette', (req, reply) => { if (!requireOperator(req, reply)) return; return hub.setPalette('main', !!(req.body && req.body.on), req.body && req.body.colors); });
 // Round 13 (pt 5): fire a one-shot firework FX (validated name, no params -> no untrusted numeric input).
 app.post('/api/console/fx', (req, reply) => { const room = consoleRoom(req, reply); if (!room) return; const r = hub.triggerFx(room, String((req.body && req.body.name) || '')); if (!r.ok) return reply.code(400).send(r); return r; });
 app.post('/api/operator/fx', (req, reply) => { if (!requireOperator(req, reply)) return; const r = hub.triggerFx('main', String((req.body && req.body.name) || '')); if (!r.ok) return reply.code(400).send(r); return r; });
@@ -857,7 +866,12 @@ wss.on('connection', (ws) => {
     if (m.t === 'hello') {
       if (ws.role) return;
       if (m.role === 'operator') {
-        if (!verifyToken(m.token)) { hub.send(ws, { t: 'error', error: 'unauthorized' }); ws.close(); return; }
+        // round 14 fix: the gate must check the token's ROLE, not just that it verifies — a no-auth
+        // /studio CONSOLE token verifies under the same secret, so a role-blind check let it take over
+        // the MAIN show over WS (arm/go/stop/blackout/seek/mute-all + the round-14 manual/palette).
+        // Symmetric with the HTTP requireOperator path (which already rejects s.role !== 'operator').
+        const s = verifyToken(m.token);
+        if (!s || s.role !== 'operator') { hub.send(ws, { t: 'error', error: 'unauthorized' }); ws.close(); return; }
         ws.role = 'operator'; hub.addOperator(ws);
       } else {
         ws.role = 'audience'; ws.platform = String(m.platform || 'other').slice(0, 16);
@@ -880,6 +894,8 @@ wss.on('connection', (ws) => {
       else if (c === 'blackout') hub.blackout();
       else if (c === 'seek') hub.seek('main', Number(m.offsetMs)); // round 13 (pt 7)
       else if (c === 'mute-all') hub.muteAll('main', !!m.muted);   // round 13 (pt 8)
+      else if (c === 'manual') hub.setManual('main', m);           // round 14: live VJ override (low-latency drag path)
+      else if (c === 'palette') hub.setPalette('main', !!m.on, m.colors); // round 14: palette restriction
     }
   });
   ws.on('close', () => {

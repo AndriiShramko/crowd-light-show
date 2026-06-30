@@ -3,6 +3,7 @@ import { performance } from 'node:perf_hooks';
 import { db, listPublicTracks, getPublicConfig } from './db.js';
 import { config } from './config.js';
 import { FX_DURATIONS, FX_NAMES } from './fx.js';
+import { clampColor } from './presets.js';
 
 // Master clock: a single monotonic source. Every client syncs its offset to this,
 // and T0 (show start) is always expressed in these milliseconds.
@@ -17,7 +18,15 @@ export const MAIN_ROOM = 'main';
 // room ADVANCES through plOrder (looping) instead of stopping. 'all' = loop every public track,
 // 'selected' = loop a chosen subset, 'one' = loop the current track. Main show: plOrder stays []
 // (ends -> stop, unchanged).
-function newRun() { return { epoch: 0, status: 'idle', trackId: null, T0: null, pausePos: 0, plMode: 'all', plOrder: [], plIdx: 0, plSelected: [], muteAll: false }; }
+function newRun() { return { epoch: 0, status: 'idle', trackId: null, T0: null, pausePos: 0, plMode: 'all', plOrder: [], plIdx: 0, plSelected: [], muteAll: false, manual: defaultManual(), palette: { on: false, colors: [] } }; }
+
+// round 14: the live MANUAL OVERRIDE ("VJ pult") state, per room. on=false => phones behave
+// exactly as before. mode 'full' = pure manual (screen = manual HSV, torch = manual flash);
+// 'intervene' = the running preset keeps going and the sliders MODULATE it (hue-rotate, sat/bri
+// scale, flash boost). All four values are slowly-varying operator params; the on-device safety
+// governors (clampColor + backstop for the screen, torchGate for the LED) stay the last stage.
+function defaultManual() { return { on: false, mode: 'intervene', sat: 1, hue: 0, bri: 1, flash: 0 }; }
+function clamp01(x) { x = Number(x); return x < 0 || x !== x ? 0 : x > 1 ? 1 : x; }
 
 // Sticky index allocator: hands each phone a stable 0-based index so spatial presets
 // (and, later, the pixel wall) can place it in the crowd. Indices are STICKY — a
@@ -58,6 +67,8 @@ export class ShowHub {
       pausePos: 0,
       muteAll: false,     // round 13 (pt 8): music muted on all phones
       plOrder: [],        // MAIN never loops a playlist, but seek()/_roomLoops read plOrder
+      manual: defaultManual(), // round 14: live VJ manual override on the MAIN show
+      palette: { on: false, colors: [] }, // round 14: restrict colours to a chosen set
     };
   }
 
@@ -189,6 +200,8 @@ export class ShowHub {
       if (mqMain == null) { try { const pc = getPublicConfig(); mqMain = pc && pc.marquee_text ? String(pc.marquee_text).slice(0, 200) : ''; } catch { mqMain = ''; } }
       if (mqMain) this.send(ws, { t: 'marquee', text: mqMain }); // late-join marquee (pt 19/12)
       if (this.state.muteAll) this.send(ws, { t: 'muteAll', muted: true }); // late-join global mute (pt 8)
+      if (this.state.manual && this.state.manual.on) this.send(ws, { t: 'manual', ...this.state.manual }); // round 14: late-join VJ override
+      if (this.state.palette && this.state.palette.on) this.send(ws, { t: 'palette', ...this.state.palette }); // round 14: late-join palette
       if (this.fx && serverClock() - this.fx.startedAt < this.fx.durationMs) this.send(ws, { t: 'fx', ...this.fx }); // late-join firework, if still in-window (pt 5)
       this.send(ws, { t: 'index', index: this.alloc.indexOf(ws), total: this.alloc.total() }); // joiner gets its index now
       this.markIndexDirty(MAIN_ROOM);   // others refresh total on the coalesced flush
@@ -210,6 +223,8 @@ export class ShowHub {
       if (r.run && r.run.plOrder && r.run.plOrder.length) this.send(ws, { t: 'playlist', ...this.playlistState(roomId) }); // late-join now/next
       if (r.marquee) this.send(ws, { t: 'marquee', text: r.marquee }); // late-join marquee (pt 19)
       if (r.run && r.run.muteAll) this.send(ws, { t: 'muteAll', muted: true }); // late-join global mute (pt 8)
+      if (r.run && r.run.manual && r.run.manual.on) this.send(ws, { t: 'manual', ...r.run.manual }); // round 14: late-join VJ override
+      if (r.run && r.run.palette && r.run.palette.on) this.send(ws, { t: 'palette', ...r.run.palette }); // round 14: late-join palette
       if (r.fx && serverClock() - r.fx.startedAt < r.fx.durationMs) this.send(ws, { t: 'fx', ...r.fx }); // late-join firework, if still in-window (pt 5)
       this.send(ws, { t: 'index', index: r.alloc.indexOf(ws), total: r.alloc.total() });
       this.markIndexDirty(roomId);
@@ -395,7 +410,13 @@ export class ShowHub {
   }
 
   addOperator(ws) { this.operators.add(ws); this.send(ws, { t: 'state', state: this.publicState() }); this.broadcastCount(); }
-  removeOperator(ws) { this.operators.delete(ws); }
+  removeOperator(ws) {
+    this.operators.delete(ws);
+    // round 14 fix: if the last MAIN operator drops (tab close / crash / network drop) while a VJ manual
+    // override is latched, release it server-side — a client beforeunload is unreliable, and otherwise the
+    // crowd stays frozen on the absent operator's last colour/flash (and it replays to every late joiner).
+    if (this.operators.size === 0) this._releaseManual(this._rt('main', false));
+  }
 
   broadcastCount() {
     // Torch capability split (round 8B): Android phones can drive the camera LED; iOS/other are
@@ -549,11 +570,49 @@ export class ShowHub {
     return { ok: true, epoch, durationMs };
   }
 
+  // Round 14: live MANUAL OVERRIDE ("VJ pult"). A partial patch from the console is clamped, merged
+  // onto the room's run-state, and the FULL resolved state is broadcast {t:'manual'} (not a delta, so
+  // the phone stays stateless about field merge). Stored on run-state so late joiners inherit it
+  // (replayed in addAudience). The four values are slowly-varying params; the phone applies them
+  // BEFORE its unchanged safety governors (clampColor + backstop for the screen, torchGate for the
+  // LED), so this can never exceed the epilepsy bounds. Room-scoped via the console token, like preset.
+  setManual(roomId, patch) {
+    const h = this._rt(roomId, true);
+    if (!h) return { ok: false, error: 'room unavailable' };
+    patch = patch || {};
+    const m = h.run.manual || (h.run.manual = defaultManual());
+    if (patch.on != null) m.on = !!patch.on;
+    if (patch.mode != null) m.mode = patch.mode === 'full' ? 'full' : 'intervene';
+    if (patch.sat != null) m.sat = clamp01(patch.sat);
+    if (patch.hue != null) { const hh = Number(patch.hue); m.hue = Number.isFinite(hh) ? ((hh % 360) + 360) % 360 : m.hue; }
+    if (patch.bri != null) m.bri = clamp01(patch.bri);
+    if (patch.flash != null) m.flash = clamp01(patch.flash);
+    h.broadcast({ t: 'manual', on: m.on, mode: m.mode, sat: m.sat, hue: m.hue, bri: m.bri, flash: m.flash });
+    return { ok: true, manual: { ...m } };
+  }
+
+  // Round 14: restrict the palette to a chosen set of colours (a flag's, a brand's). After preset/
+  // manual produce a colour, the phone snaps it to the nearest allowed colour. Each colour is run
+  // through the server clampColor at INGESTION (defence in depth — a stored palette can't even hold a
+  // large saturated red), and the phone re-clamps anyway (the governor is always last). 1..8 colours.
+  setPalette(roomId, on, colors) {
+    const h = this._rt(roomId, true);
+    if (!h) return { ok: false, error: 'room unavailable' };
+    const safe = (Array.isArray(colors) ? colors : []).slice(0, 8)
+      .map((c) => Array.isArray(c) ? clampColor([Number(c[0]) || 0, Number(c[1]) || 0, Number(c[2]) || 0]) : null)
+      .filter(Boolean);
+    h.run.palette = { on: !!on && safe.length > 0, colors: safe };
+    h.broadcast({ t: 'palette', on: h.run.palette.on, colors: h.run.palette.colors });
+    return { ok: true, palette: h.run.palette };
+  }
+
   stop(roomId) {
     const h = this._rt(roomId, false);
     if (!h) return { ok: false, error: 'no room' };
     this.cancelEnd(roomId);
     h.setPreset('screen', null); h.setPreset('torch', null); // STOP kills BOTH channels (no screen or torch flashing)
+    this._releaseManual(h);   // round 14 fix: STOP must also drop a latched VJ manual override + palette,
+                              // else the crowd stays lit / torch-on (and late joiners inherit it) after the kill
     h.run.epoch++;
     h.run.status = 'idle';
     h.run.T0 = null;
@@ -561,6 +620,19 @@ export class ShowHub {
     h.broadcast({ t: 'stop', epoch: h.run.epoch });
     h.announceState();
     return { ok: true };
+  }
+
+  // round 14: reset the manual override + palette to OFF and broadcast the release, so already-connected
+  // phones drop the latched colour/flash immediately and late joiners no longer inherit it. Used by STOP
+  // and by removeOperator (when the last operator leaves). Takes a room HANDLE (from _rt).
+  _releaseManual(h) {
+    if (!h || !h.run) return;
+    const wasManual = !!(h.run.manual && h.run.manual.on);
+    const wasPalette = !!(h.run.palette && h.run.palette.on);
+    h.run.manual = defaultManual();
+    h.run.palette = { on: false, colors: [] };
+    if (wasManual) h.broadcast({ t: 'manual', on: false, mode: 'intervene', sat: 1, hue: 0, bri: 1, flash: 0 });
+    if (wasPalette) h.broadcast({ t: 'palette', on: false, colors: [] });
   }
 
   blackout(roomId) {
