@@ -163,6 +163,9 @@
       'console.joinurl_label': 'Join URL:', 'console.projector': 'Projector ⤢', 'console.refresh': '↻ Refresh',
       'console.presets_title': 'Live presets', 'console.presets_sub': '— real-time; react to the music when a track plays',
       'console.lang_hint': 'Interface language',
+      'console.marquee_h': '📢 Scrolling message', 'console.marquee_sub': 'Live text that scrolls across every phone in this show — announce a song, a name, a shout-out. Leave blank and Clear to remove. (Text only — it never affects the lights.)',
+      'console.marquee_ph': 'Type a message to scroll on all phones', 'console.marquee_send': 'Send', 'console.marquee_clear': 'Clear',
+      'console.marquee_sent': 'Showing on all phones ✓', 'console.marquee_err': 'Could not send — try again', 'console.marquee_cleared': 'Cleared',
     },
     pl: {
       'console.play.idle': '▶ Włącz pokaz świateł ', 'console.play.loading': '● Uruchamiam… ', 'console.play.playing': '⏸ Wstrzymaj pokaz ', 'console.play.paused': '▶ Wznów pokaz ',
@@ -177,6 +180,9 @@
       'console.joinurl_label': 'Adres dołączania:', 'console.projector': 'Projektor ⤢', 'console.refresh': '↻ Odśwież',
       'console.presets_title': 'Presety na żywo', 'console.presets_sub': '— na żywo; reagują na muzykę, gdy gra utwór',
       'console.lang_hint': 'Język interfejsu',
+      'console.marquee_h': '📢 Wiadomość przewijana', 'console.marquee_sub': 'Tekst na żywo, który przewija się na każdym telefonie w tym pokazie — zapowiedz utwór, imię, pozdrowienie. Zostaw puste i wyczyść, by usunąć. (Sam tekst — nigdy nie wpływa na światła.)',
+      'console.marquee_ph': 'Wpisz wiadomość do przewijania na telefonach', 'console.marquee_send': 'Wyślij', 'console.marquee_clear': 'Wyczyść',
+      'console.marquee_sent': 'Wyświetlam na wszystkich telefonach ✓', 'console.marquee_err': 'Nie udało się wysłać — spróbuj ponownie', 'console.marquee_cleared': 'Wyczyszczono',
     },
   };
   // merge console keys into the four langs; es/fr mirror EN (console is chrome, not legal copy)

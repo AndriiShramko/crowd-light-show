@@ -141,6 +141,22 @@
     $('muteBtn').textContent = consoleMuted ? tr('console.unmute', '🔇 Unmute music') : tr('console.mute', '🔊 Mute music');
   });
 
+  // round 12 (pt 4): a LIVE scrolling-marquee control on BOTH consoles. api() rewrites the path per
+  // session: /operator -> /api/operator/marquee (hub.setMarquee('main') -> the owner's invited audience),
+  // /studio -> /api/console/marquee (this room's phones). Same control, same code, identical on both —
+  // text only, so it can never touch the lights / flash cap.
+  function sendMarquee(text) {
+    return api('/api/operator/marquee', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: String(text || '').slice(0, 200) }) })
+      .then(function (r) { return r.ok ? r.json() : null; });
+  }
+  if ($('mqSend')) $('mqSend').addEventListener('click', function () {
+    sendMarquee($('mqLive').value).then(function (j) { if ($('mqMsg')) $('mqMsg').textContent = (j && j.ok) ? tr('console.marquee_sent', 'Showing on all phones ✓') : tr('console.marquee_err', 'Could not send — try again'); });
+  });
+  if ($('mqClear')) $('mqClear').addEventListener('click', function () {
+    if ($('mqLive')) $('mqLive').value = '';
+    sendMarquee('').then(function () { if ($('mqMsg')) $('mqMsg').textContent = tr('console.marquee_cleared', 'Cleared'); });
+  });
+
   // ===================== personal: playlist + applications =====================
   function loadState() {
     api('/api/operator/state').then(function (r) { return r.ok ? r.json() : null; }).then(function (s) {

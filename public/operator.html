@@ -107,6 +107,16 @@
       <canvas id="torchPreview" style="width:100%;height:40px;border-radius:8px;display:block;margin-top:4px;background:#000"></canvas>
     </div>
     <p class="muted" id="torchMsg">Pick a flash pattern (independent of the screen).</p>
+
+    <hr style="border:none;border-top:1px solid rgba(255,255,255,.10);margin:16px 0 12px">
+    <div data-feature="transport" id="marqueeCtl">
+      <h3 style="margin:0 0 2px" data-i18n="console.marquee_h">📢 Scrolling message</h3>
+      <p class="muted" style="margin:2px 0 6px" data-i18n="console.marquee_sub">Live text that scrolls across every phone in this show — announce a song, a name, a shout-out. Leave blank and Clear to remove. (Text only — it never affects the lights.)</p>
+      <div class="nudge"><input type="text" id="mqLive" maxlength="200" placeholder="Type a message to scroll on all phones" data-i18n-ph="console.marquee_ph" style="flex:1">
+        <button id="mqSend" class="primary" style="width:auto" data-i18n="console.marquee_send">Send</button>
+        <button id="mqClear" class="ghost" style="width:auto" data-i18n="console.marquee_clear">Clear</button></div>
+      <p class="muted" id="mqMsg"></p>
+    </div>
   </div>
   </details>
 

@@ -178,7 +178,13 @@ export class ShowHub {
         const tl = this.loadTimeline(this.state.trackId);
         if (tl) this.send(ws, { t: 'timeline', trackId: this.state.trackId, data: tl });
       }
-      if (this.marquee) this.send(ws, { t: 'marquee', text: this.marquee }); // late-join marquee (pt 19)
+      // Round 12 (pt 4): MAIN-room joiners (the /try DEMO and the owner's /join?s=<code> audience)
+      // never saw the owner's default marquee — unlike a /studio room, MAIN's live `marquee` was only
+      // ever set by a live POST and never seeded from public_config. Fall back to the saved default so
+      // the scrolling text actually reaches demo + invited phones too.
+      let mqMain = this.marquee;
+      if (mqMain == null) { try { const pc = getPublicConfig(); mqMain = pc && pc.marquee_text ? String(pc.marquee_text).slice(0, 200) : ''; } catch { mqMain = ''; } }
+      if (mqMain) this.send(ws, { t: 'marquee', text: mqMain }); // late-join marquee (pt 19/12)
       this.send(ws, { t: 'index', index: this.alloc.indexOf(ws), total: this.alloc.total() }); // joiner gets its index now
       this.markIndexDirty(MAIN_ROOM);   // others refresh total on the coalesced flush
       this.broadcastCount();

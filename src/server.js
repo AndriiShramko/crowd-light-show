@@ -723,6 +723,10 @@ app.post('/api/operator/public-config', (req, reply) => {
   set.updated_at = now();
   const keys = Object.keys(set);
   if (keys.length) db.prepare(`UPDATE public_config SET ${keys.map((k) => k + '=?').join(', ')} WHERE id = 1`).run(...keys.map((k) => set[k]));
+  // Round 12 (pt 4): saving the default marquee also pushes it LIVE to MAIN/demo phones already
+  // connected (new joiners get it via the addAudience public_config fallback). Previously saving did
+  // nothing visible until a phone reconnected, and the demo never saw it at all.
+  if (b.marquee_text != null) hub.setMarquee('main', set.marquee_text);
   return { ok: true, config: getPublicConfig() };
 });
 
