@@ -1,0 +1,10 @@
+{
+  "name": "cls-vj-bridge",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "OSC -> Crowd Light Show External Control API bridge. Runs on the VJ's laptop; forwards OSC (Resolume/TouchOSC/Companion/Chataigne) to the show over HTTPS. Zero dependencies.",
+  "bin": { "cls-vj-bridge": "bridge.mjs" },
+  "scripts": { "start": "node bridge.mjs" },
+  "engines": { "node": ">=18" }
+}
