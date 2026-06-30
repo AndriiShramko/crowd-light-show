@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-06-30
+
+Round 11 — a pass over twenty owner notes on the live `/studio` console: a clearer one-button start, calmer and more even music reactivity, an inaudible drift corrector, robust auto-reconnect, owner-settable defaults, a scrolling marquee, and multilingual consoles.
+
+### Added
+
+- **One-button start with progressive reveal.** `/studio` now opens with a single **Start Light Show** button (no auto-GO). The first click shows a loading spinner (the music starts with a deliberate lead), then the button morphs to **Pause Light Show**; STOP + BLACKOUT and the rest of the console (playlist, QR, invite, presets) are revealed only once the show is running — so a first-time host is never unsure what to press.
+- **Owner-settable public defaults.** From *Public console defaults* the owner can now pin the **default screen preset** (set to Rainbow Chase) and the **default flash (torch) preset**, with their parameters — every `/studio` visitor starts on those. The default screen preset renders reactively over the curated track.
+- **Scrolling marquee.** The owner can broadcast a looping scrolling message to every phone (`/api/console/marquee`, `/api/operator/marquee`). It is a separate text-only overlay (transform animation, no luminance) so it can never affect the epilepsy flash-rate cap; late joiners receive it on join.
+- **Multilingual consoles + invite.** The `/studio` and `/operator` consoles and the `/join` invite page now follow the language the visitor picked on the landing (shared `cls_lang`), with a floating EN/PL/ES/FR switcher; English canonical, Polish authoritative. The epilepsy/music-rights consent text stays authoritative (not machine-translated).
+- **Mute toggle on the console.** A small per-browser **Mute music** button silences the console's own monitor without affecting the running show.
+- **Live screen preview** under the Start/Stop controls — the safety-governed crowd screen, shown idle/black when stopped.
+
+### Changed
+
+- **Inaudible audio drift correction.** The console↔phone music corrector now uses a slewed, sub-JND playback-rate trim (≤±0.3%, ramped ≤0.1%/tick) plus a guarded silent reseat, replacing the round-10 stepped ±2% nudge that could sound like wow/flutter ("drunk" pitch). Desktop drift is contained (≈180 ms ceiling) with reseats seconds apart.
+- **Even, intense reactivity (AGC).** Screen and flash reactivity now ride a rolling automatic-gain envelope (asymmetric floor/ceiling followers + spectral-flux term), so quiet passages still move and loud passages don't peg — comparable loudness-independent intensity across a song, like a pro light show. The safety governor (≤3 flashes/s, no red strobe) remains the untouched last stage.
+- **Idle is calm.** With the show stopped or silent, the console preview and tracks no longer twitch every second — they stay uniform/black until real audio plays.
+- **Console layout.** Advanced (Live presets) is expanded by default; presets are full-width on wide screens; block order is 1 Show · 2 Playlist · 3 Join QR · 4 Invite · 5 Live presets. The music-rights consent moved into a modal that opens only when a file is chosen. `/studio` now mirrors `/operator` minus the admin-only cards.
+
+### Fixed
+
+- **Auto-reconnect after a network drop.** Phones that lose the connection now reconnect and rehydrate automatically (one debounced controller, singleton timers, bounded backoff with jitter, clock resync) instead of waiting disconnected.
+- **No more crashes offline / on mute / opening a flashing link.** Hardened the audience client with global error/rejection guards, a try/caught render body, a capped flash ring-buffer, and mute-without-audio safety.
+- **Phone music auto-caches before the tap**, with a "Connecting to music…" status, so a phone isn't left waiting with no feedback.
+- **Empty Join URL under the QR** is now filled on the public console.
+
 ## [0.11.0] - 2026-06-29
 
 Round 10 — the public `/studio` console, made effortless and honest: fewer clicks, music that actually plays on phones, a per-second audio stutter fixed, a real playlist, own-music upload that you can hear, Google Analytics, and a responsive desktop layout.

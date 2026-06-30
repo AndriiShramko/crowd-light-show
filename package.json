@@ -1,6 +1,6 @@
 {
   "name": "crowd-light-show",
-  "version": "0.11.0",
+  "version": "0.12.0",
   "description": "Turn a crowd's phones into one synchronized light show, in time with the music. Open-source web app — scan a QR, the whole audience flashes together. Concerts, clubs, stadiums, parties.",
   "type": "module",
   "license": "Apache-2.0",
