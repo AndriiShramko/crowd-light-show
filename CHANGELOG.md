@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-06-30
+
+Round 13 — nine console/show improvements: special-effect fireworks, even flash reactivity, a working live preview, a music seek bar, a global mute, and more.
+
+### Added
+
+- **Special effects (fireworks).** A new "Special effects" section on both consoles with five one-tap firework programs — **Salute** (synchronized bursts), **Twinkle** (random sparkle), **Ripple** (a wave across the crowd), **Strobe burst**, and **Color burst**. Firing one plays a few seconds of clock-synced flash across every phone (screen + flash), then the show resumes exactly where it was. Safety-clamped to ≤3 flashes/s with no red strobe, like every channel.
+- **Invert flash toggle.** A new torch option that flips the reaction — on **loud** the flash turns **off**, on **quiet** it turns **on**.
+- **Music seek bar.** A seek slider on both consoles jumps the music and lights to any position; phones re-anchor both together.
+- **Mute all phones.** A button that silences the music on **every** connected phone at once (distinct from the operator's own local mute); the lights keep running and late joiners inherit it.
+
+### Changed
+
+- **Even flash reactivity across loudness.** With dynamic-range music (e.g. classical) the camera flash used to go black in quiet passages and stay solid-on in loud ones. A per-phone automatic-gain control now re-levels the input so the flash pulses **evenly** in both quiet and loud passages without riding the reactivity slider — and it keeps toggling per beat through sustained-loud sections instead of pinning on. (Still under the ≤3 flashes/s governor.)
+- **Live preview reacts to the real music.** The console's "what the crowd's screen does right now" preview was dead; it now samples the armed track's real compiled envelope at the play position, so it pulses with the actual song — even with Live presets OFF (it shows the music-reactive timeline colour).
+- **Live presets default OFF.** A fresh public console no longer auto-applies a reactive preset; the lights run the music-reactive timeline and the operator opts into an overlay preset.
+- **BLACKOUT keeps the music playing.** BLACKOUT ALL now darkens the lights and flash only — the music keeps playing.
+- **Spread can be 0.** The Spread preset parameter now goes down to 0 (was 0.2), for a single uniform colour across the whole crowd.
+
+### Fixed
+
+- **Mobile landing overlap.** On phones the floating language switcher dropped just below the sticky top-nav so it no longer overlaps the header button.
+
 ## [0.13.0] - 2026-06-30
 
 Round 12 — a pass over six issues from a real-device test of round 11: the /studio show now holds sync to the end of the song, the /try demo flashes the camera torch, the waveform cursor resets on loop, the scrolling marquee reaches the demo and both consoles, and a visitor's uploads land in the playlist.
