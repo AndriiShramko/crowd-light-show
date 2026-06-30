@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-06-30
+
+Round 12 — a pass over six issues from a real-device test of round 11: the /studio show now holds sync to the end of the song, the /try demo flashes the camera torch, the waveform cursor resets on loop, the scrolling marquee reaches the demo and both consoles, and a visitor's uploads land in the playlist.
+
+### Fixed
+
+- **/studio no longer drifts by end-of-song.** A /studio room played each track as a one-shot whose round-11 sub-JND trim couldn't pull back real device clock skew over a full song, so the whole synced group slid off the lights by the end (the /try demo never drifted because it uses a seamless fixed-anchor loop). A looping room now runs **both lights and audio on one stable anchor** — the same engine /try uses — so it stays locked to the end. The main show (no playlist) is unchanged.
+- **The waveform playhead resets on loop.** It read the monotonic audio cursor, which ran past the track length on a looped buffer and pinned the cursor to the right edge; it now wraps modulo the duration and snaps back to the start each loop.
+- **The /try demo flashes the camera torch.** The demo only drove the screen channel, so the camera LED never reacted; the demo now carries a validated torch preset and reads the reactive loudness, so the flash fires on /try like in a room (still gated ≤3 flashes/s). The **"Join + flashlight" button** is also offered on touch tablets whose UA doesn't say "Android" (it was hidden on a Lenovo TB132FU); a desktop without a torch still degrades gracefully.
+- **The scrolling marquee reaches the /try demo** (and the owner's invited audience). The owner's default marquee never reached MAIN-room phones (the demo + `/join?s=` audience) because MAIN's live marquee wasn't seeded from the saved default; it now is, and saving it also pushes it live.
+
+### Added
+
+- **A live marquee control on both consoles.** `/operator` and `/studio` now have an identical live scrolling-message box: `/operator` pushes text to the owner's invited (main-show) audience, `/studio` to its room. Text-only overlay; the epilepsy flash cap is never touched.
+- **Visitor uploads join the playlist (up to 3).** A public own-music upload used to be a single per-room file that played once; a room now keeps **up to 3** uploads, each appearing in the playlist next to curated tracks, so they can be **looped or added to the loop list**. An armed upload loops via the seamless engine; a 4th upload drops the oldest.
+
 ## [0.12.0] - 2026-06-30
 
 Round 11 — a pass over twenty owner notes on the live `/studio` console: a clearer one-button start, calmer and more even music reactivity, an inaudible drift corrector, robust auto-reconnect, owner-settable defaults, a scrolling marquee, and multilingual consoles.
