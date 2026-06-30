@@ -8,7 +8,7 @@
   var ROOM = (function () { var r = params.get('room') || ''; return /^[a-z0-9]{6,24}$/.test(r) ? r : ''; })(); // studio demo room
   var AUDIO = params.get('audio') === '1'; // headless: auto opt-in to phone audio
   var JOIN_SPREAD = (AUTO || DEMO || ROOM) ? 0 : 800; // spread the join herd (stadium); off for tests/demo
-  var env = null, waveEl = null, waveCtx = null, waveTick = 0; // music waveform + playhead
+  var env = null, envTrackId = null, waveEl = null, waveCtx = null, waveTick = 0; // music waveform + playhead
   var audio = null, audioOn = false, audioCaching = false, audioTrackId = null; // per-phone synchronized music (opt-in)
 
   // Live parametric preset engine (studio channel). Each phone renders the active
@@ -460,7 +460,14 @@
     prevLum = flum;
     window.__cls.lastPos = Math.round(pos); window.__cls.maxLum = Math.max(window.__cls.maxLum || 0, flum);
     driveTorchChannel(dt, synced, musicLevel.level);
-    if ((++waveTick % 5) === 0) { drawWave(playing && timeline ? pos : -1); if (DIAG) updateDiag(pos); }
+    // round 11 (pt 8): draw the playhead from the AUDIO cursor when sound is live, so the lit bar
+    // matches what's HEARD (even across a reseat/slew); fall back to the show clock for lights-only.
+    // The audio cursor is the position in the CURRENTLY DECODED buffer = the current track, so it
+    // can't point into a different/stale track's envelope.
+    var wavePos = pos, waveFromAudio = false;
+    if (audio && audio.isLive && audio.isLive()) { var pm = audio.playedMs ? audio.playedMs() : null; if (pm != null && pm >= 0) { wavePos = pm; waveFromAudio = true; } }
+    window.__cls.wavePos = Math.round(wavePos); window.__cls.waveFromAudio = waveFromAudio; // test seam (pt 8)
+    if ((++waveTick % 5) === 0) { drawWave(playing && timeline ? wavePos : -1); if (DIAG) updateDiag(pos); }
     } catch (e) { noteError(); /* this frame degrades to whatever was last painted; the loop survives */ }
   }
 
@@ -493,8 +500,10 @@
   // Small per-device waveform of the track's loudness envelope + a moving playhead,
   // so it's visible that the flashing follows THIS music at THIS moment.
   function buildEnvelope() {
-    env = null;
+    env = null; envTrackId = null; window.__cls.waveTrackId = null; // clear so a stale track's bars never draw during a switch
     if (!timeline || !timeline.cues || !timeline.durationMs) return;
+    envTrackId = (typeof timeline.trackId !== 'undefined') ? timeline.trackId : (window.__cls.trackId != null ? window.__cls.trackId : null);
+    window.__cls.waveTrackId = envTrackId;
     var N = 200, dur = timeline.durationMs, a = new Array(N);
     for (var i = 0; i < N; i++) a[i] = sampleCue(i / N * dur).b;
     env = a; showWave();

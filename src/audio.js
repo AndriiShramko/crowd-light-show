@@ -89,26 +89,42 @@ export async function analyze(filePath) {
     for (let i = start; i < Math.min(start + win, samples.length); i++) { sum += samples[i] * samples[i]; n++; }
     rmsRaw.push(n ? Math.sqrt(sum / n) : 0);
   }
-  // normalize to 95th percentile so quiet tracks still drive the lights
-  const sortedR = [...rmsRaw].sort((a, b) => a - b);
-  const p95 = sortedR[Math.floor(sortedR.length * 0.95)] || 1e-6;
-  const norm = rmsRaw.map((v) => Math.min(1, v / (p95 || 1e-6)));
-  // attack/release smoothing
-  const env = []; let prev = 0;
-  for (let i = 0; i < norm.length; i++) {
-    const target = norm[i];
-    const a = target > prev ? 0.6 : 0.15; // fast attack, slow release
-    prev = prev + (target - prev) * a;
-    env.push({ t: Math.round((i * hop / sampleRate) * 1000), rms: prev });
+  // ---- ROUND 11 (pt 18): rolling AGC + envelope-follower + transient (flux) emphasis, instead of
+  // ONE global p95. Pro light/visualizer systems (Resolume / MadMapper / SoundSwitch) re-level the
+  // CURRENT loudness between a slow-adapting floor and ceiling, so a quiet intro and a loud drop
+  // drive the lights with SIMILAR amplitude — even reactivity regardless of absolute level — while a
+  // min-span guard keeps true silence dark. The evened 0..1 "excitement" is baked into the cue
+  // envelope at COMPILE time, so every phone still samples the same governed value (determinism +
+  // sync preserved). The flash-rate safety cap (clampSafety + on-device makeBackstop) is the
+  // UNTOUCHED last stage — agc_safety.mjs proves the cap holds on this amplified signal.
+  const dtHop = hop / sampleRate;                      // seconds per hop (~0.02s)
+  const alpha = (tau) => 1 - Math.exp(-dtHop / tau);   // one-pole coefficient for a time constant
+  const aFloorUp = alpha(3.0), aFloorDn = alpha(0.15); // floor: rises SLOWLY, falls fast (tracks the quiet baseline)
+  const aCeilUp = alpha(0.10), aCeilDn = alpha(1.5);   // ceiling: rises FAST (catch a hit), falls slowly
+  const aAtt = alpha(0.04), aRel = alpha(0.30);        // envelope follower: fast attack, slow release ("punch then fall")
+  const MIN_SPAN = 0.02;                               // guard: don't amplify near-silence to full -> silence stays dark
+  let F = rmsRaw[0] || 0, C = Math.max(rmsRaw[0] || 0, 1e-4), eFollow = 0, xPrev = 0;
+  const env = [], xs = [];
+  for (let i = 0; i < rmsRaw.length; i++) {
+    const r = rmsRaw[i];
+    F += (r > F ? aFloorUp : aFloorDn) * (r - F);
+    C += (r > C ? aCeilUp : aCeilDn) * (r - C);
+    const span = Math.max(MIN_SPAN, C - F);
+    const x = Math.min(1, Math.max(0, (r - F) / span));            // AGC-normalized loudness (even across the song)
+    eFollow += (x > eFollow ? aAtt : aRel) * (x - eFollow);
+    const flux = Math.min(1, Math.max(0, (x - xPrev) * 2.5));      // positive transient rise (reacts to CHANGE, not absolute level)
+    const excitement = Math.min(1, Math.max(0, 0.7 * eFollow + 0.3 * flux));
+    env.push({ t: Math.round((i * hop / sampleRate) * 1000), rms: excitement });
+    xs.push(x); xPrev = x;
   }
-  // energy-onset beats: local rises in normalized rms above a threshold
+  // onsets on the AGC-normalized signal so colour steps land on musical events EVENLY (not only
+  // where the track is absolutely loud).
   const beats = [];
   let lastBeat = -1e9;
-  for (let i = 2; i < norm.length - 1; i++) {
-    const rise = norm[i] - norm[i - 2];
-    const t = (i * hop / sampleRate) * 1000;
-    if (rise > 0.18 && norm[i] > 0.45 && norm[i] >= norm[i + 1] && t - lastBeat > 180) {
-      beats.push(Math.round(t)); lastBeat = t;
+  for (let i = 2; i < xs.length - 1; i++) {
+    const rise = xs[i] - xs[i - 2];
+    if (rise > 0.18 && xs[i] > 0.45 && xs[i] >= xs[i + 1] && env[i].t - lastBeat > 180) {
+      beats.push(env[i].t); lastBeat = env[i].t;
     }
   }
   return { durationMs, envelope: env, beats };
