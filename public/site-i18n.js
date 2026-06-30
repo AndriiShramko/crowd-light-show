@@ -225,9 +225,12 @@
       b.addEventListener('click', (function (l) { return function () { set(l); }; })(LANGS[i]));
       s.appendChild(b);
     }
-    var css = '#cls-lang{position:fixed;top:10px;right:10px;z-index:50;display:flex;gap:2px;background:rgba(10,12,20,.72);border:1px solid rgba(255,255,255,.14);border-radius:999px;padding:3px;backdrop-filter:blur(6px)}'
+    var css = '#cls-lang{position:fixed;top:10px;right:10px;z-index:60;display:flex;gap:2px;background:rgba(10,12,20,.72);border:1px solid rgba(255,255,255,.14);border-radius:999px;padding:3px;backdrop-filter:blur(6px)}'
       + '#cls-lang button{all:unset;cursor:pointer;font:600 12px/1 system-ui,sans-serif;color:#cfd6e6;padding:6px 9px;border-radius:999px;letter-spacing:.04em}'
       + '#cls-lang button:hover{color:#fff}#cls-lang button.on{background:#5a7bff;color:#fff}'
+      // round 13 (pt 9): on phones the landing's sticky top-nav has a CTA button in the same top-right
+      // corner — drop the language switcher just BELOW the header so it no longer overlaps it.
+      + '@media (max-width:680px){#cls-lang{top:56px;right:8px;padding:2px}#cls-lang button{padding:5px 7px;font-size:11px}}'
       + '@media print{#cls-lang{display:none}}';
     var st = document.createElement('style'); st.textContent = css; document.head.appendChild(st);
     document.body.appendChild(s);

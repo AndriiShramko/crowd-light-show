@@ -115,13 +115,16 @@ CREATE TABLE IF NOT EXISTS public_config (
 // Round 10: seed REACTIVE public defaults so /studio opens with the screen + flash already
 // reacting to the music (pulse with audioDepth 0.6, beat torch). validatePreset/validateTorchPreset
 // re-fill the rest of the params + clamp on read, so a sparse seed normalizes to a full safe set.
+// Round 13 (pt 8): the Live presets section now defaults to OFF — the lights run the music-reactive
+// TIMELINE, and the operator opts INTO an overlay preset. So a fresh DB seeds default_screen_preset='off'.
 db.prepare(`INSERT OR IGNORE INTO public_config (id, brand_name, allow_torch, default_screen_preset, default_screen_params, default_torch_preset, default_torch_params, updated_at)
-  VALUES (1, 'Crowd Light Show', 1, 'pulse', '{"audioDepth":0.6}', 'beat', '{}', ?)`).run(Date.now());
-// On an ALREADY-seeded (live) DB the INSERT OR IGNORE no-ops, so fill the reactive defaults only
-// where they are still NULL (never overwrite a default Andrii has set from his console).
+  VALUES (1, 'Crowd Light Show', 1, 'off', '{}', 'beat', '{}', ?)`).run(Date.now());
+// On an ALREADY-seeded (live) DB the INSERT OR IGNORE no-ops, so fill the defaults only where they
+// are still NULL (never overwrite a default Andrii has set from his console). The LIVE switch to
+// 'off' is a one-time POST at deploy, not a forced migration here.
 db.prepare(`UPDATE public_config SET
-  default_screen_preset = COALESCE(default_screen_preset, 'pulse'),
-  default_screen_params = COALESCE(default_screen_params, '{"audioDepth":0.6}'),
+  default_screen_preset = COALESCE(default_screen_preset, 'off'),
+  default_screen_params = COALESCE(default_screen_params, '{}'),
   default_torch_preset  = COALESCE(default_torch_preset,  'beat'),
   default_torch_params  = COALESCE(default_torch_params,  '{}')
   WHERE id = 1`).run();

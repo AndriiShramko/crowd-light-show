@@ -130,7 +130,7 @@
       audioDepth: AUDIO_PARAMS.audioDepth, audioGain: AUDIO_PARAMS.audioGain, audioFloor: AUDIO_PARAMS.audioFloor, audioGamma: AUDIO_PARAMS.audioGamma } },
     rainbow_chase: { label: 'Rainbow Chase', spatial: true, params: {
       speed: { min: 0.02, max: 0.5, step: 0.01, def: 0.1, label: 'Speed' },
-      spread: { min: 0.2, max: 3, step: 0.05, def: 1.0, label: 'Spread' },
+      spread: { min: 0, max: 3, step: 0.05, def: 1.0, label: 'Spread' },
       dir: { min: -1, max: 1, step: 2, def: 1, label: 'Direction' },
       audioDepth: AUDIO_PARAMS.audioDepth, audioGain: AUDIO_PARAMS.audioGain, audioFloor: AUDIO_PARAMS.audioFloor, audioGamma: AUDIO_PARAMS.audioGamma } },
     ocean: { label: 'Ocean', spatial: false, params: {

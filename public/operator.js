@@ -436,7 +436,7 @@
   });
   if ($('pause')) $('pause').addEventListener('click', function () { flashBtn($('pause')); try { player.pause(); } catch (e) {} if (audio) audio.stop(); tx('pause', {}); });
   if ($('stop')) $('stop').addEventListener('click', function () { flashBtn($('stop')); try { player.pause(); player.currentTime = 0; } catch (e) {} if (audio) audio.stop(); tx('stop', {}); });
-  if ($('blackout')) $('blackout').addEventListener('click', function () { flashBtn($('blackout')); if (audio) audio.stop(); tx('blackout', {}); });
+  if ($('blackout')) $('blackout').addEventListener('click', function () { flashBtn($('blackout')); tx('blackout', {}); }); // round 13 (pt 6): BLACKOUT darkens lights/torch only — music keeps playing (no audio.stop)
 
   if ($('nudge')) {
     $('nudge').addEventListener('input', function () { nudge = Number($('nudge').value); $('nudgeVal').textContent = nudge + ' ms'; });
@@ -488,7 +488,7 @@
     if (m.t === 'start') { renderState({ status: 'running' }); pubT0 = m.T0; if (audio && soundOn) audio.start(m.T0); return; }
     if (m.t === 'pause') { renderState({ status: 'paused' }); if (audio) audio.stop(); return; }
     if (m.t === 'stop') { renderState({ status: 'idle' }); armedId = armedId; if (audio) audio.stop(); return; }
-    if (m.t === 'blackout') { renderState({ status: 'blackout' }); if (audio) audio.stop(); return; }
+    if (m.t === 'blackout') { renderState({ status: 'blackout' }); return; } // round 13 (pt 6): keep the console's music monitor playing through a blackout
   }
 
   function loadApps() {
@@ -690,7 +690,7 @@
       });
       var off = document.createElement('button'); off.style.width = 'auto'; off.className = 'ghost'; off.textContent = '■ Off'; off.setAttribute('data-preset', 'off'); box.appendChild(off);
       if (d.active && d.active.type && d.active.type !== 'off') { activeType = d.active.type; activeParams = Object.assign({}, d.active.params); renderParams(); pvReset(); pvShow(true); }
-      else if (PUBLIC && DEFAULTS && DEFAULTS.screen && DEFAULTS.screen.type) { pickPreset(DEFAULTS.screen.type); } // public: start on the host's default look
+      else if (PUBLIC && DEFAULTS && DEFAULTS.screen && DEFAULTS.screen.type && DEFAULTS.screen.type !== 'off') { pickPreset(DEFAULTS.screen.type); } // public: start on the host's default look (round 13 pt 8: 'off' => Live presets default OFF, lights run the timeline)
       highlightPreset();
       setupTorch(d);
       // round 10: public console auto-picks the host's default REACTIVE torch (beat) so the
