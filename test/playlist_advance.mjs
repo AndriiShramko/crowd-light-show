@@ -36,6 +36,11 @@ async function main() {
     await fetch(`${BASE}/api/operator/track/${id}/attest`, { method: 'POST', headers: H(token) }).then(j);
     await fetch(`${BASE}/api/operator/track/${id}/public`, { method: 'POST', headers: H(token, { 'Content-Type': 'application/json' }), body: JSON.stringify({ is_public: true }) }).then(j);
   }
+  // round 11: a real /studio always has a default track configured (the owner sets it; live also
+  // pins default_screen_preset=rainbow_chase). The single "Start Light Show" arms THAT track, so
+  // the room is genuinely running when the console drives the playlist UI. Without it, Start has
+  // nothing to arm and the playlist-mode buttons never bind to a live room.
+  await fetch(BASE + '/api/operator/public-config', { method: 'POST', headers: H(token, { 'Content-Type': 'application/json' }), body: JSON.stringify({ default_track_id: A }) }).then(j);
 
   const b = await chromium.launch({ args: ['--autoplay-policy=no-user-gesture-required'] });
   const con = await (await b.newContext()).newPage();
