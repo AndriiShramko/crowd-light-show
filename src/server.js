@@ -349,6 +349,12 @@ app.post('/api/console/seek', (req, reply) => { const room = consoleRoom(req, re
 app.post('/api/operator/seek', (req, reply) => { if (!requireOperator(req, reply)) return; return hub.seek('main', Number(req.body && req.body.offsetMs)); });
 app.post('/api/console/mute-all', (req, reply) => { const room = consoleRoom(req, reply); if (!room) return; return hub.muteAll(room, !!(req.body && req.body.muted)); });
 app.post('/api/operator/mute-all', (req, reply) => { if (!requireOperator(req, reply)) return; return hub.muteAll('main', !!(req.body && req.body.muted)); });
+// Round 14: live MANUAL OVERRIDE (VJ pult) + PALETTE restriction. Room comes from the verified
+// console token (never the body); values are clamped server-side and the phone re-governs anyway.
+app.post('/api/console/manual', (req, reply) => { const room = consoleRoom(req, reply); if (!room) return; return hub.setManual(room, req.body || {}); });
+app.post('/api/operator/manual', (req, reply) => { if (!requireOperator(req, reply)) return; return hub.setManual('main', req.body || {}); });
+app.post('/api/console/palette', (req, reply) => { const room = consoleRoom(req, reply); if (!room) return; return hub.setPalette(room, !!(req.body && req.body.on), req.body && req.body.colors); });
+app.post('/api/operator/palette', (req, reply) => { if (!requireOperator(req, reply)) return; return hub.setPalette('main', !!(req.body && req.body.on), req.body && req.body.colors); });
 // Round 13 (pt 5): fire a one-shot firework FX (validated name, no params -> no untrusted numeric input).
 app.post('/api/console/fx', (req, reply) => { const room = consoleRoom(req, reply); if (!room) return; const r = hub.triggerFx(room, String((req.body && req.body.name) || '')); if (!r.ok) return reply.code(400).send(r); return r; });
 app.post('/api/operator/fx', (req, reply) => { if (!requireOperator(req, reply)) return; const r = hub.triggerFx('main', String((req.body && req.body.name) || '')); if (!r.ok) return reply.code(400).send(r); return r; });
@@ -880,6 +886,8 @@ wss.on('connection', (ws) => {
       else if (c === 'blackout') hub.blackout();
       else if (c === 'seek') hub.seek('main', Number(m.offsetMs)); // round 13 (pt 7)
       else if (c === 'mute-all') hub.muteAll('main', !!m.muted);   // round 13 (pt 8)
+      else if (c === 'manual') hub.setManual('main', m);           // round 14: live VJ override (low-latency drag path)
+      else if (c === 'palette') hub.setPalette('main', !!m.on, m.colors); // round 14: palette restriction
     }
   });
   ws.on('close', () => {

@@ -49,6 +49,49 @@ export function hsl2rgb(h, s, l) {
 // relative luminance (WCAG-ish, 0..1) of an 0..255 rgb triple
 export function relLum(rgb) { return (0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2]) / 255; }
 
+// rgb (0..255) -> hsl [h 0..360, s 0..1, l 0..1]. Inverse of hsl2rgb; used by the round-14
+// VJ manual-override layer (intervene mode) to rotate hue / scale saturation on a live preset
+// colour. Byte-identical to the browser mirror (parity-checked).
+export function rgb2hsl(r, g, b) {
+  r /= 255; g /= 255; b /= 255;
+  const mx = Math.max(r, g, b), mn = Math.min(r, g, b), d = mx - mn, l = (mx + mn) / 2;
+  let h = 0, s = 0;
+  if (d !== 0) {
+    s = d / (1 - Math.abs(2 * l - 1));
+    if (mx === r) h = 60 * (((g - b) / d) % 6);
+    else if (mx === g) h = 60 * ((b - r) / d + 2);
+    else h = 60 * ((r - g) / d + 4);
+  }
+  if (h < 0) h += 360;
+  return [h, s, l];
+}
+
+// round 14 VJ manual layer (shared so the phone, server, and tests run identical math; parity-checked).
+// intervene-mode screen modifier: rotate hue, scale saturation + brightness on a live preset colour. bri
+// is a ×<=1 scale (only attenuates) -> can never manufacture a flash the preset didn't already have.
+export function applyManualScreen(rgb, mn) {
+  const hsl = rgb2hsl(rgb[0], rgb[1], rgb[2]);
+  const h = ((hsl[0] + (mn.hue || 0)) % 360 + 360) % 360;
+  const s = clamp01(hsl[1] * (mn.sat == null ? 1 : mn.sat));
+  const l = clamp01(hsl[2] * (mn.bri == null ? 1 : mn.bri));
+  return hsl2rgb(h, s, l);
+}
+// Snap a colour to the nearest allowed palette entry (redmean weighted-RGB distance) while PRESERVING
+// the source luminance, so a pulsing/animated look survives the restriction instead of hard-stepping to
+// a flat field. The result still flows through clampColor + backstop after this (governors stay last).
+export function paletteSnap(rgb, pal) {
+  if (!pal || !pal.on || !pal.colors || !pal.colors.length) return rgb;
+  let best = pal.colors[0], bd = Infinity;
+  for (let i = 0; i < pal.colors.length; i++) {
+    const c = pal.colors[i], rm = (rgb[0] + c[0]) / 2, dr = rgb[0] - c[0], dg = rgb[1] - c[1], db = rgb[2] - c[2];
+    const d = (2 + rm / 256) * dr * dr + 4 * dg * dg + (2 + (255 - rm) / 256) * db * db;
+    if (d < bd) { bd = d; best = c; }
+  }
+  const sl = rgb2hsl(rgb[0], rgb[1], rgb[2])[2];
+  const ph = rgb2hsl(best[0], best[1], best[2]);
+  return hsl2rgb(ph[0], ph[1], sl);
+}
+
 // A calm, accessible HSL palette (no pure saturated red). [h, s, l]
 const WAVE_PAL = [
   [265, 0.65, 0.45], [205, 0.70, 0.50], [175, 0.60, 0.48],

@@ -27,6 +27,45 @@
   }
   function relLum(rgb) { return (0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2]) / 255; }
 
+  // rgb (0..255) -> hsl [h 0..360, s 0..1, l 0..1]. Inverse of hsl2rgb; the round-14 VJ manual
+  // layer uses it (intervene mode) to rotate hue / scale saturation on a live preset colour.
+  // Byte-identical to src/presets.js (parity-checked).
+  function rgb2hsl(r, g, b) {
+    r /= 255; g /= 255; b /= 255;
+    var mx = Math.max(r, g, b), mn = Math.min(r, g, b), d = mx - mn, l = (mx + mn) / 2, h = 0, s = 0;
+    if (d !== 0) {
+      s = d / (1 - Math.abs(2 * l - 1));
+      if (mx === r) h = 60 * (((g - b) / d) % 6);
+      else if (mx === g) h = 60 * ((b - r) / d + 2);
+      else h = 60 * ((r - g) / d + 4);
+    }
+    if (h < 0) h += 360;
+    return [h, s, l];
+  }
+
+  // round 14 VJ manual layer — byte-identical to src/presets.js (parity-checked). intervene-mode screen
+  // modifier: rotate hue, scale sat + bri on a live preset colour (bri ×<=1 only attenuates).
+  function applyManualScreen(rgb, mn) {
+    var hsl = rgb2hsl(rgb[0], rgb[1], rgb[2]);
+    var h = ((hsl[0] + (mn.hue || 0)) % 360 + 360) % 360;
+    var s = clamp01(hsl[1] * (mn.sat == null ? 1 : mn.sat));
+    var l = clamp01(hsl[2] * (mn.bri == null ? 1 : mn.bri));
+    return hsl2rgb(h, s, l);
+  }
+  // Snap to the nearest allowed palette colour (redmean weighted-RGB) preserving source luminance.
+  function paletteSnap(rgb, pal) {
+    if (!pal || !pal.on || !pal.colors || !pal.colors.length) return rgb;
+    var best = pal.colors[0], bd = Infinity;
+    for (var i = 0; i < pal.colors.length; i++) {
+      var c = pal.colors[i], rm = (rgb[0] + c[0]) / 2, dr = rgb[0] - c[0], dg = rgb[1] - c[1], db = rgb[2] - c[2];
+      var d = (2 + rm / 256) * dr * dr + 4 * dg * dg + (2 + (255 - rm) / 256) * db * db;
+      if (d < bd) { bd = d; best = c; }
+    }
+    var sl = rgb2hsl(rgb[0], rgb[1], rgb[2])[2];
+    var ph = rgb2hsl(best[0], best[1], best[2]);
+    return hsl2rgb(ph[0], ph[1], sl);
+  }
+
   // EXACT copy of the timeline compiler's colour governor (no large saturated red).
   function clampColor(rgb) {
     var r = Math.max(0, Math.min(255, Math.round(rgb[0])));
@@ -244,7 +283,7 @@
 
   global.CLS_PRESETS = {
     PRESETS: PRESETS, PARAM_SCHEMA: PARAM_SCHEMA, clampColor: clampColor,
-    relLum: relLum, defaults: defaults, makeBackstop: makeBackstop,
+    relLum: relLum, hsl2rgb: hsl2rgb, rgb2hsl: rgb2hsl, applyManualScreen: applyManualScreen, paletteSnap: paletteSnap, defaults: defaults, makeBackstop: makeBackstop,
     DEFAULT_PRESET: 'pulse', TYPES: Object.keys(PARAM_SCHEMA),
     TORCH_PRESETS: TORCH_PRESETS, TORCH_SCHEMA: TORCH_SCHEMA, torchDefaults: torchDefaults,
     makeTorchGate: makeTorchGate, TORCH_TYPES: Object.keys(TORCH_SCHEMA), DEFAULT_TORCH: 'beat',
