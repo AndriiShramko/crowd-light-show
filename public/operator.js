@@ -741,6 +741,7 @@
       else if (PUBLIC && DEFAULTS && DEFAULTS.screen && DEFAULTS.screen.type && DEFAULTS.screen.type !== 'off') { pickPreset(DEFAULTS.screen.type); } // public: start on the host's default look (round 13 pt 8: 'off' => Live presets default OFF, lights run the timeline)
       highlightPreset();
       setupTorch(d);
+      setupFx(d); // round 13 (pt 5): the Special-effects buttons
       // round 10: public console auto-picks the host's default REACTIVE torch (beat) so the
       // flash channel is alive on open too (mirror of the screen auto-pick above). Gated on
       // FEAT.torch so a host who disabled torch isn't overridden.
@@ -771,6 +772,22 @@
     }
     highlightTorch();
   }
+  // round 13 (pt 5): the Special-effects (firework) buttons — fired over HTTP via tx(), which routes to
+  // /api/operator/fx (main) or /api/console/fx (room) — identical on both consoles. No params -> safe.
+  function setupFx(d) {
+    var box = $('fxBtns'); if (!box || !d.fxNames) return; box.innerHTML = '';
+    d.fxNames.forEach(function (name) {
+      var b = document.createElement('button'); b.style.width = 'auto';
+      b.textContent = '🎆 ' + ((d.fxLabels && d.fxLabels[name]) || name); b.setAttribute('data-fx', name); box.appendChild(b);
+    });
+  }
+  function triggerFx(name) {
+    ga('fx_fired', { fx_name: name });
+    tx('fx', { name: name }).then(function (j) {
+      if ($('fxMsg')) $('fxMsg').textContent = (j && j.ok) ? ('🎆 ' + name + ' — ' + Math.round((j.durationMs || 0) / 1000) + 's') : tr('console.fx_err', 'Could not fire — try again');
+    });
+  }
+  if ($('fxBtns')) $('fxBtns').addEventListener('click', function (e) { var n = e.target.getAttribute('data-fx'); if (n) triggerFx(n); });
   function renderTorchParams() {
     var wrap = $('torchParams'); wrap.innerHTML = '';
     if (!activeTorch || !torchSchema[activeTorch]) return;

@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import { performance } from 'node:perf_hooks';
 import { db, listPublicTracks, getPublicConfig } from './db.js';
 import { config } from './config.js';
+import { FX_DURATIONS, FX_NAMES } from './fx.js';
 
 // Master clock: a single monotonic source. Every client syncs its offset to this,
 // and T0 (show start) is always expressed in these milliseconds.
@@ -188,6 +189,7 @@ export class ShowHub {
       if (mqMain == null) { try { const pc = getPublicConfig(); mqMain = pc && pc.marquee_text ? String(pc.marquee_text).slice(0, 200) : ''; } catch { mqMain = ''; } }
       if (mqMain) this.send(ws, { t: 'marquee', text: mqMain }); // late-join marquee (pt 19/12)
       if (this.state.muteAll) this.send(ws, { t: 'muteAll', muted: true }); // late-join global mute (pt 8)
+      if (this.fx && serverClock() - this.fx.startedAt < this.fx.durationMs) this.send(ws, { t: 'fx', ...this.fx }); // late-join firework, if still in-window (pt 5)
       this.send(ws, { t: 'index', index: this.alloc.indexOf(ws), total: this.alloc.total() }); // joiner gets its index now
       this.markIndexDirty(MAIN_ROOM);   // others refresh total on the coalesced flush
       this.broadcastCount();
@@ -208,6 +210,7 @@ export class ShowHub {
       if (r.run && r.run.plOrder && r.run.plOrder.length) this.send(ws, { t: 'playlist', ...this.playlistState(roomId) }); // late-join now/next
       if (r.marquee) this.send(ws, { t: 'marquee', text: r.marquee }); // late-join marquee (pt 19)
       if (r.run && r.run.muteAll) this.send(ws, { t: 'muteAll', muted: true }); // late-join global mute (pt 8)
+      if (r.fx && serverClock() - r.fx.startedAt < r.fx.durationMs) this.send(ws, { t: 'fx', ...r.fx }); // late-join firework, if still in-window (pt 5)
       this.send(ws, { t: 'index', index: r.alloc.indexOf(ws), total: r.alloc.total() });
       this.markIndexDirty(roomId);
     }
@@ -523,6 +526,27 @@ export class ShowHub {
     h.run.muteAll = !!muted;
     h.broadcast({ t: 'muteAll', muted: h.run.muteAll });
     return { ok: true, muted: h.run.muteAll };
+  }
+
+  // Round 13 (pt 5): fire a one-shot "firework" FX overlay. Broadcast {t:'fx'} with a server startedAt;
+  // every phone plays the same deterministic program off (serverNow - startedAt) for durationMs, then
+  // reverts to whatever screen/torch was running (the FX overlays — it never touches preset/timeline/run).
+  // Stored for late-join replay only while still inside the window.
+  triggerFx(roomId, name) {
+    if (FX_NAMES.indexOf(name) < 0) return { ok: false, error: 'unknown fx' };
+    const h = this._rt(roomId, true);
+    if (!h) return { ok: false, error: 'room unavailable' };
+    const durationMs = FX_DURATIONS[name];
+    const startedAt = serverClock();
+    const epoch = h.isMain ? (this._fxEpoch = (this._fxEpoch || 0) + 1) : (h.run._fxEpoch = (h.run._fxEpoch || 0) + 1);
+    const rec = { name, startedAt, durationMs, epoch };
+    if (h.isMain) this.fx = rec; else { const r = this.rooms.get(roomId); if (r) r.fx = rec; }
+    h.broadcast({ t: 'fx', name, startedAt, durationMs, epoch });
+    const tmr = setTimeout(() => { // drop the stored record after the window so a later joiner gets nothing
+      if (h.isMain) { if (this.fx === rec) this.fx = null; } else { const r = this.rooms.get(roomId); if (r && r.fx === rec) r.fx = null; }
+    }, durationMs + 250);
+    if (tmr.unref) tmr.unref();
+    return { ok: true, epoch, durationMs };
   }
 
   stop(roomId) {

@@ -111,6 +111,14 @@
     <p class="muted" id="torchMsg">Pick a flash pattern (independent of the screen).</p>
 
     <hr style="border:none;border-top:1px solid rgba(255,255,255,.10);margin:16px 0 12px">
+    <div data-feature="transport" id="fxCard">
+      <h3 style="margin:0 0 2px" data-i18n="console.fx_h">🎆 Special effects</h3>
+      <p class="muted" style="margin:2px 0 6px" data-i18n="console.fx_sub">One-tap firework bursts — a few seconds of synchronized flash across every phone (screen + flash), then the show resumes exactly where it was. Safety-clamped ≤3 flashes/s.</p>
+      <div id="fxBtns" class="row" style="flex-wrap:wrap;gap:8px"></div>
+      <p class="muted" id="fxMsg"></p>
+    </div>
+
+    <hr style="border:none;border-top:1px solid rgba(255,255,255,.10);margin:16px 0 12px">
     <div data-feature="transport" id="marqueeCtl">
       <h3 style="margin:0 0 2px" data-i18n="console.marquee_h">📢 Scrolling message</h3>
       <p class="muted" style="margin:2px 0 6px" data-i18n="console.marquee_sub">Live text that scrolls across every phone in this show — announce a song, a name, a shout-out. Leave blank and Clear to remove. (Text only — it never affects the lights.)</p>
@@ -161,6 +169,7 @@
 <script src="/static/clocksync.js"></script>
 <script src="/static/audio-sync.js"></script>
 <script src="/static/presets.js"></script>
+<script src="/static/fx.js"></script>
 <script src="/static/site-i18n.js"></script>
 <script src="/static/operator.js"></script>
 <script src="/static/share.js"></script>

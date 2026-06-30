@@ -16,6 +16,7 @@
   var P = window.CLS_PRESETS;
   var preset = null;        // screen channel { type, params, epoch, startedAt }
   var torchPreset = null;   // torch channel (round 8B) — autonomous, independent of the screen
+  var fx = null, fxBackstop = null; // round 13 (pt 5): one-shot firework overlay { name, startedAt, durationMs, epoch }
   var myIndex = 0, N = 1;   // sticky index in the crowd + grid width
   var backstop = P ? P.makeBackstop(150) : null; // client-side safety slew (defense in depth)
   var torchGate = (P && P.makeTorchGate) ? P.makeTorchGate() : null; // torch rate cap <=2.8/s (defense in depth)
@@ -264,8 +265,8 @@
     }
     if (m.t === 'start') { runState = { status: 'running', T0: m.T0, epoch: m.epoch, pausePos: 0, loop: !!m.loop }; window.__cls.status = 'running'; window.__cls.gotStart = m.T0; window.__cls.loop = !!m.loop; prevLum = 0; flashArmed = true; if (audio && audioOn) playRoomAudio(m.T0); setStatus('st_play'); showWave(); return; }
     if (m.t === 'pause') { runState.status = 'paused'; runState.pausePos = m.pos; window.__cls.status = 'paused'; if (audio) audio.stop(); setStatus('st_paused'); return; }
-    if (m.t === 'stop') { runState = { status: 'idle', T0: null, epoch: m.epoch, pausePos: 0 }; preset = null; torchPreset = null; window.__cls.preset = null; window.__cls.screen.preset = null; window.__cls.torch.preset = null; window.__cls.status = 'idle'; if (audio) audio.stop(); hideWave(); setStatus('st_wait'); return; }
-    if (m.t === 'blackout') { runState = { status: 'blackout', T0: null, epoch: m.epoch }; preset = null; torchPreset = null; window.__cls.preset = null; window.__cls.screen.preset = null; window.__cls.torch.preset = null; window.__cls.status = 'blackout'; hideWave(); return; } // round 13 (pt 6): BLACKOUT kills lights+torch only — the MUSIC keeps playing (audio untouched)
+    if (m.t === 'stop') { runState = { status: 'idle', T0: null, epoch: m.epoch, pausePos: 0 }; preset = null; torchPreset = null; fx = null; window.__cls.fx = null; window.__cls.preset = null; window.__cls.screen.preset = null; window.__cls.torch.preset = null; window.__cls.status = 'idle'; if (audio) audio.stop(); hideWave(); setStatus('st_wait'); return; }
+    if (m.t === 'blackout') { runState = { status: 'blackout', T0: null, epoch: m.epoch }; preset = null; torchPreset = null; fx = null; window.__cls.fx = null; window.__cls.preset = null; window.__cls.screen.preset = null; window.__cls.torch.preset = null; window.__cls.status = 'blackout'; hideWave(); return; } // round 13 (pt 6): BLACKOUT kills lights+torch only — the MUSIC keeps playing (audio untouched)
     // ---- studio: live parametric presets ----
     if (m.t === 'index') { myIndex = m.index | 0; N = Math.max(1, m.total | 0); window.__cls.idx = myIndex; window.__cls.total = N; return; }
     if (m.t === 'marquee') { // round 11 (pt 19): scrolling text overlay — text ONLY, never touches the flash/preset/run-state
@@ -275,6 +276,13 @@
       return;
     }
     if (m.t === 'muteAll') { globalMuted = !!m.muted; applyMuteState(); return; } // round 13 (pt 8): operator muted/unmuted every phone (lights keep running)
+    if (m.t === 'fx') { // round 13 (pt 5): a one-shot firework overlay — plays then reverts to the running show
+      if (!P || !P.FX || !P.FX[m.name]) { fx = null; window.__cls.fx = null; return; }
+      fx = { name: m.name, startedAt: m.startedAt, durationMs: m.durationMs | 0, epoch: m.epoch | 0 };
+      fxBackstop = P.makeBackstop ? P.makeBackstop(150) : null; // a fresh governor so the FX onset is clean
+      window.__cls.fx = { name: m.name, startedAt: m.startedAt, epoch: fx.epoch };
+      return;
+    }
     if (m.t === 'preset') {
       if (m.channel === 'torch') {                 // round 8B: autonomous torch channel — never touches the screen
         if (m.type === 'off' || !P || !P.TORCH_PRESETS || !P.TORCH_PRESETS[m.type]) { torchPreset = null; window.__cls.torch.preset = null; window.__cls.torch.epoch = m.epoch | 0; return; }
@@ -481,8 +489,23 @@
     var nowf = performance.now(); var dt = lastFrameT ? nowf - lastFrameT : 16; lastFrameT = nowf;
     var musicLevel = sampleEnv();                       // governed loudness once — shared by screen + torch
 
+    // round 13 (pt 5): a firework FX overlays the screen + torch for a few seconds, then evaporates and
+    // the underlying preset/timeline (never cleared) resumes. It loses to BLACKOUT (the operator kill).
+    var fxActive = false, fxScreen = null, fxTorch = false;
+    if (fx && synced && P && P.FX && P.FX[fx.name]) {
+      var fpos = clock.serverNow() - fx.startedAt;
+      if (fpos >= 0 && fpos < fx.durationMs) {
+        var out = P.FX[fx.name](fpos, myIndex, N);
+        fxScreen = P.clampColor(out.screenRgb);           // SAME governor #1 (no red strobe)
+        if (fxBackstop) fxScreen = fxBackstop(fxScreen, dt); // SAME governor #2 (<=3 fl/s, ramp)
+        fxTorch = !!out.torchOn; fxActive = true;
+      } else if (fpos >= fx.durationMs) { fx = null; window.__cls.fx = null; } // window elapsed -> revert
+    }
+
     if (runState.status === 'blackout') {
       // operator BLACKOUT overrides everything — go dark immediately.
+    } else if (fxActive) {
+      finalRgb = fxScreen; flum = P.relLum(finalRgb); playing = true; epochNow = fx.epoch; setStatus('st_play');
     } else if (preset && preset.type && P) {
       // STUDIO: render the active parametric preset locally off the synced clock.
       if (synced) {
@@ -535,7 +558,7 @@
     }
     prevLum = flum;
     window.__cls.lastPos = Math.round(pos); window.__cls.maxLum = Math.max(window.__cls.maxLum || 0, flum);
-    driveTorchChannel(dt, synced, musicLevel.level);
+    driveTorchChannel(dt, synced, musicLevel.level, fxActive ? fxTorch : null);
     // round 11 (pt 8): draw the playhead from the AUDIO cursor when sound is live, so the lit bar
     // matches what's HEARD (even across a reseat/slew); fall back to the show clock for lights-only.
     // The audio cursor is the position in the CURRENTLY DECODED buffer = the current track, so it
@@ -555,9 +578,11 @@
   // from the torch preset (off when none / on STOP / BLACKOUT), gates it to <=2.8/s, and drives
   // the camera LED. On iOS there is no torchTrack -> applyTorch is a no-op and the screen is
   // untouched. The torch reads the SAME governed loudness as the screen so 'beat' stays in sync.
-  function driveTorchChannel(dt, synced, level) {
+  function driveTorchChannel(dt, synced, level, fxTorchOverride) {
     var wantOn = false, intensity = 0;
-    if (runState.status !== 'blackout' && torchPreset && torchPreset.type && P && P.TORCH_PRESETS && P.TORCH_PRESETS[torchPreset.type] && synced) {
+    if (runState.status !== 'blackout' && fxTorchOverride != null) {        // round 13 (pt 5): a firework owns the torch this frame
+      wantOn = !!fxTorchOverride;
+    } else if (runState.status !== 'blackout' && torchPreset && torchPreset.type && P && P.TORCH_PRESETS && P.TORCH_PRESETS[torchPreset.type] && synced) {
       var tpos = clock.serverNow() - torchPreset.startedAt;
       intensity = P.TORCH_PRESETS[torchPreset.type](tpos, torchPreset.params, myIndex, N, level);
       var excite = torchAGC(intensity, dt);                                // round 13 (pt 3): even reactivity across loudness

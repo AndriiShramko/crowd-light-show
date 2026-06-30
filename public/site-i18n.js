@@ -167,6 +167,7 @@
       'console.marquee_ph': 'Type a message to scroll on all phones', 'console.marquee_send': 'Send', 'console.marquee_clear': 'Clear',
       'console.marquee_sent': 'Showing on all phones ✓', 'console.marquee_err': 'Could not send — try again', 'console.marquee_cleared': 'Cleared',
       'console.seek_label': 'Seek', 'console.mute_all': '🔇 Mute all phones', 'console.unmute_all': '🔈 Unmute all phones',
+      'console.fx_h': '🎆 Special effects', 'console.fx_sub': 'One-tap firework bursts — a few seconds of synchronized flash across every phone (screen + flash), then the show resumes exactly where it was. Safety-clamped ≤3 flashes/s.', 'console.fx_err': 'Could not fire — try again',
     },
     pl: {
       'console.play.idle': '▶ Włącz pokaz świateł ', 'console.play.loading': '● Uruchamiam… ', 'console.play.playing': '⏸ Wstrzymaj pokaz ', 'console.play.paused': '▶ Wznów pokaz ',
@@ -185,6 +186,7 @@
       'console.marquee_ph': 'Wpisz wiadomość do przewijania na telefonach', 'console.marquee_send': 'Wyślij', 'console.marquee_clear': 'Wyczyść',
       'console.marquee_sent': 'Wyświetlam na wszystkich telefonach ✓', 'console.marquee_err': 'Nie udało się wysłać — spróbuj ponownie', 'console.marquee_cleared': 'Wyczyszczono',
       'console.seek_label': 'Przewiń', 'console.mute_all': '🔇 Wycisz wszystkie telefony', 'console.unmute_all': '🔈 Włącz dźwięk wszędzie',
+      'console.fx_h': '🎆 Efekty specjalne', 'console.fx_sub': 'Wybuchy fajerwerków jednym dotknięciem — kilka sekund zsynchronizowanego błysku na każdym telefonie (ekran + lampa), potem pokaz wraca dokładnie tam, gdzie był. Zabezpieczone ≤3 błyski/s.', 'console.fx_err': 'Nie udało się — spróbuj ponownie',
     },
   };
   // merge console keys into the four langs; es/fr mirror EN (console is chrome, not legal copy)
