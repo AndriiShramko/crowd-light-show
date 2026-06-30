@@ -16,7 +16,7 @@ export const MAIN_ROOM = 'main';
 // room ADVANCES through plOrder (looping) instead of stopping. 'all' = loop every public track,
 // 'selected' = loop a chosen subset, 'one' = loop the current track. Main show: plOrder stays []
 // (ends -> stop, unchanged).
-function newRun() { return { epoch: 0, status: 'idle', trackId: null, T0: null, pausePos: 0, plMode: 'all', plOrder: [], plIdx: 0, plSelected: [] }; }
+function newRun() { return { epoch: 0, status: 'idle', trackId: null, T0: null, pausePos: 0, plMode: 'all', plOrder: [], plIdx: 0, plSelected: [], muteAll: false }; }
 
 // Sticky index allocator: hands each phone a stable 0-based index so spatial presets
 // (and, later, the pixel wall) can place it in the crowd. Indices are STICKY — a
@@ -55,6 +55,8 @@ export class ShowHub {
       trackId: null,      // armed track (timeline distributed)
       T0: null,           // server-clock ms of show position 0
       pausePos: 0,
+      muteAll: false,     // round 13 (pt 8): music muted on all phones
+      plOrder: [],        // MAIN never loops a playlist, but seek()/_roomLoops read plOrder
     };
   }
 
@@ -185,6 +187,7 @@ export class ShowHub {
       let mqMain = this.marquee;
       if (mqMain == null) { try { const pc = getPublicConfig(); mqMain = pc && pc.marquee_text ? String(pc.marquee_text).slice(0, 200) : ''; } catch { mqMain = ''; } }
       if (mqMain) this.send(ws, { t: 'marquee', text: mqMain }); // late-join marquee (pt 19/12)
+      if (this.state.muteAll) this.send(ws, { t: 'muteAll', muted: true }); // late-join global mute (pt 8)
       this.send(ws, { t: 'index', index: this.alloc.indexOf(ws), total: this.alloc.total() }); // joiner gets its index now
       this.markIndexDirty(MAIN_ROOM);   // others refresh total on the coalesced flush
       this.broadcastCount();
@@ -204,6 +207,7 @@ export class ShowHub {
       }
       if (r.run && r.run.plOrder && r.run.plOrder.length) this.send(ws, { t: 'playlist', ...this.playlistState(roomId) }); // late-join now/next
       if (r.marquee) this.send(ws, { t: 'marquee', text: r.marquee }); // late-join marquee (pt 19)
+      if (r.run && r.run.muteAll) this.send(ws, { t: 'muteAll', muted: true }); // late-join global mute (pt 8)
       this.send(ws, { t: 'index', index: r.alloc.indexOf(ws), total: r.alloc.total() });
       this.markIndexDirty(roomId);
     }
@@ -484,6 +488,41 @@ export class ShowHub {
     h.announceState();
     this.scheduleEnd(roomId);
     return { ok: true, pos: h.run.pausePos };
+  }
+
+  // Round 13 (pt 7): SEEK to an arbitrary track position. Like resume(), it picks a NEW T0 so the
+  // position becomes `offsetMs` at a near-future anchor; phones re-anchor BOTH lights and audio off
+  // the {t:'start'} broadcast. Works from running OR paused (resumes at the new spot).
+  seek(roomId, offsetMs) {
+    const h = this._rt(roomId, false);
+    if (!h || (h.run.status !== 'running' && h.run.status !== 'paused')) return { ok: false, error: 'not running' };
+    if (h.run.trackId == null) return { ok: false, error: 'no track' };
+    const tl = this.loadTimeline(h.run.trackId);
+    const dur = (tl && tl.durationMs) || 0;
+    if (!dur) return { ok: false, error: 'no track duration' };
+    let off = Number(offsetMs);
+    if (!Number.isFinite(off)) return { ok: false, error: 'bad offset' };
+    const loop = this._roomLoops(h.run);
+    off = loop ? ((off % dur) + dur) % dur : Math.max(0, Math.min(off, dur));
+    h.run.epoch++;
+    h.run.status = 'running';
+    h.run.T0 = serverClock() + config.startLeadMs - off; // position becomes `off` at the near-future anchor
+    h.run.pausePos = 0;
+    h.broadcast({ t: 'start', epoch: h.run.epoch, trackId: h.run.trackId, T0: h.run.T0, loop });
+    h.announceState();
+    this.scheduleEnd(roomId);
+    return { ok: true, pos: off };
+  }
+
+  // Round 13 (pt 8): mute the music on ALL phones in the room (distinct from the operator's local
+  // mute). Stored on the run-state so late joiners inherit it; broadcast {t:'muteAll'}. Text/audio
+  // only — it never touches the lights/flash/run-status, so the show keeps running silently.
+  muteAll(roomId, muted) {
+    const h = this._rt(roomId, true);
+    if (!h) return { ok: false, error: 'room unavailable' };
+    h.run.muteAll = !!muted;
+    h.broadcast({ t: 'muteAll', muted: h.run.muteAll });
+    return { ok: true, muted: h.run.muteAll };
   }
 
   stop(roomId) {

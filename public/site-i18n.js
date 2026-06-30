@@ -166,6 +166,7 @@
       'console.marquee_h': '📢 Scrolling message', 'console.marquee_sub': 'Live text that scrolls across every phone in this show — announce a song, a name, a shout-out. Leave blank and Clear to remove. (Text only — it never affects the lights.)',
       'console.marquee_ph': 'Type a message to scroll on all phones', 'console.marquee_send': 'Send', 'console.marquee_clear': 'Clear',
       'console.marquee_sent': 'Showing on all phones ✓', 'console.marquee_err': 'Could not send — try again', 'console.marquee_cleared': 'Cleared',
+      'console.seek_label': 'Seek', 'console.mute_all': '🔇 Mute all phones', 'console.unmute_all': '🔈 Unmute all phones',
     },
     pl: {
       'console.play.idle': '▶ Włącz pokaz świateł ', 'console.play.loading': '● Uruchamiam… ', 'console.play.playing': '⏸ Wstrzymaj pokaz ', 'console.play.paused': '▶ Wznów pokaz ',
@@ -183,6 +184,7 @@
       'console.marquee_h': '📢 Wiadomość przewijana', 'console.marquee_sub': 'Tekst na żywo, który przewija się na każdym telefonie w tym pokazie — zapowiedz utwór, imię, pozdrowienie. Zostaw puste i wyczyść, by usunąć. (Sam tekst — nigdy nie wpływa na światła.)',
       'console.marquee_ph': 'Wpisz wiadomość do przewijania na telefonach', 'console.marquee_send': 'Wyślij', 'console.marquee_clear': 'Wyczyść',
       'console.marquee_sent': 'Wyświetlam na wszystkich telefonach ✓', 'console.marquee_err': 'Nie udało się wysłać — spróbuj ponownie', 'console.marquee_cleared': 'Wyczyszczono',
+      'console.seek_label': 'Przewiń', 'console.mute_all': '🔇 Wycisz wszystkie telefony', 'console.unmute_all': '🔈 Włącz dźwięk wszędzie',
     },
   };
   // merge console keys into the four langs; es/fr mirror EN (console is chrome, not legal copy)

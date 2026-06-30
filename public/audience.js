@@ -274,6 +274,7 @@
       if (mq && inner) { if (!txt) { mq.classList.add('hidden'); inner.textContent = ''; } else { inner.textContent = txt; mq.classList.remove('hidden'); } }
       return;
     }
+    if (m.t === 'muteAll') { globalMuted = !!m.muted; applyMuteState(); return; } // round 13 (pt 8): operator muted/unmuted every phone (lights keep running)
     if (m.t === 'preset') {
       if (m.channel === 'torch') {                 // round 8B: autonomous torch channel — never touches the screen
         if (m.type === 'off' || !P || !P.TORCH_PRESETS || !P.TORCH_PRESETS[m.type]) { torchPreset = null; window.__cls.torch.preset = null; window.__cls.torch.epoch = m.epoch | 0; return; }
@@ -306,10 +307,11 @@
     if (!audio) return;
     if (runState.loop && timeline && timeline.durationMs) audio.startLoop(T0, timeline.durationMs);
     else audio.start(T0);
+    applyMuteState(); // round 13 (pt 8): respect a global mute that was set before this phone opted into sound
   }
 
   // ---- per-phone synchronized music ----
-  var muted = false;
+  var muted = false, globalMuted = false; // local (this browser) + global (operator muted all phones)
   function showAudioBtn() {
     if (!audioBtn) return;
     if (ROOM || DEMO) {                               // round 10: music auto-on -> the button is a MUTE toggle
@@ -353,10 +355,16 @@
     audioBtn.disabled = false;
     audioBtn.textContent = muted ? i18n.t('audio_unmute') : i18n.t('audio_mute');
   }
+  // round 13 (pt 8): GLOBAL mute (the operator muted every phone) composes with the LOCAL mute — either
+  // one silences this phone. Lights keep running; only the gain changes.
+  function applyMuteState() {
+    var off = globalMuted || muted;
+    if (audio && audio.setVolume) audio.setVolume(off ? 0 : 0.85);
+    window.__cls.audio.muted = off; window.__cls.audio.globalMuted = globalMuted;
+  }
   function toggleMute() {
     muted = !muted;
-    if (audio) audio.setVolume(muted ? 0 : 0.85);
-    window.__cls.audio.muted = muted;
+    applyMuteState();
     updateMuteBtn();
   }
   // Studio room: build + resume the AudioContext INSIDE the join tap (iOS autoplay), mark audio on.

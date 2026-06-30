@@ -141,6 +141,27 @@
     if (window.__opAudio) window.__opAudio.muted = consoleMuted;
     $('muteBtn').textContent = consoleMuted ? tr('console.unmute', '🔇 Unmute music') : tr('console.mute', '🔊 Mute music');
   });
+  // round 13 (pt 8): GLOBAL mute — silence the music on EVERY phone (distinct from the local mute above).
+  var allMuted = false;
+  if ($('muteAllBtn')) $('muteAllBtn').addEventListener('click', function () {
+    allMuted = !allMuted;
+    api('/api/operator/mute-all', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ muted: allMuted }) });
+    $('muteAllBtn').textContent = allMuted ? tr('console.unmute_all', '🔈 Unmute all phones') : tr('console.mute_all', '🔇 Mute all phones');
+    ga('mute_all', { muted: allMuted });
+  });
+  // round 13 (pt 7): SEEK slider — jump the music+lights to any position (range = 0..1000 permille of dur).
+  var seekDurMs = 0, seekDragging = false;
+  function fmtMs(ms) { ms = Math.max(0, ms | 0); var s = Math.floor(ms / 1000); return Math.floor(s / 60) + ':' + ('0' + (s % 60)).slice(-2); }
+  function seekSetDur(ms) { seekDurMs = Number(ms) || 0; var s = $('seek'); if (s) s.disabled = !(seekDurMs > 0 && (curState === 'running' || curState === 'paused')); }
+  function seekTick() {
+    var s = $('seek'); if (!s || seekDragging || !seekDurMs) return;
+    var pos = (typeof consolePos === 'function') ? consolePos() : null;
+    if (pos != null && pos >= 0) { s.value = Math.round(pos / seekDurMs * 1000); if ($('seekVal')) $('seekVal').textContent = fmtMs(pos) + ' / ' + fmtMs(seekDurMs); }
+  }
+  if ($('seek')) {
+    $('seek').addEventListener('input', function () { seekDragging = true; if ($('seekVal')) $('seekVal').textContent = fmtMs(Number($('seek').value) / 1000 * seekDurMs) + ' / ' + fmtMs(seekDurMs); });
+    $('seek').addEventListener('change', function () { seekDragging = false; var off = Math.round(Number($('seek').value) / 1000 * seekDurMs); tx('seek', { offsetMs: off }); });
+  }
 
   // round 12 (pt 4): a LIVE scrolling-marquee control on BOTH consoles. api() rewrites the path per
   // session: /operator -> /api/operator/marquee (hub.setMarquee('main') -> the owner's invited audience),
@@ -245,6 +266,7 @@
     curState = st.status;
     if ($('state')) $('state').textContent = tr('console.state.' + st.status, st.status);
     updateReactHint();
+    if (typeof seekSetDur === 'function') seekSetDur(seekDurMs); // round 13 (pt 7): enable/disable seek on state change
     // GA: one chokepoint for show start/stop — covers GO/resume/stop/blackout/track-end, personal+public.
     if (st.status === 'running' && prevState !== 'running') gaShowStarted(armedId);
     else if (st.status !== 'running' && prevState === 'running') gaShowStopped();
@@ -339,7 +361,7 @@
     if (ws && ws.readyState === 1) ws.send(JSON.stringify({ t: 'op', cmd: 'arm', trackId: id }));
     // round 13 (pt 4): the personal operator isn't a room audience, so fetch the armed track's cues
     // for the Live preview (the public console gets them via the {t:'timeline'} room broadcast).
-    if (typeof id === 'number') api('/api/operator/timeline/' + id).then(function (r) { return r.ok ? r.json() : null; }).then(function (tl) { if (armedId === id && tl) consoleTimeline = tl; }).catch(function () {});
+    if (typeof id === 'number') api('/api/operator/timeline/' + id).then(function (r) { return r.ok ? r.json() : null; }).then(function (tl) { if (armedId === id && tl) { consoleTimeline = tl; seekSetDur(tl.durationMs); } }).catch(function () {});
     $('armed').textContent = 'track #' + id + ' (lights ready, loading audio…)';
     loadState();
     // re-arm: drop the previous track's decoded buffer so the NEW one is fetched + decoded.
@@ -483,7 +505,7 @@
     // ---- public console: derive transport state from the room messages it receives ----
     if (m.t === 'welcome' || m.t === 'state') { if (m.state) { renderState({ status: m.state.status }); if (m.state.status === 'running' && m.state.T0 != null) { pubT0 = m.state.T0; lastT0 = m.state.T0; if (audio && soundOn) audio.start(pubT0); } } return; }
     if (m.t === 'index') { var n = Math.max(0, (m.total | 0) - 1); gaPeakUpdate(n); if ($('count2')) $('count2').textContent = n; if ($('countBig')) $('countBig').textContent = n; return; } // -1: the console itself is a member
-    if (m.t === 'timeline') { var chg = (m.trackId !== pubTrackId); pubTrackId = m.trackId; consoleTimeline = m.data || null; if (chg && soundOn && typeof m.trackId === 'number') reloadConsoleSound(m.trackId); return; } // round 13 (pt 4): keep the cues so the Live preview reacts to the REAL music
+    if (m.t === 'timeline') { var chg = (m.trackId !== pubTrackId); pubTrackId = m.trackId; consoleTimeline = m.data || null; seekSetDur(m.data && m.data.durationMs); if (chg && soundOn && typeof m.trackId === 'number') reloadConsoleSound(m.trackId); return; } // round 13 (pt 4/7): cues for the Live preview + seek range
     if (m.t === 'playlist') { // round 10: the room advanced (or mode changed) — follow now/next
       plMode = m.mode || plMode; plNow = m.nowId; plNext = m.nextId;
       if (m.nowId != null && m.nowId !== armedId) { armedId = m.nowId; loadPublic(); } else renderPlaylistCtl();
@@ -632,6 +654,7 @@
   function pvFrame(now) {
     requestAnimationFrame(pvFrame);
     mainPreviewFrame(); // round 11 (pt 7): the small Live preview under Start/Stop
+    seekTick();          // round 13 (pt 7): keep the seek slider following the play position
     if (!pvCtx || !PV || !activeType || !presetSchema || !presetSchema[activeType]) return;
     if (!pvCanvas.width || pvCanvas.width < 8) { pvCanvas.width = pvCanvas.clientWidth || 320; pvCanvas.height = 56; }
     if (pvT0 == null) { pvT0 = now; pvLast = now; }

@@ -23,6 +23,8 @@
       <button id="blackout" data-i18n="console.blackout">⬛ BLACKOUT ALL</button>
     </div>
     <button id="muteBtn" class="ghost reveal hidden" style="width:auto;margin-top:8px">🔊 Mute music</button>
+    <button id="muteAllBtn" class="ghost reveal" data-feature="transport" data-i18n="console.mute_all" style="width:auto;margin-top:8px;margin-left:8px">🔇 Mute all phones</button>
+    <div class="nudge reveal" id="seekRow" data-feature="transport" style="margin-top:10px"><span data-i18n="console.seek_label" style="min-width:64px">Seek</span><input type="range" id="seek" min="0" max="1000" value="0" step="1" style="flex:1" disabled><span id="seekVal" class="muted" style="min-width:84px;text-align:right">0:00</span></div>
     <p class="reveal" style="margin-top:8px"><span data-i18n="console.armed_label">Armed:</span> <b id="armed">—</b> · <span data-i18n="console.state_label">State:</span> <span class="pill" id="state">idle</span></p>
     <div class="reveal" style="margin-top:8px">
       <span class="muted" style="font-size:.85rem" data-i18n="console.preview_label">Live preview — what the crowd's screen does right now (safety-governed):</span>

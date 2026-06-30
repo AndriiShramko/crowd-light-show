@@ -342,6 +342,11 @@ app.post('/api/operator/marquee', (req, reply) => {
   if (!requireOperator(req, reply)) return;
   return hub.setMarquee('main', String((req.body && req.body.text) || '').slice(0, 200));
 });
+// Round 13 (pt 7): seek the music/show to any position. (pt 8): mute the music on ALL phones.
+app.post('/api/console/seek', (req, reply) => { const room = consoleRoom(req, reply); if (!room) return; return hub.seek(room, Number(req.body && req.body.offsetMs)); });
+app.post('/api/operator/seek', (req, reply) => { if (!requireOperator(req, reply)) return; return hub.seek('main', Number(req.body && req.body.offsetMs)); });
+app.post('/api/console/mute-all', (req, reply) => { const room = consoleRoom(req, reply); if (!room) return; return hub.muteAll(room, !!(req.body && req.body.muted)); });
+app.post('/api/operator/mute-all', (req, reply) => { if (!requireOperator(req, reply)) return; return hub.muteAll('main', !!(req.body && req.body.muted)); });
 app.post('/api/console/preset', (req, reply) => {
   const room = consoleRoom(req, reply); if (!room) return;
   const channel = (req.body && req.body.channel) === 'torch' ? 'torch' : 'screen';
@@ -867,6 +872,8 @@ wss.on('connection', (ws) => {
       else if (c === 'resume') hub.resume();
       else if (c === 'stop') hub.stop();
       else if (c === 'blackout') hub.blackout();
+      else if (c === 'seek') hub.seek('main', Number(m.offsetMs)); // round 13 (pt 7)
+      else if (c === 'mute-all') hub.muteAll('main', !!m.muted);   // round 13 (pt 8)
     }
   });
   ws.on('close', () => {
