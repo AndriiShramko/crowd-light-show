@@ -47,6 +47,40 @@
   var demoMode = false, demoT0 = 0, demoLoopMs = 0, demoHasAudio = false; // landing demo (loops the admin track)
   var renderRunning = false; // the rAF loop starts once and survives leave()/rejoin
 
+  // ---- round 11 (phase D): robustness. ONE reconnect controller + SINGLETON timers + crash guards.
+  // The server fully rehydrates a freshly-connected phone (welcome+state+preset+timeline+index), and
+  // the show runs locally off the synced clock, so a reconnect just re-runs connect(). Every retry/
+  // timer routes through here so visibility/online/offline can't triple-fire a storm (= the crash).
+  var reconnectTimer = null, resyncTimer = null, pingTimer = null, reconnectAttempts = 0;
+  window.__cls.errors = 0; window.__cls.reconnects = 0; window.__cls.connectAttempts = 0; window.__cls.wsState = -1; window.__cls.flashCount = 0; window.__cls.timers = 0;
+  function setTimerCount() { window.__cls.timers = (pingTimer ? 1 : 0) + (resyncTimer ? 1 : 0) + (reconnectTimer ? 1 : 0); }
+  function noteError() { window.__cls.errors++; if (window.__cls.errors > 50) window.__cls.degradedErr = true; } // past a threshold: stop trusting, don't loop
+  window.addEventListener('error', function () { noteError(); }); // count; the rAF re-arm + try/catch already keep the loop alive
+  window.addEventListener('unhandledrejection', function (e) { noteError(); try { if (e && e.preventDefault) e.preventDefault(); } catch (x) {} }); // suppress the flood that wedges the tab
+  // Record a flash into a CAPPED ring-buffer (a multi-hour show would otherwise grow the array
+  // unbounded -> memory pressure -> crash). flashCount is a monotonic counter the harness reads.
+  function recordFlash(epoch, pos) {
+    window.__cls.flashCount++;
+    var fl = window.__cls.flashes; fl.push({ epoch: epoch, pos: pos, wall: performance.timeOrigin + performance.now() });
+    if (fl.length > 200) fl.shift();
+  }
+  function clearReconnect() { if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; setTimerCount(); } }
+  function scheduleReconnect() {
+    if (!window.__cls.started) return;          // user left -> never reconnect
+    if (reconnectTimer) return;                 // already scheduled (debounce — no storm)
+    var delay = Math.min(500 * Math.pow(2, reconnectAttempts), 15000) + Math.random() * 500;
+    reconnectAttempts++;
+    reconnectTimer = setTimeout(function () { reconnectTimer = null; setTimerCount(); connect(); }, delay);
+    setTimerCount();
+  }
+  function reconnectNow() {                      // online/visibility: skip the backoff wait, ONE path
+    if (!window.__cls.started) return;
+    if (ws && ws.readyState === 1) return;       // already connected
+    clearReconnect(); connect();
+  }
+  window.addEventListener('online', function () { if (window.__cls.started) reconnectNow(); });
+  window.addEventListener('offline', function () { if (window.__cls.started) { setStatus('st_conn'); clearReconnect(); } });
+
   var isAndroid = /Android/i.test(navigator.userAgent);
   var isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
   // iOS has NO web torch API (WebKit) -> torch impossible; Android may have it (camera LED).
@@ -70,11 +104,11 @@
   if (AUTO) { agree.checked = true; joinScreen.disabled = false; setTimeout(function () { join(false); }, 50); }
 
   document.addEventListener('visibilitychange', function () {
-    if (!document.hidden && window.__cls.started) {
-      acquireWake();
-      if (clock) { clock.resync(); resyncBurst(); } // froze while backgrounded — re-converge (stays dark until ready)
-      if (audio && audioOn) audio.resume();
-    }
+    if (document.hidden || !window.__cls.started) return;
+    acquireWake();
+    if (!ws || ws.readyState !== 1) { reconnectNow(); return; } // socket died while backgrounded -> ONE reconnect path
+    if (clock) { clock.resync(); resyncBurst(); } // froze while backgrounded — re-converge (stays dark until ready)
+    if (audio && audioOn) audio.resume();
   });
 
   // Web pages CANNOT set screen brightness (no API on iOS/Android) — and auto-brightness
@@ -113,25 +147,42 @@
     if (!renderRunning) { renderRunning = true; requestAnimationFrame(render); } // start once; survives rejoin
   }
 
-  // A short burst of pings (join, and after a background-resume) to converge fast.
+  // A short burst of pings (join, and after a background-resume) to converge fast. SINGLETON:
+  // a second burst clears the first, so reconnects/visibility can't stack 80ms intervals.
   function resyncBurst() {
-    var n = 0; var p = setInterval(function () {
+    if (resyncTimer) { clearInterval(resyncTimer); resyncTimer = null; }
+    var n = 0;
+    resyncTimer = setInterval(function () {
       if (!ws || ws.readyState !== 1) return;
-      clock.ping(); if (++n >= 14) clearInterval(p); // ClockSync is "ready" at >=8 clean samples
+      if (clock) clock.ping(); if (++n >= 14) { clearInterval(resyncTimer); resyncTimer = null; setTimerCount(); } // ready at >=8 clean samples
     }, 80);
+    setTimerCount();
+  }
+  // SINGLETON steady 20s re-sync (was created inside ws.onopen -> stacked one per reconnect).
+  function startSteadyPing() {
+    if (pingTimer) { clearInterval(pingTimer); pingTimer = null; }
+    pingTimer = setInterval(function () { if (ws && ws.readyState === 1 && clock) clock.ping(); }, 20000);
+    setTimerCount();
   }
   function connect() {
+    window.__cls.connectAttempts++;
+    // reentrant-safe: detach the old socket so its late onclose can't start a SECOND reconnect chain.
+    if (ws) { try { ws.onopen = ws.onclose = ws.onerror = ws.onmessage = null; ws.close(); } catch (e) {} ws = null; }
     var proto = location.protocol === 'https:' ? 'wss' : 'ws';
-    ws = new WebSocket(proto + '://' + location.host + '/ws');
+    try { ws = new WebSocket(proto + '://' + location.host + '/ws'); }
+    catch (e) { noteError(); scheduleReconnect(); return; } // never throw out of connect (offline open)
+    window.__cls.wsState = 0;
     clock = new ClockSync(function (o) { try { ws.send(JSON.stringify(o)); } catch (e) {} });
     ws.onopen = function () {
+      window.__cls.wsState = 1;
+      if (reconnectAttempts > 0) window.__cls.reconnects++; // a drop was recovered
+      reconnectAttempts = 0;
       if (audio) audio.clock = clock; // wire the freshly-created synced clock into an AudioSync built in the join tap (room/demo)
+      if (clock) clock.resync();      // hold dark until reconverged (a gap left the offset stale)
       ws.send(JSON.stringify({ t: 'hello', role: 'audience', room: ROOM || undefined, platform: isAndroid ? 'android' : (/iPhone|iPad|iPod/i.test(navigator.userAgent) ? 'ios' : 'other') }));
       setStatus('st_sync');
       resyncBurst();
-      // Steady re-sync every 20s — cheap (10x fewer frames than 3s at stadium scale),
-      // still < the 25s server ping and < cellular NAT timeout. Drift over 20s is sub-ms.
-      setInterval(function () { if (ws.readyState === 1) clock.ping(); }, 20000);
+      startSteadyPing();              // SINGLETON (was a fresh setInterval per onopen -> stacked on every reconnect)
       if (DEMO) {
         fetch('/api/demo').then(function (r) { return r.json(); }).then(function (d) {
           timeline = d.timeline; demoT0 = d.T0; demoMode = true; demoLoopMs = d.timeline.durationMs; demoHasAudio = !!d.hasAudio;
@@ -148,13 +199,19 @@
       if (JITTER > 0 && ev.data.indexOf('"sync"') < 0) { setTimeout(function () { onMsg(ev.data); }, Math.random() * JITTER); }
       else onMsg(ev.data);
     };
-    ws.onclose = function () { if (window.__cls.started) setStatus('st_conn'); /* timeline still runs locally */ };
-    ws.onerror = function () {};
+    ws.onclose = function () {
+      window.__cls.wsState = 3;
+      if (pingTimer) { clearInterval(pingTimer); pingTimer = null; setTimerCount(); } // stop pinging a dead socket
+      if (!window.__cls.started) return;   // user left via leave() -> do not reconnect
+      setStatus('st_conn');                // timeline keeps running locally off the synced clock
+      ws = null; scheduleReconnect();      // auto-reconnect with bounded backoff (server rehydrates on reopen)
+    };
+    ws.onerror = function () { noteError(); /* onclose follows and schedules the reconnect */ };
   }
 
   function onMsg(raw) {
     var m; try { m = JSON.parse(raw); } catch (e) { return; }
-    if (m.t === 'full') { window.__cls.full = true; setStatus('st_full'); try { ws.close(); } catch (e) {} setTimeout(connect, 3000 + Math.random() * 5000); return; } // venue full: backoff+jitter retry (no retry storm)
+    if (m.t === 'full') { window.__cls.full = true; setStatus('st_full'); reconnectAttempts = 5; try { ws.close(); } catch (e) {} return; } // venue full: onclose -> scheduleReconnect with a long (~15s) backoff (ONE path, no storm)
     if (m.t === 'sync') { clock.onReply(m.c0, m.s1); window.__cls.offset = clock.offset; window.__cls.synced = clock.ready; window.__cls.degraded = clock.degraded; window.__cls.quality = clock.quality; window.__cls.rtt = clock.rtt; if (clock.ready && runState.status === 'idle') setStatus('st_wait'); return; }
     if (m.t === 'welcome' || m.t === 'state') { if (m.state) applyState(m.state); return; }
     if (m.t === 'timeline') {
@@ -311,7 +368,8 @@
   }
 
   function render() {
-    requestAnimationFrame(render);
+    requestAnimationFrame(render); // re-arm FIRST so a throw below never kills the loop
+    try {
     window.__cls.ticks = (window.__cls.ticks || 0) + 1;
     var synced = !!(clock && clock.ready); window.__cls.synced = synced;
     var finalRgb = [0, 0, 0], flum = 0, pos = -1, playing = false, epochNow = runState.epoch;
@@ -362,12 +420,13 @@
     }
     if (playing) {
       if (flum < 0.25) flashArmed = true;
-      else if (flum >= 0.6 && flashArmed) { flashArmed = false; window.__cls.flashes.push({ epoch: epochNow, pos: Math.round(pos), wall: performance.timeOrigin + performance.now() }); }
+      else if (flum >= 0.6 && flashArmed) { flashArmed = false; recordFlash(epochNow, Math.round(pos)); }
     }
     prevLum = flum;
     window.__cls.lastPos = Math.round(pos); window.__cls.maxLum = Math.max(window.__cls.maxLum || 0, flum);
     driveTorchChannel(dt, synced, musicLevel.level);
     if ((++waveTick % 5) === 0) { drawWave(playing && timeline ? pos : -1); if (DIAG) updateDiag(pos); }
+    } catch (e) { noteError(); /* this frame degrades to whatever was last painted; the loop survives */ }
   }
 
   // ---- TORCH CHANNEL (round 8B): autonomous from the screen. Computes the torch intensity
@@ -476,4 +535,7 @@
 
   // expose for harness control
   window.__clsLeave = leave;
+  window.__clsToggleMute = toggleMute; // round 11: assert mute-with-no-audio never throws
+  window.__clsRecordFlash = recordFlash; // round 11: exercise the flash ring-buffer cap deterministically
+  window.__clsDropWs = function () { try { if (ws) ws.close(); } catch (e) {} }; // round 11: simulate a radio drop (Playwright setOffline can't kill an open WS)
 })();

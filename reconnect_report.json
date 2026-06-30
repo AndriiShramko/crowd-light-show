@@ -1,0 +1,21 @@
+{
+  "base": "http://localhost:3030",
+  "after": {
+    "synced": true,
+    "rec": 1,
+    "preset": "pulse",
+    "wsState": 1
+  },
+  "a1": {
+    "att": 6,
+    "err": 5,
+    "ticks": 785,
+    "timers": 1
+  },
+  "cap": {
+    "len": 200,
+    "count": 250
+  },
+  "timers": 1,
+  "fails": []
+}
