@@ -240,8 +240,11 @@ app.get('/api/demo', () => {
   const d = readValidatedDefaults();
   let torch = null;
   if (d.allow_torch) {
-    const base = d.torch || { type: DEFAULT_TORCH, params: {} };
-    const v = validateTorchPreset(base.type, base.params || {});
+    // The DEMO is a showcase, so use the preset's OWN lively defaults (empty params -> reactive
+    // gain), not the owner's room tuning which may be flattened (a low gain would leave the LED
+    // solid-on instead of pulsing). Honour the owner's chosen TYPE, fresh reactive params.
+    const type = (d.torch && d.torch.type) || DEFAULT_TORCH;
+    const v = validateTorchPreset(type, {});
     if (v.ok) torch = { type: v.type, params: v.params, startedAt: DEMO_T0, epoch: 0 };
   }
   const t = demoTrack();
