@@ -52,6 +52,12 @@
   }
 
   var $ = function (id) { return document.getElementById(id); };
+  // round 11 (pt 20): console i18n. CLSI18N (site-i18n.js) is the SHARED layer — the same cls_lang
+  // the visitor picked on the landing carries through. tr() returns the active-language string,
+  // falling back to the English literal if CLSI18N is absent or the key is missing (so the console
+  // is never broken by i18n). Static chrome carries data-i18n (applied by site-i18n.js); only the
+  // JS-driven dynamic strings (Start/Pause, mute, state) go through tr() + the langchange re-render.
+  function tr(key, fallback) { try { if (window.CLSI18N) { var v = window.CLSI18N.t(key); if (v) return v; } } catch (e) {} return fallback; }
   function api(path, opts) {
     opts = opts || {}; opts.headers = Object.assign({ Authorization: 'Bearer ' + TOKEN }, opts.headers || {});
     // A personal-mode path /api/operator/X maps to the public console /api/console/X.
@@ -82,11 +88,11 @@
       var jb = $('joinBig'); if (jb) jb.textContent = ju;
     }
     if (PUBLIC) {
-      var title = $('consoleTitle'); if (title) title.textContent = (S.brand || 'Light Show') + ' — live console';
-      var pw = $('pubWelcome'); if (pw) { pw.textContent = S.welcome || 'Tap “Start Light Show”, then share the code so phones join — they hear the music automatically. It is free; anyone can run their own.'; pw.classList.remove('hidden'); }
+      var title = $('consoleTitle'); if (title) title.textContent = (S.brand || 'Light Show') + tr('console.title_suffix', ' — live console');
+      var pw = $('pubWelcome'); if (pw) { pw.textContent = S.welcome || tr('console.welcome_default', 'Tap “Start Light Show”, then share the code so phones join — they hear the music automatically. It is free; anyone can run their own.'); pw.classList.remove('hidden'); }
       var pcc = $('pubCount'); if (pcc) pcc.classList.remove('hidden');
       var ph = $('playlistHint'); if (ph) ph.classList.remove('hidden');
-      if (FEAT.upload) { var ub = $('upload'); if (ub) ub.textContent = 'Use my music'; }
+      if (FEAT.upload) { var ub = $('upload'); if (ub) ub.textContent = tr('console.use_my_music', 'Use my music'); }
       ['player', 'soundBtn'].forEach(function (id) { var e = $(id); if (e) e.classList.add('hidden'); }); // dead native <audio> + old sound btn
       var con = $('opConsole'); if (con) con.classList.add('pre-start'); // progressive disclosure: only Start shows until first Start (pt 2)
       var ps = $('playSound'); if (ps) ps.classList.remove('hidden');
@@ -104,7 +110,8 @@
   function setPlayUI(state) {
     playUiState = state; if (window.__opAudio) window.__opAudio.playUiState = state;
     var ps = $('playSound'), spin = $('playSpin'); if (!ps) return;
-    var txt = { idle: '▶ Start Light Show ', loading: '● Starting… ', playing: '⏸ Pause Light Show ', paused: '▶ Resume Light Show ' }[state] || '▶ Start Light Show ';
+    var fb = { idle: '▶ Start Light Show ', loading: '● Starting… ', playing: '⏸ Pause Light Show ', paused: '▶ Resume Light Show ' }[state] || '▶ Start Light Show ';
+    var txt = tr('console.play.' + state, fb);
     if (ps.childNodes[0]) ps.childNodes[0].nodeValue = txt; else ps.textContent = txt;
     ps.disabled = (state === 'loading');
     if (spin) spin.classList[state === 'loading' ? 'remove' : 'add']('hidden');
@@ -131,7 +138,7 @@
     if (audio && audio.setVolume) audio.setVolume(consoleMuted ? 0 : 0.85);
     if (player) player.muted = consoleMuted || player.muted;
     if (window.__opAudio) window.__opAudio.muted = consoleMuted;
-    $('muteBtn').textContent = consoleMuted ? '🔇 Unmute music' : '🔊 Mute music';
+    $('muteBtn').textContent = consoleMuted ? tr('console.unmute', '🔇 Unmute music') : tr('console.mute', '🔊 Mute music');
   });
 
   // ===================== personal: playlist + applications =====================
@@ -217,7 +224,7 @@
   function renderState(st) {
     var prevState = curState;
     curState = st.status;
-    if ($('state')) $('state').textContent = st.status;
+    if ($('state')) $('state').textContent = tr('console.state.' + st.status, st.status);
     updateReactHint();
     // GA: one chokepoint for show start/stop — covers GO/resume/stop/blackout/track-end, personal+public.
     if (st.status === 'running' && prevState !== 'running') gaShowStarted(armedId);
@@ -762,6 +769,21 @@
     pv.flashesPerSec = pv.cross.length;
   }
   requestAnimationFrame(tpvFrame);
+
+  // round 11 (pt 20): re-render the JS-driven dynamic strings when the user switches language.
+  // The static chrome (data-i18n) is re-applied by site-i18n.js itself; here we only refresh the
+  // labels that JS owns (Start/Pause/Resume, mute, the state pill, the public title/welcome).
+  window.addEventListener('cls-langchange', function () {
+    try {
+      setPlayUI(playUiState);
+      if ($('muteBtn')) $('muteBtn').textContent = consoleMuted ? tr('console.unmute', '🔇 Unmute music') : tr('console.mute', '🔊 Mute music');
+      if ($('state')) $('state').textContent = tr('console.state.' + curState, curState);
+      if (PUBLIC) {
+        var title = $('consoleTitle'); if (title) title.textContent = (S.brand || 'Light Show') + tr('console.title_suffix', ' — live console');
+        var pw = $('pubWelcome'); if (pw && !S.welcome) pw.textContent = tr('console.welcome_default', pw.textContent);
+      }
+    } catch (e) {}
+  });
 
   // ---- boot ----
   window.__opMode = { mode: MODE, room: ROOM, features: FEAT }; // test seam

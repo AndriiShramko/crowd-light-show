@@ -1,5 +1,5 @@
 {
-  "base": "http://127.0.0.1:3009",
+  "base": "http://localhost:3030",
   "cta": {
     "count": 1,
     "labels": [
@@ -10,12 +10,12 @@
     "quiet": 2
   },
   "share": {
-    "wa": "https://wa.me/?text=Join%20my%20live%20light%20show%20%E2%80%94%20our%20phones%20light%20up%20together%20to%20the%20music%3A%20http%3A%2F%2F127.0.0.1%3A3009%2Fjoin%3Froom%3D74227271b2609832%20%20%C2%B7%20%20Want%20your%20own%3F%20It%20is%20free%3A%20http%3A%2F%2F127.0.0.1%3A3009%2F%3Futm%3Dshare",
-    "tg": "https://t.me/share/url?url=http%3A%2F%2F127.0.0.1%3A3009%2Fjoin%3Froom%3D74227271b2609832&text=Join%20my%20live%20light%20show%20%E2%80%94%20phones%20light%20up%20together%20%F0%9F%8E%86",
-    "x": "https://twitter.com/intent/tweet?text=Join%20my%20live%20light%20show%20%E2%80%94%20phones%20light%20up%20together%20%F0%9F%8E%86&url=http%3A%2F%2F127.0.0.1%3A3009%2Fjoin%3Froom%3D74227271b2609832",
-    "fb": "https://www.facebook.com/sharer/sharer.php?u=http%3A%2F%2F127.0.0.1%3A3009%2F%3Futm%3Dshare",
-    "mail": "mailto:?subject=Join%20my%20live%20light%20show&body=Join%20my%20live%20light%20show%20%E2%80%94%20our%20phones%20light%20up%20together%20to%20the%20music%3A%20http%3A%2F%2F127.0.0.1%3A3009%2Fjoin%3Froom%3D74227271b2609832%20%20%C2%B7%20%20Want%20your%20own%3F%20It%20is%20free%3A%20http%3A%2F%2F127.0.0.1%3A3009%2F%3Futm%3Dshare",
-    "own": "http://127.0.0.1:3009/?utm=share",
+    "wa": "https://wa.me/?text=Join%20my%20live%20light%20show%20%E2%80%94%20our%20phones%20light%20up%20together%20to%20the%20music%3A%20http%3A%2F%2Flocalhost%3A3030%2Fjoin%3Froom%3D7a5264996c3c6568%20%20%C2%B7%20%20Want%20your%20own%3F%20It%20is%20free%3A%20http%3A%2F%2Flocalhost%3A3030%2F%3Futm%3Dshare",
+    "tg": "https://t.me/share/url?url=http%3A%2F%2Flocalhost%3A3030%2Fjoin%3Froom%3D7a5264996c3c6568&text=Join%20my%20live%20light%20show%20%E2%80%94%20phones%20light%20up%20together%20%F0%9F%8E%86",
+    "x": "https://twitter.com/intent/tweet?text=Join%20my%20live%20light%20show%20%E2%80%94%20phones%20light%20up%20together%20%F0%9F%8E%86&url=http%3A%2F%2Flocalhost%3A3030%2Fjoin%3Froom%3D7a5264996c3c6568",
+    "fb": "https://www.facebook.com/sharer/sharer.php?u=http%3A%2F%2Flocalhost%3A3030%2F%3Futm%3Dshare",
+    "mail": "mailto:?subject=Join%20my%20live%20light%20show&body=Join%20my%20live%20light%20show%20%E2%80%94%20our%20phones%20light%20up%20together%20to%20the%20music%3A%20http%3A%2F%2Flocalhost%3A3030%2Fjoin%3Froom%3D7a5264996c3c6568%20%20%C2%B7%20%20Want%20your%20own%3F%20It%20is%20free%3A%20http%3A%2F%2Flocalhost%3A3030%2F%3Futm%3Dshare",
+    "own": "http://localhost:3030/?utm=share",
     "visible": true
   },
   "fails": []

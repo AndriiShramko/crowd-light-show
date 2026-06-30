@@ -1,0 +1,26 @@
+{
+  "base": "http://localhost:3030",
+  "en": {
+    "switcher": 4,
+    "start": "▶ Start Light Show ",
+    "showTitle": "1 · Show control",
+    "joinTitle": "3 · Join QR",
+    "htmlLang": "en"
+  },
+  "pl": {
+    "start": "▶ Włącz pokaz świateł ",
+    "showTitle": "1 · Sterowanie pokazem",
+    "stop": "⏹ Stop",
+    "htmlLang": "pl",
+    "stored": "pl"
+  },
+  "joinPl": {
+    "title": "Światło z tłumu",
+    "lang": "pl"
+  },
+  "demoEn": {
+    "title": "Crowd Light Show",
+    "lang": "en"
+  },
+  "fails": []
+}

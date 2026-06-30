@@ -144,6 +144,44 @@
     },
   };
 
+  // ---- round 11 (pt 20): console strings. The /studio + /operator consoles now load this same
+  // layer so the language the visitor picked on the landing carries through (shared cls_lang key),
+  // with the floating EN/PL/ES/FR switcher. EN canonical, PL authoritative; ES/FR mirror EN (the
+  // console is operator chrome, not legal copy). The epilepsy/music-rights CONSENT text is NOT
+  // machine-translated here — it stays authoritative in its own page (i18n.js PL/EN).
+  var C = {
+    en: {
+      'console.play.idle': '▶ Start Light Show ', 'console.play.loading': '● Starting… ', 'console.play.playing': '⏸ Pause Light Show ', 'console.play.paused': '▶ Resume Light Show ',
+      'console.mute': '🔊 Mute music', 'console.unmute': '🔇 Unmute music',
+      'console.state.idle': 'idle', 'console.state.running': 'running', 'console.state.paused': 'paused', 'console.state.armed': 'armed',
+      'console.title_suffix': ' — live console', 'console.welcome_default': 'Tap “Start Light Show”, then share the code so phones join — they hear the music automatically. It is free; anyone can run their own.',
+      'console.use_my_music': 'Use my music',
+      'console.h.show': '1 · Show control', 'console.h.playlist': '2 · Playlist', 'console.h.join': '3 · Join QR', 'console.h.presets': '5 · Live presets — screen & flash', 'console.h.apps': '6 · Applications', 'console.h.pubcfg': '7 · Public console defaults',
+      'console.stop': '⏹ Stop', 'console.blackout': '⬛ BLACKOUT ALL',
+      'console.armed_label': 'Armed:', 'console.state_label': 'State:',
+      'console.preview_label': "Live preview — what the crowd's screen does right now (safety-governed):",
+      'console.joinurl_label': 'Join URL:', 'console.projector': 'Projector ⤢', 'console.refresh': '↻ Refresh',
+      'console.presets_title': 'Live presets', 'console.presets_sub': '— real-time; react to the music when a track plays',
+      'console.lang_hint': 'Interface language',
+    },
+    pl: {
+      'console.play.idle': '▶ Włącz pokaz świateł ', 'console.play.loading': '● Uruchamiam… ', 'console.play.playing': '⏸ Wstrzymaj pokaz ', 'console.play.paused': '▶ Wznów pokaz ',
+      'console.mute': '🔊 Wycisz muzykę', 'console.unmute': '🔇 Włącz muzykę',
+      'console.state.idle': 'bezczynny', 'console.state.running': 'gra', 'console.state.paused': 'pauza', 'console.state.armed': 'gotowy',
+      'console.title_suffix': ' — konsola na żywo', 'console.welcome_default': 'Naciśnij „Włącz pokaz świateł”, potem udostępnij kod, by telefony dołączyły — muzykę usłyszą automatycznie. To darmowe; każdy może uruchomić własny pokaz.',
+      'console.use_my_music': 'Użyj mojej muzyki',
+      'console.h.show': '1 · Sterowanie pokazem', 'console.h.playlist': '2 · Playlista', 'console.h.join': '3 · Kod QR dołączania', 'console.h.presets': '5 · Presety na żywo — ekran i lampa', 'console.h.apps': '6 · Zgłoszenia', 'console.h.pubcfg': '7 · Ustawienia konsoli publicznej',
+      'console.stop': '⏹ Stop', 'console.blackout': '⬛ ZGAŚ WSZYSTKO',
+      'console.armed_label': 'Załadowany:', 'console.state_label': 'Stan:',
+      'console.preview_label': 'Podgląd na żywo — co robi teraz ekran tłumu (z zabezpieczeniem):',
+      'console.joinurl_label': 'Adres dołączania:', 'console.projector': 'Projektor ⤢', 'console.refresh': '↻ Odśwież',
+      'console.presets_title': 'Presety na żywo', 'console.presets_sub': '— na żywo; reagują na muzykę, gdy gra utwór',
+      'console.lang_hint': 'Język interfejsu',
+    },
+  };
+  // merge console keys into the four langs; es/fr mirror EN (console is chrome, not legal copy)
+  for (var li = 0; li < LANGS.length; li++) { var L = LANGS[li], src = C[L] || C.en; for (var ck in src) { if (!T[L]) T[L] = {}; if (T[L][ck] == null) T[L][ck] = src[ck]; } }
+
   function pick() {
     var qs = new URLSearchParams(location.search).get('lang');
     if (qs && LANGS.indexOf(qs) >= 0) return qs;
@@ -168,6 +206,8 @@
     try { localStorage.setItem('cls_lang', l); } catch (e) {}
     try { var u = new URL(location.href); u.searchParams.set('lang', l); history.replaceState(null, '', u); } catch (e) {}
     apply();
+    // round 11 (pt 20): let JS-driven UIs (the consoles) re-render their dynamic strings on switch
+    try { window.dispatchEvent(new CustomEvent('cls-langchange', { detail: { lang: l } })); } catch (e) {}
   }
 
   function buildSwitcher() {

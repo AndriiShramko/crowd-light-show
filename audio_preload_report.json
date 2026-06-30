@@ -10,7 +10,7 @@
   },
   "afterTap": {
     "wanted": true,
-    "scheduled": false
+    "scheduled": true
   },
   "audioFetches": 1,
   "fails": []

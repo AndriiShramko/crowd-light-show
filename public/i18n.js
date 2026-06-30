@@ -31,9 +31,19 @@
       audio_btn: '🔊 Play the music on my phone too', audio_on: '🔊 Music on — in sync with the crowd', audio_connecting: '🔊 Connecting to music…', audio_mute: '🔊 Mute music', audio_unmute: '🔇 Unmute music', st_full: 'venue full — retrying…',
     },
   };
-  // The on-stage audience consent defaults to PL (a Polish event needs the PL epilepsy
-  // warning); the marketing DEMO (?demo=1) defaults to EN — it's the international "try it" flow.
-  var lang = (function () { try { return new URLSearchParams(location.search).get('demo') === '1' ? 'en' : 'pl'; } catch (e) { return 'pl'; } })();
+  // Language pick (round 11, pt 20): honor the SHARED cls_lang the visitor chose on the landing /
+  // console so it carries into the invite page, then persist it. Order: ?lang= > cls_lang > the
+  // PL/EN default. The on-stage consent defaults to PL (a Polish event needs the PL epilepsy
+  // warning); the marketing DEMO (?demo=1) defaults to EN. The audience consent is PL/EN
+  // authoritative, so an es/fr landing choice falls back to EN here (never machine-translated).
+  var lang = (function () {
+    try {
+      var qs = new URLSearchParams(location.search);
+      var url = qs.get('lang'); if (url === 'pl' || url === 'en') return url;
+      var ls = localStorage.getItem('cls_lang'); if (ls === 'pl' || ls === 'en') return ls; if (ls === 'es' || ls === 'fr') return 'en';
+      return qs.get('demo') === '1' ? 'en' : 'pl';
+    } catch (e) { return 'pl'; }
+  })();
   function t(k) { return (DICT[lang] && DICT[lang][k]) || (DICT.pl[k]) || k; }
   function apply() {
     document.documentElement.lang = lang;
@@ -41,7 +51,7 @@
       var k = el.getAttribute('data-t'); if (DICT[lang][k] != null) el.textContent = DICT[lang][k];
     });
   }
-  function set(l) { if (DICT[l]) { lang = l; apply(); } }
+  function set(l) { if (DICT[l]) { lang = l; try { localStorage.setItem('cls_lang', l); } catch (e) {} apply(); } }
   document.addEventListener('DOMContentLoaded', function () {
     apply();
     document.querySelectorAll('[data-lang]').forEach(function (a) {
