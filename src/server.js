@@ -16,6 +16,7 @@ import { hub, serverClock } from './show.js';
 import { notifyTelegram } from './notify.js';
 import { validatePreset, validateParam, PARAM_SCHEMA, PRESET_TYPES, DEFAULT_PRESET } from './presets.js';
 import { validateTorchPreset, validateTorchParam, TORCH_SCHEMA, TORCH_TYPES, DEFAULT_TORCH } from './presets.js';
+import { FX_NAMES, FX_DURATIONS, FX_LABELS } from './fx.js';
 
 // A built-in, always-looping demo light show so anyone can try it with zero setup
 // (the "Try it" QR / /join?demo=1). Synthetic, safety-clamped, ~24s loop.
@@ -315,6 +316,7 @@ app.get('/api/console/presets', (req, reply) => {
   return {
     types: PRESET_TYPES, schema: PARAM_SCHEMA, default: DEFAULT_PRESET, active: (r && r.preset) || null,
     torchTypes: TORCH_TYPES, torchSchema: TORCH_SCHEMA, torchDefault: DEFAULT_TORCH, torchActive: (r && r.torch) || null,
+    fxNames: FX_NAMES, fxDurations: FX_DURATIONS, fxLabels: FX_LABELS,
   };
 });
 app.get('/api/console/playlist', (req, reply) => {
@@ -342,6 +344,14 @@ app.post('/api/operator/marquee', (req, reply) => {
   if (!requireOperator(req, reply)) return;
   return hub.setMarquee('main', String((req.body && req.body.text) || '').slice(0, 200));
 });
+// Round 13 (pt 7): seek the music/show to any position. (pt 8): mute the music on ALL phones.
+app.post('/api/console/seek', (req, reply) => { const room = consoleRoom(req, reply); if (!room) return; return hub.seek(room, Number(req.body && req.body.offsetMs)); });
+app.post('/api/operator/seek', (req, reply) => { if (!requireOperator(req, reply)) return; return hub.seek('main', Number(req.body && req.body.offsetMs)); });
+app.post('/api/console/mute-all', (req, reply) => { const room = consoleRoom(req, reply); if (!room) return; return hub.muteAll(room, !!(req.body && req.body.muted)); });
+app.post('/api/operator/mute-all', (req, reply) => { if (!requireOperator(req, reply)) return; return hub.muteAll('main', !!(req.body && req.body.muted)); });
+// Round 13 (pt 5): fire a one-shot firework FX (validated name, no params -> no untrusted numeric input).
+app.post('/api/console/fx', (req, reply) => { const room = consoleRoom(req, reply); if (!room) return; const r = hub.triggerFx(room, String((req.body && req.body.name) || '')); if (!r.ok) return reply.code(400).send(r); return r; });
+app.post('/api/operator/fx', (req, reply) => { if (!requireOperator(req, reply)) return; const r = hub.triggerFx('main', String((req.body && req.body.name) || '')); if (!r.ok) return reply.code(400).send(r); return r; });
 app.post('/api/console/preset', (req, reply) => {
   const room = consoleRoom(req, reply); if (!room) return;
   const channel = (req.body && req.body.channel) === 'torch' ? 'torch' : 'screen';
@@ -780,6 +790,7 @@ app.get('/api/operator/presets', (req, reply) => {
     types: PRESET_TYPES, schema: PARAM_SCHEMA, default: DEFAULT_PRESET, active: hub.preset,
     // round 8B — autonomous torch channel catalog + its active preset
     torchTypes: TORCH_TYPES, torchSchema: TORCH_SCHEMA, torchDefault: DEFAULT_TORCH, torchActive: hub.torchPreset,
+    fxNames: FX_NAMES, fxDurations: FX_DURATIONS, fxLabels: FX_LABELS,
   };
 });
 // Switch preset on a channel ('screen' default | 'torch') — epoch++ -> instant flip, all in sync.
@@ -867,6 +878,8 @@ wss.on('connection', (ws) => {
       else if (c === 'resume') hub.resume();
       else if (c === 'stop') hub.stop();
       else if (c === 'blackout') hub.blackout();
+      else if (c === 'seek') hub.seek('main', Number(m.offsetMs)); // round 13 (pt 7)
+      else if (c === 'mute-all') hub.muteAll('main', !!m.muted);   // round 13 (pt 8)
     }
   });
   ws.on('close', () => {

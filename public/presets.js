@@ -130,7 +130,7 @@
       audioDepth: AUDIO_PARAMS.audioDepth, audioGain: AUDIO_PARAMS.audioGain, audioFloor: AUDIO_PARAMS.audioFloor, audioGamma: AUDIO_PARAMS.audioGamma } },
     rainbow_chase: { label: 'Rainbow Chase', spatial: true, params: {
       speed: { min: 0.02, max: 0.5, step: 0.01, def: 0.1, label: 'Speed' },
-      spread: { min: 0.2, max: 3, step: 0.05, def: 1.0, label: 'Spread' },
+      spread: { min: 0, max: 3, step: 0.05, def: 1.0, label: 'Spread' },
       dir: { min: -1, max: 1, step: 2, def: 1, label: 'Direction' },
       audioDepth: AUDIO_PARAMS.audioDepth, audioGain: AUDIO_PARAMS.audioGain, audioFloor: AUDIO_PARAMS.audioFloor, audioGamma: AUDIO_PARAMS.audioGamma } },
     ocean: { label: 'Ocean', spatial: false, params: {
@@ -213,6 +213,7 @@
     torchGain: { min: 1, max: 6, step: 0.1, def: 2.5, label: 'Flash strength' },
     torchFloor: { min: 0, max: 0.5, step: 0.01, def: 0.12, label: 'Flash floor' },
     torchGamma: { min: 0.4, max: 1.6, step: 0.05, def: 0.8, label: 'Flash curve' },
+    torchInvert: { min: 0, max: 1, step: 1, def: 0, label: 'Invert (loud→off, quiet→on)' }, // round 13 (pt 3): inverts the client-side AGC excite
   };
   var TORCH_SCHEMA = {
     off: { label: 'Off', params: {} },
@@ -223,7 +224,7 @@
       rate: { min: 0.5, max: 2.8, step: 0.1, def: 2.5, label: 'Rate (Hz)' },
       duty: { min: 0.1, max: 0.6, step: 0.05, def: 0.3, label: 'Density' } } },
     beat: { label: 'Beat (reactive)', params: {
-      torchDepth: TORCH_AUDIO.torchDepth, torchGain: TORCH_AUDIO.torchGain, torchFloor: TORCH_AUDIO.torchFloor, torchGamma: TORCH_AUDIO.torchGamma } },
+      torchDepth: TORCH_AUDIO.torchDepth, torchGain: TORCH_AUDIO.torchGain, torchFloor: TORCH_AUDIO.torchFloor, torchGamma: TORCH_AUDIO.torchGamma, torchInvert: TORCH_AUDIO.torchInvert } },
   };
   function torchDefaults(type) { var s = TORCH_SCHEMA[type]; if (!s) return {}; var o = {}; for (var k in s.params) o[k] = s.params[k].def; return o; }
   // On-device torch rate gate: <=1 ON edge per minFlashGap (>=357ms => <=2.8/s). Binary, stateful.

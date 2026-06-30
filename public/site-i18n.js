@@ -166,6 +166,8 @@
       'console.marquee_h': '📢 Scrolling message', 'console.marquee_sub': 'Live text that scrolls across every phone in this show — announce a song, a name, a shout-out. Leave blank and Clear to remove. (Text only — it never affects the lights.)',
       'console.marquee_ph': 'Type a message to scroll on all phones', 'console.marquee_send': 'Send', 'console.marquee_clear': 'Clear',
       'console.marquee_sent': 'Showing on all phones ✓', 'console.marquee_err': 'Could not send — try again', 'console.marquee_cleared': 'Cleared',
+      'console.seek_label': 'Seek', 'console.mute_all': '🔇 Mute all phones', 'console.unmute_all': '🔈 Unmute all phones',
+      'console.fx_h': '🎆 Special effects', 'console.fx_sub': 'One-tap firework bursts — a few seconds of synchronized flash across every phone (screen + flash), then the show resumes exactly where it was. Safety-clamped ≤3 flashes/s.', 'console.fx_err': 'Could not fire — try again',
     },
     pl: {
       'console.play.idle': '▶ Włącz pokaz świateł ', 'console.play.loading': '● Uruchamiam… ', 'console.play.playing': '⏸ Wstrzymaj pokaz ', 'console.play.paused': '▶ Wznów pokaz ',
@@ -183,6 +185,8 @@
       'console.marquee_h': '📢 Wiadomość przewijana', 'console.marquee_sub': 'Tekst na żywo, który przewija się na każdym telefonie w tym pokazie — zapowiedz utwór, imię, pozdrowienie. Zostaw puste i wyczyść, by usunąć. (Sam tekst — nigdy nie wpływa na światła.)',
       'console.marquee_ph': 'Wpisz wiadomość do przewijania na telefonach', 'console.marquee_send': 'Wyślij', 'console.marquee_clear': 'Wyczyść',
       'console.marquee_sent': 'Wyświetlam na wszystkich telefonach ✓', 'console.marquee_err': 'Nie udało się wysłać — spróbuj ponownie', 'console.marquee_cleared': 'Wyczyszczono',
+      'console.seek_label': 'Przewiń', 'console.mute_all': '🔇 Wycisz wszystkie telefony', 'console.unmute_all': '🔈 Włącz dźwięk wszędzie',
+      'console.fx_h': '🎆 Efekty specjalne', 'console.fx_sub': 'Wybuchy fajerwerków jednym dotknięciem — kilka sekund zsynchronizowanego błysku na każdym telefonie (ekran + lampa), potem pokaz wraca dokładnie tam, gdzie był. Zabezpieczone ≤3 błyski/s.', 'console.fx_err': 'Nie udało się — spróbuj ponownie',
     },
   };
   // merge console keys into the four langs; es/fr mirror EN (console is chrome, not legal copy)
@@ -225,9 +229,12 @@
       b.addEventListener('click', (function (l) { return function () { set(l); }; })(LANGS[i]));
       s.appendChild(b);
     }
-    var css = '#cls-lang{position:fixed;top:10px;right:10px;z-index:50;display:flex;gap:2px;background:rgba(10,12,20,.72);border:1px solid rgba(255,255,255,.14);border-radius:999px;padding:3px;backdrop-filter:blur(6px)}'
+    var css = '#cls-lang{position:fixed;top:10px;right:10px;z-index:60;display:flex;gap:2px;background:rgba(10,12,20,.72);border:1px solid rgba(255,255,255,.14);border-radius:999px;padding:3px;backdrop-filter:blur(6px)}'
       + '#cls-lang button{all:unset;cursor:pointer;font:600 12px/1 system-ui,sans-serif;color:#cfd6e6;padding:6px 9px;border-radius:999px;letter-spacing:.04em}'
       + '#cls-lang button:hover{color:#fff}#cls-lang button.on{background:#5a7bff;color:#fff}'
+      // round 13 (pt 9): on phones the landing's sticky top-nav has a CTA button in the same top-right
+      // corner — drop the language switcher just BELOW the header so it no longer overlaps it.
+      + '@media (max-width:680px){#cls-lang{top:84px;right:10px;padding:2px}#cls-lang button{padding:5px 7px;font-size:11px}}'
       + '@media print{#cls-lang{display:none}}';
     var st = document.createElement('style'); st.textContent = css; document.head.appendChild(st);
     document.body.appendChild(s);

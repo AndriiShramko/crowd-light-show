@@ -171,7 +171,7 @@ export const PARAM_SCHEMA = {
     label: 'Rainbow Chase', spatial: true,
     params: {
       speed: { min: 0.02, max: 0.5, step: 0.01, def: 0.1, label: 'Speed' },
-      spread: { min: 0.2, max: 3, step: 0.05, def: 1.0, label: 'Spread' },
+      spread: { min: 0, max: 3, step: 0.05, def: 1.0, label: 'Spread' },
       dir: { min: -1, max: 1, step: 2, def: 1, label: 'Direction' },
       ...AUDIO_PARAMS,
     },
@@ -322,6 +322,7 @@ const TORCH_AUDIO = {
   torchGain: { min: 1, max: 6, step: 0.1, def: 2.5, label: 'Flash strength' },
   torchFloor: { min: 0, max: 0.5, step: 0.01, def: 0.12, label: 'Flash floor' },
   torchGamma: { min: 0.4, max: 1.6, step: 0.05, def: 0.8, label: 'Flash curve' },
+  torchInvert: { min: 0, max: 1, step: 1, def: 0, label: 'Invert (loud→off, quiet→on)' }, // round 13 (pt 3): inverts the client-side AGC excite
 };
 export const TORCH_SCHEMA = {
   off: { label: 'Off', params: {} },

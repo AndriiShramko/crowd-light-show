@@ -22,6 +22,7 @@
   var wantLiveAudio = false, lastAudioT0 = null;        // personal: drive audio start off the running-state echo
   var plMode = (DEFAULTS && DEFAULTS.playlist_mode) || 'all', plNow = null, plNext = null, plSelected = []; // round 10 playlist (public)
   var pubTracks = [];                                   // last-loaded public track list (for now/next titles + selected checkboxes)
+  var consoleTimeline = null, lastT0 = null;            // round 13 (pt 4): armed track's cues + running T0, so the Live preview reacts to the REAL music
   var player = document.getElementById('player');
 
   // ROUND 9 AUDIO FIX: the console's lights were already synced (T0 carries clock.offset+nudge),
@@ -140,6 +141,27 @@
     if (window.__opAudio) window.__opAudio.muted = consoleMuted;
     $('muteBtn').textContent = consoleMuted ? tr('console.unmute', '🔇 Unmute music') : tr('console.mute', '🔊 Mute music');
   });
+  // round 13 (pt 8): GLOBAL mute — silence the music on EVERY phone (distinct from the local mute above).
+  var allMuted = false;
+  if ($('muteAllBtn')) $('muteAllBtn').addEventListener('click', function () {
+    allMuted = !allMuted;
+    api('/api/operator/mute-all', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ muted: allMuted }) });
+    $('muteAllBtn').textContent = allMuted ? tr('console.unmute_all', '🔈 Unmute all phones') : tr('console.mute_all', '🔇 Mute all phones');
+    ga('mute_all', { muted: allMuted });
+  });
+  // round 13 (pt 7): SEEK slider — jump the music+lights to any position (range = 0..1000 permille of dur).
+  var seekDurMs = 0, seekDragging = false;
+  function fmtMs(ms) { ms = Math.max(0, ms | 0); var s = Math.floor(ms / 1000); return Math.floor(s / 60) + ':' + ('0' + (s % 60)).slice(-2); }
+  function seekSetDur(ms) { seekDurMs = Number(ms) || 0; var s = $('seek'); if (s) s.disabled = !(seekDurMs > 0 && (curState === 'running' || curState === 'paused')); }
+  function seekTick() {
+    var s = $('seek'); if (!s || seekDragging || !seekDurMs) return;
+    var pos = (typeof consolePos === 'function') ? consolePos() : null;
+    if (pos != null && pos >= 0) { s.value = Math.round(pos / seekDurMs * 1000); if ($('seekVal')) $('seekVal').textContent = fmtMs(pos) + ' / ' + fmtMs(seekDurMs); }
+  }
+  if ($('seek')) {
+    $('seek').addEventListener('input', function () { seekDragging = true; if ($('seekVal')) $('seekVal').textContent = fmtMs(Number($('seek').value) / 1000 * seekDurMs) + ' / ' + fmtMs(seekDurMs); });
+    $('seek').addEventListener('change', function () { seekDragging = false; var off = Math.round(Number($('seek').value) / 1000 * seekDurMs); tx('seek', { offsetMs: off }); });
+  }
 
   // round 12 (pt 4): a LIVE scrolling-marquee control on BOTH consoles. api() rewrites the path per
   // session: /operator -> /api/operator/marquee (hub.setMarquee('main') -> the owner's invited audience),
@@ -244,6 +266,7 @@
     curState = st.status;
     if ($('state')) $('state').textContent = tr('console.state.' + st.status, st.status);
     updateReactHint();
+    if (typeof seekSetDur === 'function') seekSetDur(seekDurMs); // round 13 (pt 7): enable/disable seek on state change
     // GA: one chokepoint for show start/stop — covers GO/resume/stop/blackout/track-end, personal+public.
     if (st.status === 'running' && prevState !== 'running') gaShowStarted(armedId);
     else if (st.status !== 'running' && prevState === 'running') gaShowStopped();
@@ -336,6 +359,9 @@
       return;
     }
     if (ws && ws.readyState === 1) ws.send(JSON.stringify({ t: 'op', cmd: 'arm', trackId: id }));
+    // round 13 (pt 4): the personal operator isn't a room audience, so fetch the armed track's cues
+    // for the Live preview (the public console gets them via the {t:'timeline'} room broadcast).
+    if (typeof id === 'number') api('/api/operator/timeline/' + id).then(function (r) { return r.ok ? r.json() : null; }).then(function (tl) { if (armedId === id && tl) { consoleTimeline = tl; seekSetDur(tl.durationMs); } }).catch(function () {});
     $('armed').textContent = 'track #' + id + ' (lights ready, loading audio…)';
     loadState();
     // re-arm: drop the previous track's decoded buffer so the NEW one is fetched + decoded.
@@ -436,7 +462,7 @@
   });
   if ($('pause')) $('pause').addEventListener('click', function () { flashBtn($('pause')); try { player.pause(); } catch (e) {} if (audio) audio.stop(); tx('pause', {}); });
   if ($('stop')) $('stop').addEventListener('click', function () { flashBtn($('stop')); try { player.pause(); player.currentTime = 0; } catch (e) {} if (audio) audio.stop(); tx('stop', {}); });
-  if ($('blackout')) $('blackout').addEventListener('click', function () { flashBtn($('blackout')); if (audio) audio.stop(); tx('blackout', {}); });
+  if ($('blackout')) $('blackout').addEventListener('click', function () { flashBtn($('blackout')); tx('blackout', {}); }); // round 13 (pt 6): BLACKOUT darkens lights/torch only — music keeps playing (no audio.stop)
 
   if ($('nudge')) {
     $('nudge').addEventListener('input', function () { nudge = Number($('nudge').value); $('nudgeVal').textContent = nudge + ' ms'; });
@@ -473,22 +499,22 @@
         if (ts) ts.textContent = 'Flash reach: ' + (m.torchCapable || 0) + ' Android (camera-LED) · ' + (m.screenOnly || 0) + ' iPhone/other (screen-only)';
         return;
       }
-      if (m.t === 'state') { renderState(m.state); syncLiveAudio(m.state); return; }
+      if (m.t === 'state') { renderState(m.state); syncLiveAudio(m.state); if (m.state && m.state.T0 != null) lastT0 = m.state.T0; return; }
       return;
     }
     // ---- public console: derive transport state from the room messages it receives ----
-    if (m.t === 'welcome' || m.t === 'state') { if (m.state) { renderState({ status: m.state.status }); if (m.state.status === 'running' && m.state.T0 != null) { pubT0 = m.state.T0; if (audio && soundOn) audio.start(pubT0); } } return; }
+    if (m.t === 'welcome' || m.t === 'state') { if (m.state) { renderState({ status: m.state.status }); if (m.state.status === 'running' && m.state.T0 != null) { pubT0 = m.state.T0; lastT0 = m.state.T0; if (audio && soundOn) audio.start(pubT0); } } return; }
     if (m.t === 'index') { var n = Math.max(0, (m.total | 0) - 1); gaPeakUpdate(n); if ($('count2')) $('count2').textContent = n; if ($('countBig')) $('countBig').textContent = n; return; } // -1: the console itself is a member
-    if (m.t === 'timeline') { var chg = (m.trackId !== pubTrackId); pubTrackId = m.trackId; if (chg && soundOn && typeof m.trackId === 'number') reloadConsoleSound(m.trackId); return; }
+    if (m.t === 'timeline') { var chg = (m.trackId !== pubTrackId); pubTrackId = m.trackId; consoleTimeline = m.data || null; seekSetDur(m.data && m.data.durationMs); if (chg && soundOn && typeof m.trackId === 'number') reloadConsoleSound(m.trackId); return; } // round 13 (pt 4/7): cues for the Live preview + seek range
     if (m.t === 'playlist') { // round 10: the room advanced (or mode changed) — follow now/next
       plMode = m.mode || plMode; plNow = m.nowId; plNext = m.nextId;
       if (m.nowId != null && m.nowId !== armedId) { armedId = m.nowId; loadPublic(); } else renderPlaylistCtl();
       return;
     }
-    if (m.t === 'start') { renderState({ status: 'running' }); pubT0 = m.T0; if (audio && soundOn) audio.start(m.T0); return; }
+    if (m.t === 'start') { renderState({ status: 'running' }); pubT0 = m.T0; lastT0 = m.T0; if (audio && soundOn) audio.start(m.T0); return; }
     if (m.t === 'pause') { renderState({ status: 'paused' }); if (audio) audio.stop(); return; }
     if (m.t === 'stop') { renderState({ status: 'idle' }); armedId = armedId; if (audio) audio.stop(); return; }
-    if (m.t === 'blackout') { renderState({ status: 'blackout' }); if (audio) audio.stop(); return; }
+    if (m.t === 'blackout') { renderState({ status: 'blackout' }); return; } // round 13 (pt 6): keep the console's music monitor playing through a blackout
   }
 
   function loadApps() {
@@ -580,12 +606,29 @@
   var pvCanvas = $('presetPreview'), pvCtx = pvCanvas ? pvCanvas.getContext('2d') : null;
   var pvBackstop = null, pvT0 = null, pvLast = 0;
   window.__opPreview = { ready: !!PV, type: null, frames: 0, changeSeq: 0, maxLum: 0, minLum: 1, hueMin: 360, hueMax: 0, hueSpread: 0, flashesPerSec: 0, lastBg: '', cross: [], _armed: true };
-  // round 11 (pt 7): the preview's loudness is 0 unless the show is RUNNING with a track — so a
-  // silent/stopped console shows NO music reaction (no jump). The old hard +0.45 step every 1400ms
-  // was the "jump every second" the owner saw. When running, a smooth proxy (no step).
-  function simLoudness(ms) {
+  // round 13 (pt 4): the Live preview now reacts to the REAL music — it samples the armed track's
+  // compiled envelope (the SAME AGC'd cue brightness the crowd reacts to) at the actual play position,
+  // instead of a generic sine. 0 when not running/no track (silent => steady, no phantom jump).
+  function sampleCueAt(pos) { // -> { b, rgb } at track position `pos` ms (binary search, like the phone)
+    var tl = consoleTimeline; if (!tl || !tl.cues || !tl.cues.length) return null;
+    var c = tl.cues, lo = 0, hi = c.length - 1;
+    if (pos <= c[0].t) return { b: c[0].b, rgb: c[0].rgb };
+    if (pos >= c[hi].t) return { b: c[hi].b, rgb: c[hi].rgb };
+    while (lo < hi - 1) { var mid = (lo + hi) >> 1; if (c[mid].t <= pos) lo = mid; else hi = mid; }
+    var a = c[lo], d = c[hi], f = (pos - a.t) / Math.max(1, d.t - a.t);
+    return { b: a.b + (d.b - a.b) * f, rgb: [a.rgb[0] + (d.rgb[0] - a.rgb[0]) * f, a.rgb[1] + (d.rgb[1] - a.rgb[1]) * f, a.rgb[2] + (d.rgb[2] - a.rgb[2]) * f] };
+  }
+  function consolePos() { // current track position (ms), from the playing audio cursor else the show clock
+    var tl = consoleTimeline; if (!tl || !tl.durationMs) return null;
+    var dur = tl.durationMs;
+    if (audio && audio.isLive && audio.isLive() && audio.playedMs) { var pm = audio.playedMs(); if (pm != null && pm >= 0) return ((pm % dur) + dur) % dur; }
+    if (curState === 'running' && lastT0 != null && clock && clock.ready) return ((clock.serverNow() - lastT0) % dur + dur) % dur;
+    return null;
+  }
+  function simLoudness() {
     if (curState !== 'running' || armedId == null) return 0;
-    return 0.15 + 0.35 * (0.5 + 0.5 * Math.sin(2 * Math.PI * ms / 1400));
+    var p = consolePos(); if (p == null) return 0;
+    var c = sampleCueAt(p); return c ? c.b : 0;
   }
   function rgbHue(r, g, b) { r /= 255; g /= 255; b /= 255; var mx = Math.max(r, g, b), mn = Math.min(r, g, b), d = mx - mn; if (d < 1e-6) return 0; var h; if (mx === r) h = ((g - b) / d) % 6; else if (mx === g) h = (b - r) / d + 2; else h = (r - g) / d + 4; h *= 60; return h < 0 ? h + 360 : h; }
   function pvReset() {
@@ -600,18 +643,23 @@
   function mainPreviewFrame() {
     var mp = $('mainPreview'); if (!mp) return; var mc = mp.getContext ? mp.getContext('2d') : null; if (!mc) return;
     if (!mp.width || mp.width < 8) { mp.width = mp.clientWidth || 320; mp.height = 48; }
-    var bg = '#000';
-    if (curState === 'running' && activeType && window.__opPreview && window.__opPreview.lastBg) bg = window.__opPreview.lastBg;
+    var bg = '#000', lvl = 0;
+    if (curState === 'running') {
+      if (activeType && window.__opPreview && window.__opPreview.lastBg) { bg = window.__opPreview.lastBg; lvl = window.__opPreview.maxLum || 0; } // a preset overlay drives the crowd screen
+      else { var p = consolePos(), c = p != null ? sampleCueAt(p) : null; if (c) { bg = 'rgb(' + Math.round(c.rgb[0] * c.b) + ',' + Math.round(c.rgb[1] * c.b) + ',' + Math.round(c.rgb[2] * c.b) + ')'; lvl = c.b; } } // round 13 (pt 4): no preset -> show the music-reactive TIMELINE colour the crowd sees
+    }
     mc.fillStyle = bg; mc.fillRect(0, 0, mp.width, mp.height);
+    window.__opMainPv = { bg: bg, level: lvl, running: curState === 'running', hasTimeline: !!consoleTimeline }; // test seam (pt 4)
   }
   function pvFrame(now) {
     requestAnimationFrame(pvFrame);
     mainPreviewFrame(); // round 11 (pt 7): the small Live preview under Start/Stop
+    seekTick();          // round 13 (pt 7): keep the seek slider following the play position
     if (!pvCtx || !PV || !activeType || !presetSchema || !presetSchema[activeType]) return;
     if (!pvCanvas.width || pvCanvas.width < 8) { pvCanvas.width = pvCanvas.clientWidth || 320; pvCanvas.height = 56; }
     if (pvT0 == null) { pvT0 = now; pvLast = now; }
     var ms = now - pvT0, dt = Math.max(1, now - pvLast); pvLast = now;
-    var rgb = PV.clampColor(PV.PRESETS[activeType](ms, activeParams, 0, 1, simLoudness(ms)));
+    var rgb = PV.clampColor(PV.PRESETS[activeType](ms, activeParams, 0, 1, simLoudness()));
     if (pvBackstop) rgb = pvBackstop(rgb, dt);
     var w = pvCanvas.width, h = pvCanvas.height, col = 3;
     try { var img = pvCtx.getImageData(col, 0, w - col, h); pvCtx.putImageData(img, 0, 0); } catch (e) {}
@@ -690,9 +738,10 @@
       });
       var off = document.createElement('button'); off.style.width = 'auto'; off.className = 'ghost'; off.textContent = '■ Off'; off.setAttribute('data-preset', 'off'); box.appendChild(off);
       if (d.active && d.active.type && d.active.type !== 'off') { activeType = d.active.type; activeParams = Object.assign({}, d.active.params); renderParams(); pvReset(); pvShow(true); }
-      else if (PUBLIC && DEFAULTS && DEFAULTS.screen && DEFAULTS.screen.type) { pickPreset(DEFAULTS.screen.type); } // public: start on the host's default look
+      else if (PUBLIC && DEFAULTS && DEFAULTS.screen && DEFAULTS.screen.type && DEFAULTS.screen.type !== 'off') { pickPreset(DEFAULTS.screen.type); } // public: start on the host's default look (round 13 pt 8: 'off' => Live presets default OFF, lights run the timeline)
       highlightPreset();
       setupTorch(d);
+      setupFx(d); // round 13 (pt 5): the Special-effects buttons
       // round 10: public console auto-picks the host's default REACTIVE torch (beat) so the
       // flash channel is alive on open too (mirror of the screen auto-pick above). Gated on
       // FEAT.torch so a host who disabled torch isn't overridden.
@@ -723,6 +772,22 @@
     }
     highlightTorch();
   }
+  // round 13 (pt 5): the Special-effects (firework) buttons — fired over HTTP via tx(), which routes to
+  // /api/operator/fx (main) or /api/console/fx (room) — identical on both consoles. No params -> safe.
+  function setupFx(d) {
+    var box = $('fxBtns'); if (!box || !d.fxNames) return; box.innerHTML = '';
+    d.fxNames.forEach(function (name) {
+      var b = document.createElement('button'); b.style.width = 'auto';
+      b.textContent = '🎆 ' + ((d.fxLabels && d.fxLabels[name]) || name); b.setAttribute('data-fx', name); box.appendChild(b);
+    });
+  }
+  function triggerFx(name) {
+    ga('fx_fired', { fx_name: name });
+    tx('fx', { name: name }).then(function (j) {
+      if ($('fxMsg')) $('fxMsg').textContent = (j && j.ok) ? ('🎆 ' + name + ' — ' + Math.round((j.durationMs || 0) / 1000) + 's') : tr('console.fx_err', 'Could not fire — try again');
+    });
+  }
+  if ($('fxBtns')) $('fxBtns').addEventListener('click', function (e) { var n = e.target.getAttribute('data-fx'); if (n) triggerFx(n); });
   function renderTorchParams() {
     var wrap = $('torchParams'); wrap.innerHTML = '';
     if (!activeTorch || !torchSchema[activeTorch]) return;
@@ -765,9 +830,23 @@
   if ($('torchBtns')) $('torchBtns').addEventListener('click', function (e) { var t = e.target.getAttribute('data-torch'); if (t) pickTorch(t); });
 
   var TPV = window.CLS_PRESETS, tpvCanvas = $('torchPreview'), tpvCtx = tpvCanvas ? tpvCanvas.getContext('2d') : null;
-  var tpvGate = null, tpvT0 = null, tpvLast = 0;
+  var tpvGate = null, tpvT0 = null, tpvLast = 0, tpvAGC = null;
+  // round 13 (pt 3): mirror the phone's torch AGC so the preview shows the SAME even reactivity + invert.
+  function makeTorchAGC() {
+    var F = 0, C = 0, prevX = 0, init = false; var MIN_SPAN = 0.05, FLUXGAIN = 6;
+    function k(tauS, dtMs) { return 1 - Math.exp(-(dtMs / 1000) / Math.max(0.001, tauS)); }
+    return function (raw, dtMs) {
+      raw = Math.max(0, Math.min(1, raw || 0)); dtMs = Math.max(1, Math.min(100, dtMs || 16));
+      if (!init) { F = raw; C = raw; prevX = 0; init = true; }
+      F += (raw > F ? k(3.0, dtMs) : k(0.15, dtMs)) * (raw - F);
+      C += (raw > C ? k(0.10, dtMs) : k(2.0, dtMs)) * (raw - C);
+      var span = Math.max(MIN_SPAN, C - F), norm = Math.max(0, Math.min(1, (raw - F) / span));
+      var flux = Math.max(0, Math.min(1, (norm - prevX) * FLUXGAIN)); prevX = norm;
+      return Math.max(0, Math.min(1, 0.55 * norm + 0.45 * flux));
+    };
+  }
   window.__opTorchPreview = { ready: !!(TPV && TPV.TORCH_PRESETS), type: null, frames: 0, changeSeq: 0, onFrac: 0, flashesPerSec: 0, _on: 0, _onCount: 0, cross: [], _prev: 0 };
-  function tpvReset() { var p = window.__opTorchPreview; p.frames = 0; p._onCount = 0; p.cross = []; p._prev = 0; p.changeSeq++; tpvGate = (TPV && TPV.makeTorchGate) ? TPV.makeTorchGate(1000 / 2.8) : null; tpvT0 = null; if (tpvCtx && tpvCanvas.width) tpvCtx.clearRect(0, 0, tpvCanvas.width, tpvCanvas.height); }
+  function tpvReset() { var p = window.__opTorchPreview; p.frames = 0; p._onCount = 0; p.cross = []; p._prev = 0; p.changeSeq++; tpvGate = (TPV && TPV.makeTorchGate) ? TPV.makeTorchGate(1000 / 2.8) : null; tpvAGC = makeTorchAGC(); tpvT0 = null; if (tpvCtx && tpvCanvas.width) tpvCtx.clearRect(0, 0, tpvCanvas.width, tpvCanvas.height); }
   function tpvShow(on) { var w = $('torchPreviewWrap'); if (w) w.className = on ? '' : 'hidden'; }
   function tpvFrame(now) {
     requestAnimationFrame(tpvFrame);
@@ -775,8 +854,10 @@
     if (!tpvCanvas.width || tpvCanvas.width < 8) { tpvCanvas.width = tpvCanvas.clientWidth || 320; tpvCanvas.height = 40; }
     if (tpvT0 == null) { tpvT0 = now; tpvLast = now; }
     var ms = now - tpvT0, dt = Math.max(1, now - tpvLast); tpvLast = now;
-    var intensity = TPV.TORCH_PRESETS[activeTorch](ms, activeTorchParams, 0, 1, simLoudness(ms));
-    var on = tpvGate ? tpvGate(intensity >= 0.5, dt) : (intensity >= 0.5 ? 1 : 0);
+    var intensity = TPV.TORCH_PRESETS[activeTorch](ms, activeTorchParams, 0, 1, simLoudness());
+    var excite = (tpvAGC && activeTorch === 'beat') ? tpvAGC(intensity, dt) : intensity; // round 13 (pt 3): AGC the reactive torch
+    if (activeTorchParams && activeTorchParams.torchInvert) excite = 1 - excite;
+    var on = tpvGate ? tpvGate(excite >= 0.5, dt) : (excite >= 0.5 ? 1 : 0);
     var w = tpvCanvas.width, h = tpvCanvas.height, col = 3;
     try { var img = tpvCtx.getImageData(col, 0, w - col, h); tpvCtx.putImageData(img, 0, 0); } catch (e) {}
     tpvCtx.fillStyle = on ? '#ffe9a8' : '#0a0a0a'; tpvCtx.fillRect(w - col, 0, col, h);
