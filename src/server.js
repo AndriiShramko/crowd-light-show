@@ -351,8 +351,11 @@ app.post('/api/console/mute-all', (req, reply) => { const room = consoleRoom(req
 app.post('/api/operator/mute-all', (req, reply) => { if (!requireOperator(req, reply)) return; return hub.muteAll('main', !!(req.body && req.body.muted)); });
 // Round 14: live MANUAL OVERRIDE (VJ pult) + PALETTE restriction. Room comes from the verified
 // console token (never the body); values are clamped server-side and the phone re-governs anyway.
-app.post('/api/console/manual', (req, reply) => { const room = consoleRoom(req, reply); if (!room) return; return hub.setManual(room, req.body || {}); });
-app.post('/api/operator/manual', (req, reply) => { if (!requireOperator(req, reply)) return; return hub.setManual('main', req.body || {}); });
+// The manual drag is a high-frequency channel (a VJ sweeping a fader at ~20 Hz over HTTP on /studio),
+// so it gets its OWN generous rate bucket — the operation is trivial (clamp + broadcast) and room-scoped.
+const MANUAL_RL = { config: { rateLimit: { max: 1800, timeWindow: '1 minute' } } };
+app.post('/api/console/manual', MANUAL_RL, (req, reply) => { const room = consoleRoom(req, reply); if (!room) return; return hub.setManual(room, req.body || {}); });
+app.post('/api/operator/manual', MANUAL_RL, (req, reply) => { if (!requireOperator(req, reply)) return; return hub.setManual('main', req.body || {}); });
 app.post('/api/console/palette', (req, reply) => { const room = consoleRoom(req, reply); if (!room) return; return hub.setPalette(room, !!(req.body && req.body.on), req.body && req.body.colors); });
 app.post('/api/operator/palette', (req, reply) => { if (!requireOperator(req, reply)) return; return hub.setPalette('main', !!(req.body && req.body.on), req.body && req.body.colors); });
 // Round 13 (pt 5): fire a one-shot firework FX (validated name, no params -> no untrusted numeric input).

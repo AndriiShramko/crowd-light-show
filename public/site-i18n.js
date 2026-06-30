@@ -168,6 +168,11 @@
       'console.marquee_sent': 'Showing on all phones ✓', 'console.marquee_err': 'Could not send — try again', 'console.marquee_cleared': 'Cleared',
       'console.seek_label': 'Seek', 'console.mute_all': '🔇 Mute all phones', 'console.unmute_all': '🔈 Unmute all phones',
       'console.fx_h': '🎆 Special effects', 'console.fx_sub': 'One-tap firework bursts — a few seconds of synchronized flash across every phone (screen + flash), then the show resumes exactly where it was. Safety-clamped ≤3 flashes/s.', 'console.fx_err': 'Could not fire — try again',
+      'console.vj_h': '🎛️ VJ pult — control by hand under the music', 'console.vj_sub': 'Drive the crowd by hand — saturation, colour, brightness, flash — like a VJ console. Toggle it on, pick a layout, open fullscreen and play with your fingers under the music. Safety-clamped ≤3 flashes/s. Turn it off and the show behaves exactly as before.',
+      'console.vj_off': 'Manual control: OFF', 'console.vj_on': '● Manual control: ON', 'console.vj_mode_intervene': 'Mode: intervene in preset', 'console.vj_mode_full': 'Mode: manual only (presets off)', 'console.vj_fullscreen': '⛶ Fullscreen',
+      'console.vj_tab_faders': 'Faders', 'console.vj_tab_wheel': 'Colour wheel', 'console.vj_tab_xy': 'XY pad', 'console.vj_tab_pads': 'Big pads',
+      'console.vj_pal_h': '🎨 Palette — play only with chosen colours', 'console.vj_pal_sub': "Restrict the whole show to a flag's or a brand's colours — everything snaps to the nearest one. Works with or without the manual controls.", 'console.vj_pal_custom': 'Custom', 'console.vj_pal_apply': 'Use', 'console.vj_pal_off': 'Palette: OFF', 'console.vj_pal_on': '● Palette: ON',
+      'console.vj_midi_h': '🎚️ MIDI controller (optional)', 'console.vj_midi_sub': 'Plug a USB MIDI fader/pad box into this computer (Chrome or Edge on desktop). Connect, then “Learn” a fader for each value — it drives the same 4 controls as your fingers.', 'console.vj_midi_connect': 'Connect MIDI',
     },
     pl: {
       'console.play.idle': '▶ Włącz pokaz świateł ', 'console.play.loading': '● Uruchamiam… ', 'console.play.playing': '⏸ Wstrzymaj pokaz ', 'console.play.paused': '▶ Wznów pokaz ',
@@ -187,6 +192,11 @@
       'console.marquee_sent': 'Wyświetlam na wszystkich telefonach ✓', 'console.marquee_err': 'Nie udało się wysłać — spróbuj ponownie', 'console.marquee_cleared': 'Wyczyszczono',
       'console.seek_label': 'Przewiń', 'console.mute_all': '🔇 Wycisz wszystkie telefony', 'console.unmute_all': '🔈 Włącz dźwięk wszędzie',
       'console.fx_h': '🎆 Efekty specjalne', 'console.fx_sub': 'Wybuchy fajerwerków jednym dotknięciem — kilka sekund zsynchronizowanego błysku na każdym telefonie (ekran + lampa), potem pokaz wraca dokładnie tam, gdzie był. Zabezpieczone ≤3 błyski/s.', 'console.fx_err': 'Nie udało się — spróbuj ponownie',
+      'console.vj_h': '🎛️ Pult VJ — steruj ręcznie do muzyki', 'console.vj_sub': 'Steruj tłumem ręcznie — nasycenie, kolor, jasność, błysk — jak konsola VJ. Włącz, wybierz układ, otwórz pełny ekran i graj palcami do muzyki. Zabezpieczone ≤3 błyski/s. Wyłącz, a pokaz działa dokładnie jak wcześniej.',
+      'console.vj_off': 'Sterowanie ręczne: WYŁ', 'console.vj_on': '● Sterowanie ręczne: WŁ', 'console.vj_mode_intervene': 'Tryb: ingeruj w preset', 'console.vj_mode_full': 'Tryb: tylko ręcznie (presety wył.)', 'console.vj_fullscreen': '⛶ Pełny ekran',
+      'console.vj_tab_faders': 'Suwaki', 'console.vj_tab_wheel': 'Koło kolorów', 'console.vj_tab_xy': 'Pad XY', 'console.vj_tab_pads': 'Duże pady',
+      'console.vj_pal_h': '🎨 Paleta — graj tylko wybranymi kolorami', 'console.vj_pal_sub': 'Ogranicz cały pokaz do kolorów flagi lub marki — wszystko przyciąga się do najbliższego. Działa z ręcznym sterowaniem lub bez.', 'console.vj_pal_custom': 'Własne', 'console.vj_pal_apply': 'Użyj', 'console.vj_pal_off': 'Paleta: WYŁ', 'console.vj_pal_on': '● Paleta: WŁ',
+      'console.vj_midi_h': '🎚️ Kontroler MIDI (opcjonalnie)', 'console.vj_midi_sub': 'Podłącz kontroler MIDI USB do tego komputera (Chrome lub Edge na komputerze). Połącz, potem „Naucz” suwak dla każdej wartości — steruje tymi samymi 4 kontrolkami co palce.', 'console.vj_midi_connect': 'Połącz MIDI',
     },
   };
   // merge console keys into the four langs; es/fr mirror EN (console is chrome, not legal copy)
