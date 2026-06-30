@@ -234,7 +234,7 @@
       + '#cls-lang button:hover{color:#fff}#cls-lang button.on{background:#5a7bff;color:#fff}'
       // round 13 (pt 9): on phones the landing's sticky top-nav has a CTA button in the same top-right
       // corner — drop the language switcher just BELOW the header so it no longer overlaps it.
-      + '@media (max-width:680px){#cls-lang{top:56px;right:8px;padding:2px}#cls-lang button{padding:5px 7px;font-size:11px}}'
+      + '@media (max-width:680px){#cls-lang{top:84px;right:10px;padding:2px}#cls-lang button{padding:5px 7px;font-size:11px}}'
       + '@media print{#cls-lang{display:none}}';
     var st = document.createElement('style'); st.textContent = css; document.head.appendChild(st);
     document.body.appendChild(s);
