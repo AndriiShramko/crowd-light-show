@@ -22,6 +22,7 @@
   var wantLiveAudio = false, lastAudioT0 = null;        // personal: drive audio start off the running-state echo
   var plMode = (DEFAULTS && DEFAULTS.playlist_mode) || 'all', plNow = null, plNext = null, plSelected = []; // round 10 playlist (public)
   var pubTracks = [];                                   // last-loaded public track list (for now/next titles + selected checkboxes)
+  var consoleTimeline = null, lastT0 = null;            // round 13 (pt 4): armed track's cues + running T0, so the Live preview reacts to the REAL music
   var player = document.getElementById('player');
 
   // ROUND 9 AUDIO FIX: the console's lights were already synced (T0 carries clock.offset+nudge),
@@ -336,6 +337,9 @@
       return;
     }
     if (ws && ws.readyState === 1) ws.send(JSON.stringify({ t: 'op', cmd: 'arm', trackId: id }));
+    // round 13 (pt 4): the personal operator isn't a room audience, so fetch the armed track's cues
+    // for the Live preview (the public console gets them via the {t:'timeline'} room broadcast).
+    if (typeof id === 'number') api('/api/operator/timeline/' + id).then(function (r) { return r.ok ? r.json() : null; }).then(function (tl) { if (armedId === id && tl) consoleTimeline = tl; }).catch(function () {});
     $('armed').textContent = 'track #' + id + ' (lights ready, loading audio…)';
     loadState();
     // re-arm: drop the previous track's decoded buffer so the NEW one is fetched + decoded.
@@ -473,19 +477,19 @@
         if (ts) ts.textContent = 'Flash reach: ' + (m.torchCapable || 0) + ' Android (camera-LED) · ' + (m.screenOnly || 0) + ' iPhone/other (screen-only)';
         return;
       }
-      if (m.t === 'state') { renderState(m.state); syncLiveAudio(m.state); return; }
+      if (m.t === 'state') { renderState(m.state); syncLiveAudio(m.state); if (m.state && m.state.T0 != null) lastT0 = m.state.T0; return; }
       return;
     }
     // ---- public console: derive transport state from the room messages it receives ----
-    if (m.t === 'welcome' || m.t === 'state') { if (m.state) { renderState({ status: m.state.status }); if (m.state.status === 'running' && m.state.T0 != null) { pubT0 = m.state.T0; if (audio && soundOn) audio.start(pubT0); } } return; }
+    if (m.t === 'welcome' || m.t === 'state') { if (m.state) { renderState({ status: m.state.status }); if (m.state.status === 'running' && m.state.T0 != null) { pubT0 = m.state.T0; lastT0 = m.state.T0; if (audio && soundOn) audio.start(pubT0); } } return; }
     if (m.t === 'index') { var n = Math.max(0, (m.total | 0) - 1); gaPeakUpdate(n); if ($('count2')) $('count2').textContent = n; if ($('countBig')) $('countBig').textContent = n; return; } // -1: the console itself is a member
-    if (m.t === 'timeline') { var chg = (m.trackId !== pubTrackId); pubTrackId = m.trackId; if (chg && soundOn && typeof m.trackId === 'number') reloadConsoleSound(m.trackId); return; }
+    if (m.t === 'timeline') { var chg = (m.trackId !== pubTrackId); pubTrackId = m.trackId; consoleTimeline = m.data || null; if (chg && soundOn && typeof m.trackId === 'number') reloadConsoleSound(m.trackId); return; } // round 13 (pt 4): keep the cues so the Live preview reacts to the REAL music
     if (m.t === 'playlist') { // round 10: the room advanced (or mode changed) — follow now/next
       plMode = m.mode || plMode; plNow = m.nowId; plNext = m.nextId;
       if (m.nowId != null && m.nowId !== armedId) { armedId = m.nowId; loadPublic(); } else renderPlaylistCtl();
       return;
     }
-    if (m.t === 'start') { renderState({ status: 'running' }); pubT0 = m.T0; if (audio && soundOn) audio.start(m.T0); return; }
+    if (m.t === 'start') { renderState({ status: 'running' }); pubT0 = m.T0; lastT0 = m.T0; if (audio && soundOn) audio.start(m.T0); return; }
     if (m.t === 'pause') { renderState({ status: 'paused' }); if (audio) audio.stop(); return; }
     if (m.t === 'stop') { renderState({ status: 'idle' }); armedId = armedId; if (audio) audio.stop(); return; }
     if (m.t === 'blackout') { renderState({ status: 'blackout' }); return; } // round 13 (pt 6): keep the console's music monitor playing through a blackout
@@ -580,12 +584,29 @@
   var pvCanvas = $('presetPreview'), pvCtx = pvCanvas ? pvCanvas.getContext('2d') : null;
   var pvBackstop = null, pvT0 = null, pvLast = 0;
   window.__opPreview = { ready: !!PV, type: null, frames: 0, changeSeq: 0, maxLum: 0, minLum: 1, hueMin: 360, hueMax: 0, hueSpread: 0, flashesPerSec: 0, lastBg: '', cross: [], _armed: true };
-  // round 11 (pt 7): the preview's loudness is 0 unless the show is RUNNING with a track — so a
-  // silent/stopped console shows NO music reaction (no jump). The old hard +0.45 step every 1400ms
-  // was the "jump every second" the owner saw. When running, a smooth proxy (no step).
-  function simLoudness(ms) {
+  // round 13 (pt 4): the Live preview now reacts to the REAL music — it samples the armed track's
+  // compiled envelope (the SAME AGC'd cue brightness the crowd reacts to) at the actual play position,
+  // instead of a generic sine. 0 when not running/no track (silent => steady, no phantom jump).
+  function sampleCueAt(pos) { // -> { b, rgb } at track position `pos` ms (binary search, like the phone)
+    var tl = consoleTimeline; if (!tl || !tl.cues || !tl.cues.length) return null;
+    var c = tl.cues, lo = 0, hi = c.length - 1;
+    if (pos <= c[0].t) return { b: c[0].b, rgb: c[0].rgb };
+    if (pos >= c[hi].t) return { b: c[hi].b, rgb: c[hi].rgb };
+    while (lo < hi - 1) { var mid = (lo + hi) >> 1; if (c[mid].t <= pos) lo = mid; else hi = mid; }
+    var a = c[lo], d = c[hi], f = (pos - a.t) / Math.max(1, d.t - a.t);
+    return { b: a.b + (d.b - a.b) * f, rgb: [a.rgb[0] + (d.rgb[0] - a.rgb[0]) * f, a.rgb[1] + (d.rgb[1] - a.rgb[1]) * f, a.rgb[2] + (d.rgb[2] - a.rgb[2]) * f] };
+  }
+  function consolePos() { // current track position (ms), from the playing audio cursor else the show clock
+    var tl = consoleTimeline; if (!tl || !tl.durationMs) return null;
+    var dur = tl.durationMs;
+    if (audio && audio.isLive && audio.isLive() && audio.playedMs) { var pm = audio.playedMs(); if (pm != null && pm >= 0) return ((pm % dur) + dur) % dur; }
+    if (curState === 'running' && lastT0 != null && clock && clock.ready) return ((clock.serverNow() - lastT0) % dur + dur) % dur;
+    return null;
+  }
+  function simLoudness() {
     if (curState !== 'running' || armedId == null) return 0;
-    return 0.15 + 0.35 * (0.5 + 0.5 * Math.sin(2 * Math.PI * ms / 1400));
+    var p = consolePos(); if (p == null) return 0;
+    var c = sampleCueAt(p); return c ? c.b : 0;
   }
   function rgbHue(r, g, b) { r /= 255; g /= 255; b /= 255; var mx = Math.max(r, g, b), mn = Math.min(r, g, b), d = mx - mn; if (d < 1e-6) return 0; var h; if (mx === r) h = ((g - b) / d) % 6; else if (mx === g) h = (b - r) / d + 2; else h = (r - g) / d + 4; h *= 60; return h < 0 ? h + 360 : h; }
   function pvReset() {
@@ -600,9 +621,13 @@
   function mainPreviewFrame() {
     var mp = $('mainPreview'); if (!mp) return; var mc = mp.getContext ? mp.getContext('2d') : null; if (!mc) return;
     if (!mp.width || mp.width < 8) { mp.width = mp.clientWidth || 320; mp.height = 48; }
-    var bg = '#000';
-    if (curState === 'running' && activeType && window.__opPreview && window.__opPreview.lastBg) bg = window.__opPreview.lastBg;
+    var bg = '#000', lvl = 0;
+    if (curState === 'running') {
+      if (activeType && window.__opPreview && window.__opPreview.lastBg) { bg = window.__opPreview.lastBg; lvl = window.__opPreview.maxLum || 0; } // a preset overlay drives the crowd screen
+      else { var p = consolePos(), c = p != null ? sampleCueAt(p) : null; if (c) { bg = 'rgb(' + Math.round(c.rgb[0] * c.b) + ',' + Math.round(c.rgb[1] * c.b) + ',' + Math.round(c.rgb[2] * c.b) + ')'; lvl = c.b; } } // round 13 (pt 4): no preset -> show the music-reactive TIMELINE colour the crowd sees
+    }
     mc.fillStyle = bg; mc.fillRect(0, 0, mp.width, mp.height);
+    window.__opMainPv = { bg: bg, level: lvl, running: curState === 'running', hasTimeline: !!consoleTimeline }; // test seam (pt 4)
   }
   function pvFrame(now) {
     requestAnimationFrame(pvFrame);
@@ -611,7 +636,7 @@
     if (!pvCanvas.width || pvCanvas.width < 8) { pvCanvas.width = pvCanvas.clientWidth || 320; pvCanvas.height = 56; }
     if (pvT0 == null) { pvT0 = now; pvLast = now; }
     var ms = now - pvT0, dt = Math.max(1, now - pvLast); pvLast = now;
-    var rgb = PV.clampColor(PV.PRESETS[activeType](ms, activeParams, 0, 1, simLoudness(ms)));
+    var rgb = PV.clampColor(PV.PRESETS[activeType](ms, activeParams, 0, 1, simLoudness()));
     if (pvBackstop) rgb = pvBackstop(rgb, dt);
     var w = pvCanvas.width, h = pvCanvas.height, col = 3;
     try { var img = pvCtx.getImageData(col, 0, w - col, h); pvCtx.putImageData(img, 0, 0); } catch (e) {}
