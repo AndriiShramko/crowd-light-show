@@ -790,9 +790,23 @@
   if ($('torchBtns')) $('torchBtns').addEventListener('click', function (e) { var t = e.target.getAttribute('data-torch'); if (t) pickTorch(t); });
 
   var TPV = window.CLS_PRESETS, tpvCanvas = $('torchPreview'), tpvCtx = tpvCanvas ? tpvCanvas.getContext('2d') : null;
-  var tpvGate = null, tpvT0 = null, tpvLast = 0;
+  var tpvGate = null, tpvT0 = null, tpvLast = 0, tpvAGC = null;
+  // round 13 (pt 3): mirror the phone's torch AGC so the preview shows the SAME even reactivity + invert.
+  function makeTorchAGC() {
+    var F = 0, C = 0, prevX = 0, init = false; var MIN_SPAN = 0.05, FLUXGAIN = 6;
+    function k(tauS, dtMs) { return 1 - Math.exp(-(dtMs / 1000) / Math.max(0.001, tauS)); }
+    return function (raw, dtMs) {
+      raw = Math.max(0, Math.min(1, raw || 0)); dtMs = Math.max(1, Math.min(100, dtMs || 16));
+      if (!init) { F = raw; C = raw; prevX = 0; init = true; }
+      F += (raw > F ? k(3.0, dtMs) : k(0.15, dtMs)) * (raw - F);
+      C += (raw > C ? k(0.10, dtMs) : k(2.0, dtMs)) * (raw - C);
+      var span = Math.max(MIN_SPAN, C - F), norm = Math.max(0, Math.min(1, (raw - F) / span));
+      var flux = Math.max(0, Math.min(1, (norm - prevX) * FLUXGAIN)); prevX = norm;
+      return Math.max(0, Math.min(1, 0.55 * norm + 0.45 * flux));
+    };
+  }
   window.__opTorchPreview = { ready: !!(TPV && TPV.TORCH_PRESETS), type: null, frames: 0, changeSeq: 0, onFrac: 0, flashesPerSec: 0, _on: 0, _onCount: 0, cross: [], _prev: 0 };
-  function tpvReset() { var p = window.__opTorchPreview; p.frames = 0; p._onCount = 0; p.cross = []; p._prev = 0; p.changeSeq++; tpvGate = (TPV && TPV.makeTorchGate) ? TPV.makeTorchGate(1000 / 2.8) : null; tpvT0 = null; if (tpvCtx && tpvCanvas.width) tpvCtx.clearRect(0, 0, tpvCanvas.width, tpvCanvas.height); }
+  function tpvReset() { var p = window.__opTorchPreview; p.frames = 0; p._onCount = 0; p.cross = []; p._prev = 0; p.changeSeq++; tpvGate = (TPV && TPV.makeTorchGate) ? TPV.makeTorchGate(1000 / 2.8) : null; tpvAGC = makeTorchAGC(); tpvT0 = null; if (tpvCtx && tpvCanvas.width) tpvCtx.clearRect(0, 0, tpvCanvas.width, tpvCanvas.height); }
   function tpvShow(on) { var w = $('torchPreviewWrap'); if (w) w.className = on ? '' : 'hidden'; }
   function tpvFrame(now) {
     requestAnimationFrame(tpvFrame);
@@ -800,8 +814,10 @@
     if (!tpvCanvas.width || tpvCanvas.width < 8) { tpvCanvas.width = tpvCanvas.clientWidth || 320; tpvCanvas.height = 40; }
     if (tpvT0 == null) { tpvT0 = now; tpvLast = now; }
     var ms = now - tpvT0, dt = Math.max(1, now - tpvLast); tpvLast = now;
-    var intensity = TPV.TORCH_PRESETS[activeTorch](ms, activeTorchParams, 0, 1, simLoudness(ms));
-    var on = tpvGate ? tpvGate(intensity >= 0.5, dt) : (intensity >= 0.5 ? 1 : 0);
+    var intensity = TPV.TORCH_PRESETS[activeTorch](ms, activeTorchParams, 0, 1, simLoudness());
+    var excite = (tpvAGC && activeTorch === 'beat') ? tpvAGC(intensity, dt) : intensity; // round 13 (pt 3): AGC the reactive torch
+    if (activeTorchParams && activeTorchParams.torchInvert) excite = 1 - excite;
+    var on = tpvGate ? tpvGate(excite >= 0.5, dt) : (excite >= 0.5 ? 1 : 0);
     var w = tpvCanvas.width, h = tpvCanvas.height, col = 3;
     try { var img = tpvCtx.getImageData(col, 0, w - col, h); tpvCtx.putImageData(img, 0, 0); } catch (e) {}
     tpvCtx.fillStyle = on ? '#ffe9a8' : '#0a0a0a'; tpvCtx.fillRect(w - col, 0, col, h);

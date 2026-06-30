@@ -19,6 +19,28 @@
   var myIndex = 0, N = 1;   // sticky index in the crowd + grid width
   var backstop = P ? P.makeBackstop(150) : null; // client-side safety slew (defense in depth)
   var torchGate = (P && P.makeTorchGate) ? P.makeTorchGate() : null; // torch rate cap <=2.8/s (defense in depth)
+  // round 13 (pt 3): a per-phone TORCH AGC. The torch read the AGC'd cue brightness but then re-flattened
+  // it through a static curve into a binary >=0.5 decision -> quiet sat under 0.5 (black) and sustained-
+  // loud pinned over 0.5 (solid). This rolling floor/ceil + flux normalizer re-levels quiet UP and makes
+  // sustained-loud TOGGLE per onset (the flux term), so the torch flashes EVENLY across loudness without
+  // the operator riding the slider. It only shapes the INPUT excitement; torchGate stays the ≤2.8/s last stage.
+  function makeTorchAGC() {
+    var F = 0, C = 0, prevX = 0, init = false; var MIN_SPAN = 0.05, FLUXGAIN = 6;
+    function k(tauS, dtMs) { return 1 - Math.exp(-(dtMs / 1000) / Math.max(0.001, tauS)); }
+    return function (raw, dtMs) {
+      raw = Math.max(0, Math.min(1, raw || 0)); dtMs = Math.max(1, Math.min(100, dtMs || 16));
+      if (!init) { F = raw; C = raw; prevX = 0; init = true; }
+      F += (raw > F ? k(3.0, dtMs) : k(0.15, dtMs)) * (raw - F);   // floor: rises slow, falls fast (tracks the quiet baseline)
+      C += (raw > C ? k(0.10, dtMs) : k(2.0, dtMs)) * (raw - C);   // ceil: catches a hit fast, decays slow
+      var span = Math.max(MIN_SPAN, C - F);
+      var norm = Math.max(0, Math.min(1, (raw - F) / span));        // re-levelled to the local window
+      var flux = Math.max(0, Math.min(1, (norm - prevX) * FLUXGAIN)); // per-onset RISE -> re-fires on each beat
+      prevX = norm;
+      return Math.max(0, Math.min(1, 0.55 * norm + 0.45 * flux));
+    };
+  }
+  var torchAGC = makeTorchAGC();
+  window.__clsMakeTorchAGC = makeTorchAGC; // test seam (pt 3)
   var lastFrameT = 0;
 
   var flashEl = document.getElementById('flash');
@@ -530,7 +552,9 @@
     if (runState.status !== 'blackout' && torchPreset && torchPreset.type && P && P.TORCH_PRESETS && P.TORCH_PRESETS[torchPreset.type] && synced) {
       var tpos = clock.serverNow() - torchPreset.startedAt;
       intensity = P.TORCH_PRESETS[torchPreset.type](tpos, torchPreset.params, myIndex, N, level);
-      wantOn = intensity >= 0.5;
+      var excite = torchAGC(intensity, dt);                                // round 13 (pt 3): even reactivity across loudness
+      if (torchPreset.params && torchPreset.params.torchInvert) excite = 1 - excite; // invert: loud->off, quiet->on
+      wantOn = excite >= 0.5;
     }
     var gatedOn = torchGate ? torchGate(wantOn, dt) : wantOn; // hard <=2.8/s cap, independent of the screen gate
     window.__cls.torch.intensity = intensity; window.__cls.torch.want = gatedOn ? 1 : 0; // channel intent (gated)
