@@ -185,7 +185,9 @@
   function loadPublic() {
     api('/api/operator/playlist').then(function (r) { return r.ok ? r.json() : null; }).then(function (d) {
       if (!d) { var tb0 = $('tracks').querySelector('tbody'); if (tb0) tb0.innerHTML = '<tr><td class="muted">No public tracks yet.</td></tr>'; return; }
-      pubTracks = d.tracks || [];
+      // round 12 (pt 6): the visitor's OWN uploads (d.guestTracks) appear in the playlist FIRST, then
+      // the host's curated tracks — so they can loop / select their own music like any other track.
+      pubTracks = (d.guestTracks || []).concat(d.tracks || []);
       if (d.playlist && d.playlist.mode) { plMode = d.playlist.mode; plNow = d.playlist.nowId; plNext = d.playlist.nextId; }
       if (d.defaults && d.defaults.playlist_mode && plNow == null) plMode = plMode || d.defaults.playlist_mode;
       var tb = $('tracks').querySelector('tbody'); tb.innerHTML = '';
@@ -225,7 +227,7 @@
   function applyPlMode(mode) {
     plMode = mode;
     // collect ticked ids for 'selected'
-    if (mode === 'selected') { plSelected = []; var cbs = document.querySelectorAll('[data-plsel]'); for (var i = 0; i < cbs.length; i++) if (cbs[i].checked) plSelected.push(Number(cbs[i].getAttribute('data-plsel'))); }
+    if (mode === 'selected') { plSelected = []; var cbs = document.querySelectorAll('[data-plsel]'); for (var i = 0; i < cbs.length; i++) if (cbs[i].checked) { var sv = cbs[i].getAttribute('data-plsel'); plSelected.push(/^g:/.test(sv) ? sv : Number(sv)); } } // guest ids stay strings (round 12 pt 6)
     api('/api/operator/playlist', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode: mode, selected: plSelected }) })
       .then(function (r) { return r.ok ? r.json() : null; })
       .then(function (p) { if (p && p.ok) { plNow = p.nowId; plNext = p.nextId; if (typeof p.idx === 'number' && p.nowId != null) armedId = p.nowId; } loadPublic(); });
@@ -258,7 +260,7 @@
 
   if ($('tracks')) $('tracks').addEventListener('click', function (e) {
     var arm = e.target.getAttribute('data-arm'); var del = e.target.getAttribute('data-del');
-    if (arm) armTrack(Number(arm));
+    if (arm) armTrack(/^g:/.test(arm) ? arm : Number(arm)); // guest uploads keep their string id (round 12 pt 6)
     if (del && !PUBLIC) api('/api/operator/track/' + del, { method: 'DELETE' }).then(loadState);
   });
   if ($('tracks')) $('tracks').addEventListener('change', function (e) {

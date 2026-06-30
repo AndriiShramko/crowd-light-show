@@ -317,7 +317,7 @@ app.get('/api/console/presets', (req, reply) => {
 app.get('/api/console/playlist', (req, reply) => {
   const room = consoleRoom(req, reply); if (!room) return;
   const d = readValidatedDefaults();
-  return { tracks: listPublicTracks(), defaults: { default_track_id: d.default_track_id || null, screen: d.screen || null, torch: d.torch || null, allow_torch: d.allow_torch, brand_name: d.brand_name, playlist_mode: d.playlist_mode || 'all' }, playlist: hub.playlistState(room) };
+  return { tracks: listPublicTracks(), guestTracks: guestTracksFor(room), defaults: { default_track_id: d.default_track_id || null, screen: d.screen || null, torch: d.torch || null, allow_torch: d.allow_torch, brand_name: d.brand_name, playlist_mode: d.playlist_mode || 'all' }, playlist: hub.playlistState(room) };
 });
 // Round 10: set the room's LIVE playlist loop mode ('all'|'selected'|'one'). Per-room only — a
 // public visitor tunes THEIR session; it never rewrites the global default (that's owner-only via
@@ -365,7 +365,7 @@ app.post('/api/console/arm', (req, reply) => {
   const room = consoleRoom(req, reply); if (!room) return;
   const raw = req.body && req.body.trackId;
   const keepPreset = !!(req.body && req.body.keepPreset);
-  if (typeof raw === 'string' && raw === 'g:' + room) {            // this room's own discarded-audio light timeline
+  if (typeof raw === 'string' && raw.indexOf('g:' + room + ':') === 0) { // one of THIS room's own uploads (round 12: several allowed)
     if (!hub.timelineCache.has(raw)) return reply.code(404).send({ error: 'no uploaded track for this room' });
     return hub.arm(raw, { keepPreset }, room);
   }
@@ -414,31 +414,43 @@ const _upLog = new Map(); // ip -> [timestamps], 3 per 10 min (rate guard, disti
 function uploadGuard(ip) {
   const t = Date.now(), win = 10 * 60 * 1000;
   const arr = (_upLog.get(ip) || []).filter((x) => t - x < win);
-  if (arr.length >= 3) { _upLog.set(ip, arr); return false; }
+  if (arr.length >= 6) { _upLog.set(ip, arr); return false; } // round 12 (pt 6): allow building a 3-track playlist (+retries)
   arr.push(t); _upLog.set(ip, arr);
   return true;
 }
 const GUEST_DIR = path.join(config.dataDir, 'uploads', 'guest');
-// One KEPT guest file per public room. room -> { path, createdAt, durationMs, ip, emptySince }.
+// Round 12 (pt 6): a public room may now KEEP UP TO N guest uploads (was one), each with its own id
+// `g:<room>:<id6>`, so the visitor's tracks show up in the room PLAYLIST and can be looped / selected
+// like curated tracks. room -> [ { id, path, createdAt, durationMs, ip, title, emptySince } ].
 const guestFiles = new Map();
-function guestDirBytes() { let n = 0; for (const g of guestFiles.values()) { try { n += fs.statSync(g.path).size; } catch { /* gone */ } } return n; }
-function guestFilesByIp(ip) { let n = 0; for (const g of guestFiles.values()) if (g.ip === ip) n++; return n; }
-function deleteGuestFile(room) {
-  const g = guestFiles.get(room); if (!g) return;
-  try { fs.unlinkSync(g.path); } catch { /* already gone */ }
-  guestFiles.delete(room);
-  hub.timelineCache.delete('g:' + room);
+function guestList(room) { return guestFiles.get(room) || []; }
+function guestById(id) { for (const arr of guestFiles.values()) { const g = arr.find((x) => x.id === id); if (g) return g; } return null; }
+function guestDirBytes() { let n = 0; for (const arr of guestFiles.values()) for (const g of arr) { try { n += fs.statSync(g.path).size; } catch { /* gone */ } } return n; }
+function guestFilesByIp(ip) { let n = 0; for (const arr of guestFiles.values()) for (const g of arr) if (g.ip === ip) n++; return n; }
+// track-like rows for the room's playlist UI (so guest uploads appear next to curated tracks).
+function guestTracksFor(room) {
+  return guestList(room).map((g) => { const tl = hub.timelineCache.get(g.id); return { id: g.id, title: g.title || 'My upload', duration_ms: g.durationMs, cue_count: tl ? tl.cues.length : 0, guest: true }; });
 }
-// Janitor: drop a room's guest file 24h after upload, or shortly after the room empties (the
-// operator closed the /studio tab and no phones remain). Runs on a timer; also a boot clean-slate.
+function _removeGuestEntry(room, g) {
+  try { fs.unlinkSync(g.path); } catch { /* already gone */ }
+  hub.timelineCache.delete(g.id);
+  const arr = guestFiles.get(room); if (!arr) return;
+  const i = arr.indexOf(g); if (i >= 0) arr.splice(i, 1);
+  if (!arr.length) guestFiles.delete(room);
+}
+function deleteGuestFile(room) { for (const g of guestList(room).slice()) _removeGuestEntry(room, g); } // drop ALL of a room's guest files
+// Janitor: drop guest files 24h after upload, or shortly after the room empties (the operator closed
+// the /studio tab and no phones remain). Runs on a timer; also a boot clean-slate.
 function guestJanitor() {
   const now = Date.now();
-  for (const [room, g] of guestFiles) {
-    if (now - g.createdAt > config.publicUploadTtlMs) { deleteGuestFile(room); continue; }
+  for (const [room, arr] of guestFiles) {
     const r = hub.rooms.get(room);
     const empty = !r || r.members.size === 0;
-    if (empty) { if (!g.emptySince) g.emptySince = now; else if (now - g.emptySince > config.publicUploadGraceMs) deleteGuestFile(room); }
-    else g.emptySince = 0;
+    for (const g of arr.slice()) {
+      if (now - g.createdAt > config.publicUploadTtlMs) { _removeGuestEntry(room, g); continue; }
+      if (empty) { if (!g.emptySince) g.emptySince = now; else if (now - g.emptySince > config.publicUploadGraceMs) _removeGuestEntry(room, g); }
+      else g.emptySince = 0;
+    }
   }
 }
 function bootSweepGuest() {
@@ -458,8 +470,10 @@ app.post('/api/console/upload', async (req, reply) => {
   if (!uploadGuard(ip)) return reply.code(429).send({ error: 'too many uploads — try again later' });
   // stored-file cap: a tester may KEEP at most N files (re-uploading in the same room replaces, so
   // it doesn't count twice). Disk budget is recomputed from the kept files (du), not trusted state.
-  const hadThisRoom = guestFiles.has(room) && guestFiles.get(room).ip === ip ? 1 : 0;
-  if (guestFilesByIp(ip) - hadThisRoom >= config.publicUploadMaxFilesPerIp) return reply.code(429).send({ error: `you can keep at most ${config.publicUploadMaxFilesPerIp} uploaded files — close a session or wait for them to expire` });
+  // Round 12 (pt 6): up to N tracks per ROOM (a FIFO drop below keeps it at N). The per-IP cap limits
+  // files in OTHER rooms so a visitor can fill THEIR own room's 3-track playlist without tripping it.
+  const inThisRoom = guestList(room).filter((g) => g.ip === ip).length;
+  if (guestFilesByIp(ip) - inThisRoom >= config.publicUploadMaxFilesPerIp) return reply.code(429).send({ error: `you can keep at most ${config.publicUploadMaxFilesPerIp} uploaded tracks per session — close another session or wait for them to expire` });
   if (freeDiskBytes() < config.diskGuardMinBytes) return reply.code(507).send({ error: 'disk guard: low space' });
   if (uploadSem.active >= config.publicUploadConcurrency + 2) return reply.code(503).send({ error: 'busy — try again in a moment' });
 
@@ -480,11 +494,14 @@ app.post('/api/console/upload', async (req, reply) => {
     const { durationMs, envelope, beats } = await analyze(dest);
     if (durationMs > config.publicUploadMaxDurationMs) { try { fs.unlinkSync(dest); } catch { /* ignore */ } return reply.code(413).send({ error: 'track too long (max 6 min)' }); }
     const cues = compileFromEnvelope(envelope, { durationMs, beats }); // governor: <=3 flashes/s
-    const timeline = { version: 1, trackId: 'g:' + room, fps: config.cueFps, durationMs, cues, beats };
-    hub.timelineCache.set('g:' + room, timeline);  // in-memory light timeline, keyed to the room — NO DB row
-    deleteGuestFile(room);                          // replace any previous file for this room (one kept per room)
-    guestFiles.set(room, { path: dest, createdAt: Date.now(), durationMs, ip, emptySince: 0 }); // KEEP it so the sound plays
-    return { ok: true, trackId: 'g:' + room, durationMs, cueCount: cues.length, lightsOnly: false };
+    const gid = 'g:' + room + ':' + id; // unique per upload so a room can hold several in its playlist
+    const timeline = { version: 1, trackId: gid, fps: config.cueFps, durationMs, cues, beats };
+    hub.timelineCache.set(gid, timeline);  // in-memory light timeline, keyed to the upload — NO DB row
+    const arr = guestFiles.get(room) || []; guestFiles.set(room, arr);
+    while (arr.length >= config.publicUploadMaxFilesPerIp) _removeGuestEntry(room, arr[0]); // FIFO: keep at most N per room
+    const title = (mp.filename || '').replace(/\.[^.]+$/, '').slice(0, 60) || 'My upload';
+    arr.push({ id: gid, path: dest, createdAt: Date.now(), durationMs, ip, title, emptySince: 0 }); // KEEP it so the sound plays
+    return { ok: true, trackId: gid, durationMs, cueCount: cues.length, lightsOnly: false, title };
   } catch (e) {
     req.log.error(e);
     try { fs.unlinkSync(dest); } catch { /* ignore */ }
@@ -493,9 +510,14 @@ app.post('/api/console/upload', async (req, reply) => {
     uploadSem.release();
   }
 });
-// Serve a room's KEPT guest audio (one helper; used by the console monitor + audience phones).
+// Serve a room's currently-ARMED guest upload (one helper; used by the console monitor + audience
+// phones). Round 12 (pt 6): a room can hold several guest tracks, so serve the one the playlist has
+// armed (r.run.trackId); fall back to the newest if nothing guest-ish is armed.
 function serveGuestAudio(room, reply) {
-  const g = guestFiles.get(room);
+  const r = hub.rooms.get(room);
+  const armed = r && r.run ? r.run.trackId : null;
+  const list = guestList(room);
+  const g = (typeof armed === 'string' ? guestById(armed) : null) || list[list.length - 1] || null;
   if (!g || !fs.existsSync(g.path)) return reply.code(404).send({ error: 'no guest audio' });
   reply.header('Accept-Ranges', 'bytes').header('Cache-Control', 'no-store');
   return reply.type('application/octet-stream').send(fs.createReadStream(g.path));

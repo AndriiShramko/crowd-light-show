@@ -26,8 +26,8 @@ async function uploadTo(base, token, { consent, file, name }) {
   const fd = new FormData(); fd.append('audio', new Blob([file]), name || 'a.wav');
   return fetch(base + '/api/console/upload' + (consent ? '?consent=1' : ''), { method: 'POST', headers: { Authorization: 'Bearer ' + token }, body: fd });
 }
-const armGo = (base, tok, room) => Promise.all([])
-  .then(() => fetch(base + '/api/console/arm', { method: 'POST', headers: { Authorization: 'Bearer ' + tok, 'Content-Type': 'application/json' }, body: JSON.stringify({ trackId: 'g:' + room }) }))
+const armGo = (base, tok, gid) => Promise.all([]) // round 12 (pt 6): arm the upload's real id (g:<room>:<id6>)
+  .then(() => fetch(base + '/api/console/arm', { method: 'POST', headers: { Authorization: 'Bearer ' + tok, 'Content-Type': 'application/json' }, body: JSON.stringify({ trackId: gid }) }))
   .then(() => fetch(base + '/api/console/go', { method: 'POST', headers: { Authorization: 'Bearer ' + tok, 'Content-Type': 'application/json' }, body: '{}' }));
 
 async function main() {
@@ -51,13 +51,14 @@ async function main() {
     check('on_non_audio_415', (await uploadTo(UP, tok, { consent: true, file: Buffer.from('not audio at all, padding padding padding'), name: 'x.wav' })).status === 415, 'non-audio');
 
     const ok = await uploadTo(UP, tok, { consent: true, file: wav }); const okJson = await ok.json();
-    check('on_upload_keep_and_serve', ok.status === 200 && okJson.ok && okJson.lightsOnly === false && okJson.trackId === 'g:' + room, JSON.stringify(okJson));
+    const gid = okJson.trackId; // g:<room>:<id6>
+    check('on_upload_keep_and_serve', ok.status === 200 && okJson.ok && okJson.lightsOnly === false && typeof gid === 'string' && gid.indexOf('g:' + room + ':') === 0, JSON.stringify(okJson));
     check('on_file_kept', guestAudioFiles().length >= 1, 'files kept=' + guestAudioFiles().length);
 
     // SERVED: console monitor + (after arm) a room phone
     const cAudio = await fetch(UP + '/api/console/guest-audio', { headers: { Authorization: 'Bearer ' + tok } });
     check('on_console_guest_audio_200', cAudio.status === 200, 'console guest-audio=' + cAudio.status);
-    await armGo(UP, tok, room);
+    await armGo(UP, tok, gid);
     const rAudio = await fetch(`${UP}/api/audience/room-audio?room=${room}`);
     check('on_room_audio_200', rAudio.status === 200, 'room-audio=' + rAudio.status);
 
@@ -67,7 +68,7 @@ async function main() {
     await ph.goto(`${UP}/join?room=${room}&auto=1`);
     await ph.waitForFunction(() => window.__cls && window.__cls.synced, { timeout: 15000 }).catch(() => {});
     const ready = await ph.waitForFunction(() => window.__cls.audio && window.__cls.audio.ready, { timeout: 15000 }).then(() => true).catch(() => false);
-    await armGo(UP, tok, room); // re-GO so the short track is actively playing when the phone schedules
+    await armGo(UP, tok, gid); // re-GO so the short track is actively playing when the phone schedules
     const scheduled = await ph.waitForFunction(() => window.__cls.audio && window.__cls.audio.scheduled, { timeout: 10000 }).then(() => true).catch(() => false);
     const cls = await ph.evaluate(() => ({ ready: window.__cls.audio.ready, scheduled: window.__cls.audio.scheduled, lightsOnly: window.__cls.audio.lightsOnly, everLit: window.__cls.everLit }));
     await b.close();

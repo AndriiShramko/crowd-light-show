@@ -106,7 +106,7 @@ export class ShowHub {
     for (const [id, r] of this.rooms) {
       if (r.members.size === 0 && (r.createdAt || 0) < cutoff) {
         if (r._endTimer) { clearTimeout(r._endTimer); r._endTimer = null; }
-        this.timelineCache.delete('g:' + id); // discard the room's guest-upload light timeline (audio was already discarded)
+        this._dropGuestTimelines(id); // discard the room's guest-upload light timelines (audio handled by the server janitor)
         this.rooms.delete(id);
       }
     }
@@ -221,7 +221,7 @@ export class ShowHub {
         r.members.delete(ws); r.alloc.free(ws);
         if (r.members.size === 0) {
           if (r._endTimer) { clearTimeout(r._endTimer); r._endTimer = null; } // no dangling auto-stop on a dead room
-          this.timelineCache.delete('g:' + roomId); // drop the room's guest-upload light timeline
+          this._dropGuestTimelines(roomId); // drop the room's guest-upload light timelines
           this.rooms.delete(roomId); // ephemeral: clean up empty rooms
         } else this.markIndexDirty(roomId);
       }
@@ -303,19 +303,25 @@ export class ShowHub {
 
   // ---- playlist (round 10): per-room music loop. order = curated public-track ids. ----
   // Rebuild plOrder/plIdx for the just-armed track per the room's current mode.
+  // Round 12 (pt 6): the room's own guest uploads (id `g:<room>:<id6>`) now join the playlist, so a
+  // visitor's tracks can be looped / put in the loop list just like curated tracks.
+  _roomGuestIds(roomId) { const out = []; for (const k of this.timelineCache.keys()) if (typeof k === 'string' && k.indexOf('g:' + roomId + ':') === 0) out.push(k); return out; }
+  _dropGuestTimelines(roomId) { for (const k of [...this.timelineCache.keys()]) if (typeof k === 'string' && k.indexOf('g:' + roomId + ':') === 0) this.timelineCache.delete(k); }
   _syncPlaylist(roomId, trackId) {
     const h = this._rt(roomId, false);
     if (!h) return;
     const run = h.run;
-    if (typeof trackId !== 'number') { run.plOrder = []; run.plIdx = 0; return; } // guest upload: no playlist (ends -> stop)
+    if (trackId == null) { run.plOrder = []; run.plIdx = 0; return; } // nothing armed
+    const guestIds = this._roomGuestIds(roomId);                       // this room's uploads (strings)
+    const curated = listPublicTracks().map((t) => t.id);              // curated public tracks (numbers)
     const mode = run.plMode || 'all';
     let order;
     if (mode === 'one') order = [trackId];
     else if (mode === 'selected' && Array.isArray(run.plSelected) && run.plSelected.length) {
-      const pub = new Set(listPublicTracks().map((t) => t.id));
-      order = run.plSelected.filter((id) => pub.has(id));
-      if (!order.length) order = listPublicTracks().map((t) => t.id); // empty selection -> fall back to all
-    } else order = listPublicTracks().map((t) => t.id);
+      const valid = new Set([...curated, ...guestIds]);
+      order = run.plSelected.filter((id) => valid.has(id));
+      if (!order.length) order = guestIds.concat(curated); // empty selection -> fall back to all
+    } else order = guestIds.concat(curated);               // all: this room's uploads first, then curated
     const at = order.indexOf(trackId);
     run.plOrder = order;
     run.plIdx = at >= 0 ? at : 0;
