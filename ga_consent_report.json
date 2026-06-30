@@ -1,5 +1,5 @@
 {
-  "base": "http://localhost:3011",
+  "base": "http://localhost:3030",
   "pre": {
     "hasGtag": true,
     "hasClsGA": true,
@@ -19,6 +19,6 @@
     "ev": true
   },
   "libLoads": 1,
-  "collects": 2,
+  "collects": 4,
   "fails": []
 }

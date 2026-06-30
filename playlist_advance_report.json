@@ -1,6 +1,6 @@
 {
-  "base": "http://localhost:3012",
-  "room": "666f1260fff614f6",
+  "base": "http://localhost:3031",
+  "room": "42357a60400ce932",
   "A": 1,
   "B": 2,
   "afterAll": {

@@ -68,37 +68,71 @@
   function gaShowStarted(trackId) { gaT0 = Date.now(); ga('show_started', { track_id: trackId == null ? '' : trackId, preset_type: activeType || '' }); }
   function gaShowStopped() { if (gaT0 == null) return; ga('show_stopped', { duration_sec: Math.round((Date.now() - gaT0) / 1000), peak_phones: gaPeak, track_id: armedId == null ? '' : armedId }); gaT0 = null; gaPeak = 0; }
 
-  // ---- mode setup: hide features this session doesn't have, switch labels ----
+  // ---- mode setup: hide features this session doesn't have, switch labels (round 11: the block
+  // ORDER is now static HTML — applyMode only gates visibility + relabels, no imperative reorder) ----
   function applyMode() {
     Array.prototype.forEach.call(document.querySelectorAll('[data-feature]'), function (el) {
       var f = el.getAttribute('data-feature');
       if (FEAT[f] === false || FEAT[f] === undefined) el.classList.add('hidden');
     });
+    // Join URL: public has no /api/operator/state to fill #joinurl, so derive it from the signed room.
+    if (PUBLIC && ROOM) {
+      var ju = location.origin + '/join?room=' + ROOM;
+      var jl = $('joinurl'); if (jl) { jl.textContent = ju; jl.href = ju; }
+      var jb = $('joinBig'); if (jb) jb.textContent = ju;
+    }
     if (PUBLIC) {
       var title = $('consoleTitle'); if (title) title.textContent = (S.brand || 'Light Show') + ' — live console';
-      var pw = $('pubWelcome'); if (pw) { pw.textContent = S.welcome || 'The lights are already running. Share the code below so phones join. Tap “Play with sound” to hear the music. It is free — anyone can run their own.'; pw.classList.remove('hidden'); }
+      var pw = $('pubWelcome'); if (pw) { pw.textContent = S.welcome || 'Tap “Start Light Show”, then share the code so phones join — they hear the music automatically. It is free; anyone can run their own.'; pw.classList.remove('hidden'); }
       var pcc = $('pubCount'); if (pcc) pcc.classList.remove('hidden');
       var ph = $('playlistHint'); if (ph) ph.classList.remove('hidden');
-      var pt = $('playlistTitle'); if (pt) pt.textContent = '1 · Music';
-      if (FEAT.upload) { var ucw = $('uploadConsentWrap'); if (ucw) ucw.classList.remove('hidden'); var ub = $('upload'); if (ub) ub.textContent = 'Use my music'; }
-      // ROUND 10 UX: collapse the 4 play-ish controls to ONE. Hide the dead native <audio>, the
-      // redundant GO (the default track already auto-GOes the lights) and the old Sound button —
-      // the single "▶ Play with sound" at the top is the one autoplay gesture.
-      ['player', 'go', 'soundBtn'].forEach(function (id) { var e = $(id); if (e) e.classList.add('hidden'); });
-      // Move Share to the top — it is the main goal (get phones into the room).
-      var share = $('shareBlock'), cardPl = $('cardPlaylist');
-      if (share && cardPl && cardPl.parentNode) cardPl.parentNode.insertBefore(share, cardPl);
-      // Tuck the operator transport (pause/stop/blackout/nudge) + live presets/torch under an
-      // "Advanced" disclosure — a casual host never needs them; one click reveals them.
-      var cardShow = $('cardShow'), studioCard = $('studioCard');
-      if (cardPl && cardShow && cardPl.parentNode) {
-        var det = document.createElement('details'); det.className = 'op-adv';
-        var sum = document.createElement('summary'); sum.textContent = '▸ Advanced — pause / stop, live presets & flash';
-        det.appendChild(sum); det.appendChild(cardShow); if (studioCard) det.appendChild(studioCard);
-        if (cardPl.nextSibling) cardPl.parentNode.insertBefore(det, cardPl.nextSibling); else cardPl.parentNode.appendChild(det);
-      }
+      if (FEAT.upload) { var ub = $('upload'); if (ub) ub.textContent = 'Use my music'; }
+      ['player', 'soundBtn'].forEach(function (id) { var e = $(id); if (e) e.classList.add('hidden'); }); // dead native <audio> + old sound btn
+      var con = $('opConsole'); if (con) con.classList.add('pre-start'); // progressive disclosure: only Start shows until first Start (pt 2)
+      var ps = $('playSound'); if (ps) ps.classList.remove('hidden');
+      var mb = $('muteBtn'); if (mb) mb.classList.remove('hidden');     // public-only convenience (a personal operator scrubs the <audio>)
+      setPlayUI('idle');
+    } else {
+      var ps2 = $('playSound'); if (ps2) ps2.classList.add('hidden');   // personal uses GO/pause directly; no Start button, nothing gated
     }
   }
+
+  // ---- Start / Pause state machine (public console, pt 2). The /studio console opens with ONE
+  // "Start Light Show" button (no auto-GO); the first click loads (spinner), then morphs to "Pause
+  // Light Show" once the show is actually running, revealing STOP/BLACKOUT + the rest of the page.
+  var playUiState = 'idle'; // idle | loading | playing | paused
+  function setPlayUI(state) {
+    playUiState = state; if (window.__opAudio) window.__opAudio.playUiState = state;
+    var ps = $('playSound'), spin = $('playSpin'); if (!ps) return;
+    var txt = { idle: '▶ Start Light Show ', loading: '● Starting… ', playing: '⏸ Pause Light Show ', paused: '▶ Resume Light Show ' }[state] || '▶ Start Light Show ';
+    if (ps.childNodes[0]) ps.childNodes[0].nodeValue = txt; else ps.textContent = txt;
+    ps.disabled = (state === 'loading');
+    if (spin) spin.classList[state === 'loading' ? 'remove' : 'add']('hidden');
+    if (state === 'playing') { var con = $('opConsole'); if (con) con.classList.remove('pre-start'); } // reveal STOP/BLACKOUT + the rest
+  }
+  if ($('playSound')) $('playSound').addEventListener('click', function () {
+    if (!PUBLIC) return;
+    if (playUiState === 'idle') {
+      setPlayUI('loading');
+      var a = ensureAudio(); if (a) a.init().catch(function () {}); soundOn = true; // resume the AudioContext IN this gesture (autoplay)
+      if (armedId == null) { var def = (DEFAULTS && DEFAULTS.default_track_id); if (def != null) armTrack(Number(def), true); else doGoPublic(); }
+      else doGoPublic();
+      ga('show_started', { track_id: armedId == null ? '' : armedId });
+    } else if (playUiState === 'playing') {
+      tx('pause'); if (audio && soundOn) audio.stop(); setPlayUI('paused');
+    } else if (playUiState === 'paused') {
+      tx('resume'); if (audio && soundOn) audio.resume(); setPlayUI('playing');
+    }
+  });
+  // local MUTE/UNMUTE (this browser only — the show keeps running; pt 9)
+  var consoleMuted = false;
+  if ($('muteBtn')) $('muteBtn').addEventListener('click', function () {
+    consoleMuted = !consoleMuted;
+    if (audio && audio.setVolume) audio.setVolume(consoleMuted ? 0 : 0.85);
+    if (player) player.muted = consoleMuted || player.muted;
+    if (window.__opAudio) window.__opAudio.muted = consoleMuted;
+    $('muteBtn').textContent = consoleMuted ? '🔇 Unmute music' : '🔊 Mute music';
+  });
 
   // ===================== personal: playlist + applications =====================
   function loadState() {
@@ -143,9 +177,9 @@
       });
       if (!pubTracks.length) { tb.innerHTML = '<tr><td class="muted">The host has not published any tracks yet.</td></tr>'; }
       renderPlaylistCtl();
-      // default music: auto-arm the default track (LIGHTS start now; SOUND waits for one tap)
-      var def = (DEFAULTS && DEFAULTS.default_track_id) || (d.defaults && d.defaults.default_track_id);
-      if (def && armedId == null) armTrack(Number(def), true);
+      // round 11 (pt 2): do NOT auto-GO on open — /studio waits for the single "Start Light Show"
+      // click so the user is never confused about what starts the show. Remember the default for it.
+      if (DEFAULTS && (d.defaults && d.defaults.default_track_id) && DEFAULTS.default_track_id == null) DEFAULTS.default_track_id = d.defaults.default_track_id;
     });
     api('/api/operator/qr').then(function (r) { return r.ok ? r.blob() : null; }).then(function (b) { if (!b) return; var u = URL.createObjectURL(b); if ($('qr')) $('qr').src = u; if ($('qrBig')) $('qrBig').src = u; });
   }
@@ -188,6 +222,12 @@
     // GA: one chokepoint for show start/stop — covers GO/resume/stop/blackout/track-end, personal+public.
     if (st.status === 'running' && prevState !== 'running') gaShowStarted(armedId);
     else if (st.status !== 'running' && prevState === 'running') gaShowStopped();
+    // round 11 (pt 2): the public Start/Pause button follows the real transport state (chokepoint).
+    if (PUBLIC) {
+      if (st.status === 'running') { if (playUiState !== 'playing') setPlayUI('playing'); }
+      else if (st.status === 'paused') { if (playUiState !== 'paused') setPlayUI('paused'); }
+      else if (playUiState !== 'idle' && playUiState !== 'loading') setPlayUI('idle'); // stop/blackout -> back to Start (page stays revealed)
+    }
     if (pendingGo) return;
     var locking = (st.status === 'idle' && !(clock && clock.ready));
     if ($('go')) $('go').textContent = st.status === 'paused' ? '▶ RESUME' : (st.status === 'running' ? '● LIVE' : (locking ? '▶ GO (clock…)' : '▶ GO'));
@@ -225,6 +265,23 @@
         else { $('uploadMsg').textContent = 'Done: ' + res.j.cueCount + ' cues, ' + res.j.beats + ' beats'; loadState(); }
       })
       .catch(function (e) { ga('upload_test', { result: 'fail' }); $('uploadMsg').textContent = 'Upload failed: ' + e; });
+  });
+
+  // round 11 (pt 3): the licence confirmation lives in a MODAL that opens only when the visitor picks
+  // a file (it no longer occupies the page). Agreeing ticks the consent + uploads; Cancel clears it.
+  function closeConsent() { var m = $('consentModal'); if (m) m.classList.add('hidden'); }
+  if ($('file')) $('file').addEventListener('change', function () {
+    if (!(PUBLIC && FEAT.upload) || !$('file').files[0]) return;
+    if ($('uploadConsent') && $('uploadConsent').checked) return; // already agreed this session
+    var m = $('consentModal'); if (m) m.classList.remove('hidden');
+  });
+  if ($('consentAgree')) $('consentAgree').addEventListener('click', function () {
+    if ($('uploadConsent')) $('uploadConsent').checked = true;
+    closeConsent();
+    if ($('file') && $('file').files[0] && $('upload')) $('upload').click(); // proceed with the upload
+  });
+  if ($('consentCancel')) $('consentCancel').addEventListener('click', function () {
+    if ($('file')) $('file').value = ''; if ($('uploadConsent')) $('uploadConsent').checked = false; closeConsent();
   });
 
   // ---- transport: personal = operator WS; public = HTTP /api/console/* ----
@@ -304,7 +361,7 @@
     if ($('soundBtn')) { $('soundBtn').textContent = '🔊 Sound on'; $('soundBtn').disabled = true; }
   }
   if ($('soundBtn')) $('soundBtn').addEventListener('click', startConsoleSound);
-  if ($('playSound')) $('playSound').addEventListener('click', startConsoleSound);
+  // (#playSound is the Start/Pause machine — wired above; not a one-shot sound enabler any more)
 
   // playlist advanced to a new curated track while the console sound is on — swap the monitor audio.
   function reloadConsoleSound(id) {
@@ -461,7 +518,13 @@
   var pvCanvas = $('presetPreview'), pvCtx = pvCanvas ? pvCanvas.getContext('2d') : null;
   var pvBackstop = null, pvT0 = null, pvLast = 0;
   window.__opPreview = { ready: !!PV, type: null, frames: 0, changeSeq: 0, maxLum: 0, minLum: 1, hueMin: 360, hueMax: 0, hueSpread: 0, flashesPerSec: 0, lastBg: '', cross: [], _armed: true };
-  function simLoudness(ms) { var s = 0.10 + 0.30 * (0.5 + 0.5 * Math.sin(2 * Math.PI * ms / 1400)); var beat = (ms % 1400) < 110 ? 0.45 : 0; var v = s + beat; return v > 1 ? 1 : v; }
+  // round 11 (pt 7): the preview's loudness is 0 unless the show is RUNNING with a track — so a
+  // silent/stopped console shows NO music reaction (no jump). The old hard +0.45 step every 1400ms
+  // was the "jump every second" the owner saw. When running, a smooth proxy (no step).
+  function simLoudness(ms) {
+    if (curState !== 'running' || armedId == null) return 0;
+    return 0.15 + 0.35 * (0.5 + 0.5 * Math.sin(2 * Math.PI * ms / 1400));
+  }
   function rgbHue(r, g, b) { r /= 255; g /= 255; b /= 255; var mx = Math.max(r, g, b), mn = Math.min(r, g, b), d = mx - mn; if (d < 1e-6) return 0; var h; if (mx === r) h = ((g - b) / d) % 6; else if (mx === g) h = (b - r) / d + 2; else h = (r - g) / d + 4; h *= 60; return h < 0 ? h + 360 : h; }
   function pvReset() {
     var pv = window.__opPreview;
@@ -470,8 +533,18 @@
     if (pvCtx && pvCanvas.width) pvCtx.clearRect(0, 0, pvCanvas.width, pvCanvas.height);
   }
   function pvShow(on) { var w = $('presetPreviewWrap'); if (w) w.className = on ? '' : 'hidden'; }
+  // The Live preview under Start/Stop (pt 7): the crowd's current screen colour when RUNNING with an
+  // active preset; steady black when idle/stopped/blackout (no music reaction in silence).
+  function mainPreviewFrame() {
+    var mp = $('mainPreview'); if (!mp) return; var mc = mp.getContext ? mp.getContext('2d') : null; if (!mc) return;
+    if (!mp.width || mp.width < 8) { mp.width = mp.clientWidth || 320; mp.height = 48; }
+    var bg = '#000';
+    if (curState === 'running' && activeType && window.__opPreview && window.__opPreview.lastBg) bg = window.__opPreview.lastBg;
+    mc.fillStyle = bg; mc.fillRect(0, 0, mp.width, mp.height);
+  }
   function pvFrame(now) {
     requestAnimationFrame(pvFrame);
+    mainPreviewFrame(); // round 11 (pt 7): the small Live preview under Start/Stop
     if (!pvCtx || !PV || !activeType || !presetSchema || !presetSchema[activeType]) return;
     if (!pvCanvas.width || pvCanvas.width < 8) { pvCanvas.width = pvCanvas.clientWidth || 320; pvCanvas.height = 56; }
     if (pvT0 == null) { pvT0 = now; pvLast = now; }

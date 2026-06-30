@@ -45,7 +45,8 @@ async function main() {
   const sess = await con.evaluate(() => window.__SESSION__);
   const room = sess.room;
   const cAuth = { Authorization: 'Bearer ' + sess.token, 'Content-Type': 'application/json' };
-  // wait until the console's room is actually running (default armed + GO)
+  // round 11: /studio no longer auto-GOes — click "Start Light Show" to arm+GO the default track.
+  await con.click('#playSound').catch(() => {});
   await con.waitForFunction(() => window.__cls && window.__cls.status === 'running', { timeout: 12000 }).catch(() => {});
   check('room_code', /^[a-z0-9]{6,24}$/.test(room || ''), 'room=' + room);
 

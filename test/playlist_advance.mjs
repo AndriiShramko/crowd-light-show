@@ -80,7 +80,9 @@ async function main() {
 
   // ---- console UI: the operator can SEE + drive the playlist (mode buttons + now/next) ----
   await con.reload();
-  await con.waitForFunction(() => { const c = document.getElementById('playlistCtl'); return c && !c.classList.contains('hidden'); }, { timeout: 12000 }).catch(() => {});
+  await con.waitForFunction(() => window.__SESSION__ && window.__SESSION__.room, { timeout: 12000 });
+  await con.click('#playSound').catch(() => {}); // round 11: reveal the page (playlist is block 2, hidden until Start)
+  await con.waitForFunction(() => { const c = document.getElementById('playlistCtl'); return c && c.getBoundingClientRect().width > 0; }, { timeout: 12000 }).catch(() => {});
   const ui = await con.evaluate(() => {
     const ctl = document.getElementById('playlistCtl');
     const modes = ctl ? ctl.querySelectorAll('[data-plmode]').length : 0;

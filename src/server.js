@@ -130,7 +130,7 @@ function readValidatedDefaults() {
 function personalSession(token) {
   return {
     mode: 'personal', token, room: null, apiBase: '/api/operator', lead: config.startLeadMs,
-    features: { applications: true, upload: true, torch: true, transport: true, publicConfig: true, playlist: false, defaultMusic: false },
+    features: { applications: true, upload: true, torch: true, transport: true, publicConfig: true, playlist: false, defaultMusic: false, transportInternals: true, nudge: true },
     brand: 'Crowd Light Show',
   };
 }
@@ -138,7 +138,7 @@ function publicSession(room, token) {
   const d = readValidatedDefaults();
   return {
     mode: 'public', token, room, apiBase: '/api/console', lead: config.startLeadMs,
-    features: { applications: false, upload: d.allow_upload, torch: d.allow_torch, transport: true, publicConfig: false, playlist: true, defaultMusic: true },
+    features: { applications: false, upload: d.allow_upload, torch: d.allow_torch, transport: true, publicConfig: false, playlist: true, defaultMusic: true, transportInternals: false, nudge: false },
     brand: d.brand_name, welcome: d.welcome_text,
     defaults: { screen: d.screen || null, torch: d.torch || null, default_track_id: d.default_track_id || null, playlist_mode: d.playlist_mode || 'all' },
     playlist: listPublicTracks(),

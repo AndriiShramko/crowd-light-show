@@ -1,29 +1,57 @@
 {
-  "base": "http://localhost:3011",
-  "ui": {
-    "playSoundVis": true,
-    "playerHidden": true,
+  "base": "http://localhost:3030",
+  "idle": {
+    "startText": "▶ Start Light Show ",
+    "startVisible": true,
+    "playlistHidden": true,
+    "joinHidden": true,
+    "shareHidden": true,
+    "stopRowHidden": true,
+    "stateText": "idle",
+    "joinUrl": "http://localhost:3030/join?room=597cd877efae3695",
+    "joinHref": "http://localhost:3030/join?room=597cd877efae3695",
+    "advOpen": true,
+    "nudgeHidden": true,
     "goHidden": true,
+    "playerHidden": true,
     "soundBtnHidden": true,
-    "detPresent": true,
-    "detHasShow": true,
-    "detHasStudio": true,
-    "shareBeforePlaylist": true,
-    "activePreset": "pulse",
-    "consoleWidth": 1440
+    "muteExists": true,
+    "mutePrimary": "ghost reveal",
+    "preset": "pulse"
   },
-  "afterTap": {
-    "playLabel": "🔊 Sound on",
-    "playDisabled": true,
-    "secondSound": false
+  "afterStart": {
+    "btn": "⏸ Pause Light Show ",
+    "state": "running",
+    "playlistVis": true,
+    "joinVis": true,
+    "shareVis": true,
+    "stopVis": true,
+    "blackoutVis": true,
+    "stopInAdv": false
   },
-  "opUi": {
-    "player": true,
-    "go": true,
-    "nudge": true,
-    "apps": true,
-    "pubcfg": true,
-    "adv": false
-  },
+  "order": [
+    "cardShow",
+    "cardPlaylist",
+    "cardJoin",
+    "shareBlock",
+    "",
+    "studioCard"
+  ],
+  "studioBlocks": [
+    "cardShow",
+    "cardPlaylist",
+    "cardJoin",
+    "shareBlock",
+    "advCard"
+  ],
+  "opBlocks": [
+    "cardShow",
+    "cardPlaylist",
+    "cardJoin",
+    "shareBlock",
+    "advCard",
+    "cardApps",
+    "cardPublicConfig"
+  ],
   "fails": []
 }
