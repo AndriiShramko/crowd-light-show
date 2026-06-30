@@ -805,6 +805,7 @@
 
   // ---- boot ----
   window.__opMode = { mode: MODE, room: ROOM, features: FEAT }; // test seam
+  if (PUBLIC) window.__opRefreshPublic = loadPublic; // test seam: re-fetch the room playlist (a real UI upload calls this via armTrack)
   applyMode();
   ga('studio_open', { is_public: !!PUBLIC });
   connect();

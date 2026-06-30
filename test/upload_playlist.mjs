@@ -44,8 +44,11 @@ async function main() {
   check('playlist_has_3_guest_tracks', gt.length === 3 && gt.every((t) => /^g:/.test(t.id) && t.title), 'guestTracks=' + JSON.stringify(gt.map((t) => t.title)));
 
   // ---- the console UI lists the uploaded tracks (so they can be looped / selected) ----
+  // (we uploaded over HTTP; a real UI upload re-fetches the playlist via armTrack -> loadPublic.
+  //  Trigger that same refresh in the SAME room — reloading would mint a fresh room and lose them.)
   await con.click('#playSound').catch(() => {}); // reveal the console (playlist is block 2)
-  await con.waitForTimeout(700);
+  await con.evaluate(() => window.__opRefreshPublic && window.__opRefreshPublic());
+  await con.waitForTimeout(900);
   const uiTitles = await con.evaluate(() => [...document.querySelectorAll('#tracks tbody tr td b')].map((e) => e.textContent));
   check('ui_lists_uploads', ['song-one', 'song-two', 'song-three'].every((t) => uiTitles.includes(t)), 'console playlist rows=' + JSON.stringify(uiTitles));
 
