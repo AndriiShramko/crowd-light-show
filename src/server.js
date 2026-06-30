@@ -866,7 +866,12 @@ wss.on('connection', (ws) => {
     if (m.t === 'hello') {
       if (ws.role) return;
       if (m.role === 'operator') {
-        if (!verifyToken(m.token)) { hub.send(ws, { t: 'error', error: 'unauthorized' }); ws.close(); return; }
+        // round 14 fix: the gate must check the token's ROLE, not just that it verifies — a no-auth
+        // /studio CONSOLE token verifies under the same secret, so a role-blind check let it take over
+        // the MAIN show over WS (arm/go/stop/blackout/seek/mute-all + the round-14 manual/palette).
+        // Symmetric with the HTTP requireOperator path (which already rejects s.role !== 'operator').
+        const s = verifyToken(m.token);
+        if (!s || s.role !== 'operator') { hub.send(ws, { t: 'error', error: 'unauthorized' }); ws.close(); return; }
         ws.role = 'operator'; hub.addOperator(ws);
       } else {
         ws.role = 'audience'; ws.platform = String(m.platform || 'other').slice(0, 16);

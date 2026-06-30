@@ -273,7 +273,7 @@
     }
     if (m.t === 'start') { runState = { status: 'running', T0: m.T0, epoch: m.epoch, pausePos: 0, loop: !!m.loop }; window.__cls.status = 'running'; window.__cls.gotStart = m.T0; window.__cls.loop = !!m.loop; prevLum = 0; flashArmed = true; if (audio && audioOn) playRoomAudio(m.T0); setStatus('st_play'); showWave(); return; }
     if (m.t === 'pause') { runState.status = 'paused'; runState.pausePos = m.pos; window.__cls.status = 'paused'; if (audio) audio.stop(); setStatus('st_paused'); return; }
-    if (m.t === 'stop') { runState = { status: 'idle', T0: null, epoch: m.epoch, pausePos: 0 }; preset = null; torchPreset = null; fx = null; window.__cls.fx = null; window.__cls.preset = null; window.__cls.screen.preset = null; window.__cls.torch.preset = null; window.__cls.status = 'idle'; if (audio) audio.stop(); hideWave(); setStatus('st_wait'); return; }
+    if (m.t === 'stop') { runState = { status: 'idle', T0: null, epoch: m.epoch, pausePos: 0 }; preset = null; torchPreset = null; fx = null; window.__cls.fx = null; window.__cls.preset = null; window.__cls.screen.preset = null; window.__cls.torch.preset = null; window.__cls.status = 'idle'; manual = { on: false, mode: 'intervene', sat: 1, hue: 0, bri: 1, flash: 0 }; window.__cls.manual = manual; palette = { on: false, colors: [] }; window.__cls.palette = palette; if (audio) audio.stop(); hideWave(); setStatus('st_wait'); return; } // round 14: STOP also drops a latched VJ manual override + palette (mirror of the server release)
     if (m.t === 'blackout') { runState = { status: 'blackout', T0: null, epoch: m.epoch }; preset = null; torchPreset = null; fx = null; window.__cls.fx = null; window.__cls.preset = null; window.__cls.screen.preset = null; window.__cls.torch.preset = null; window.__cls.status = 'blackout'; hideWave(); return; } // round 13 (pt 6): BLACKOUT kills lights+torch only — the MUSIC keeps playing (audio untouched)
     // ---- studio: live parametric presets ----
     if (m.t === 'index') { myIndex = m.index | 0; N = Math.max(1, m.total | 0); window.__cls.idx = myIndex; window.__cls.total = N; return; }
@@ -532,8 +532,10 @@
       // operator BLACKOUT overrides everything — go dark immediately.
     } else if (fxActive) {
       finalRgb = fxScreen; flum = P.relLum(finalRgb); playing = true; epochNow = fx.epoch; setStatus('st_play');
-    } else if (manual.on && manual.mode === 'full' && P) {
+    } else if (manual.on && manual.mode === 'full' && P && runState.status !== 'idle') {
       // round 14: PURE MANUAL ("presets OFF") — the screen colour is the operator's HSV directly. It is
+      // gated on a live show (not idle/stopped; blackout is already excluded above) so STOP genuinely
+      // darkens the crowd even if a latched manual frame outlives the stop broadcast.
       // globally identical (no clock needed), snapped to the palette, then run through the SAME governors.
       var rawF = P.hsl2rgb(manual.hue, manual.sat, manual.bri * 0.85 + 0.04); // map V into the governed L-band
       rawF = paletteSnap(rawF, palette);
@@ -635,7 +637,9 @@
     // round 14: the manual FLASH slider composes here, BEFORE the unchanged torchGate. fx still wins
     // (fxTorchOverride). In 'full' mode the slider is authoritative; in 'intervene' it can ADD a flash on
     // top of (or without) a torch preset. iOS has no torchTrack -> applyTorch is a no-op, screen untouched.
-    if (manual.on && fxTorchOverride == null && runState.status !== 'blackout') {
+    if (manual.on && fxTorchOverride == null && runState.status !== 'blackout' && runState.status !== 'idle') {
+      // round 14 fix: gated on NOT idle (and not blackout) so a latched manual FLASH cannot keep the camera
+      // LED solid-on after STOP — makeTorchGate only rate-limits new ON-edges, it never releases a held one.
       if (manual.mode === 'full') wantOn = manual.flash >= 0.5;          // pure manual: the slider decides
       else if (manual.flash >= 0.5) wantOn = true;                       // intervene: flash adds on top
     }

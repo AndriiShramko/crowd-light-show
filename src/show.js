@@ -410,7 +410,13 @@ export class ShowHub {
   }
 
   addOperator(ws) { this.operators.add(ws); this.send(ws, { t: 'state', state: this.publicState() }); this.broadcastCount(); }
-  removeOperator(ws) { this.operators.delete(ws); }
+  removeOperator(ws) {
+    this.operators.delete(ws);
+    // round 14 fix: if the last MAIN operator drops (tab close / crash / network drop) while a VJ manual
+    // override is latched, release it server-side — a client beforeunload is unreliable, and otherwise the
+    // crowd stays frozen on the absent operator's last colour/flash (and it replays to every late joiner).
+    if (this.operators.size === 0) this._releaseManual(this._rt('main', false));
+  }
 
   broadcastCount() {
     // Torch capability split (round 8B): Android phones can drive the camera LED; iOS/other are
@@ -605,6 +611,8 @@ export class ShowHub {
     if (!h) return { ok: false, error: 'no room' };
     this.cancelEnd(roomId);
     h.setPreset('screen', null); h.setPreset('torch', null); // STOP kills BOTH channels (no screen or torch flashing)
+    this._releaseManual(h);   // round 14 fix: STOP must also drop a latched VJ manual override + palette,
+                              // else the crowd stays lit / torch-on (and late joiners inherit it) after the kill
     h.run.epoch++;
     h.run.status = 'idle';
     h.run.T0 = null;
@@ -612,6 +620,19 @@ export class ShowHub {
     h.broadcast({ t: 'stop', epoch: h.run.epoch });
     h.announceState();
     return { ok: true };
+  }
+
+  // round 14: reset the manual override + palette to OFF and broadcast the release, so already-connected
+  // phones drop the latched colour/flash immediately and late joiners no longer inherit it. Used by STOP
+  // and by removeOperator (when the last operator leaves). Takes a room HANDLE (from _rt).
+  _releaseManual(h) {
+    if (!h || !h.run) return;
+    const wasManual = !!(h.run.manual && h.run.manual.on);
+    const wasPalette = !!(h.run.palette && h.run.palette.on);
+    h.run.manual = defaultManual();
+    h.run.palette = { on: false, colors: [] };
+    if (wasManual) h.broadcast({ t: 'manual', on: false, mode: 'intervene', sat: 1, hue: 0, bri: 1, flash: 0 });
+    if (wasPalette) h.broadcast({ t: 'palette', on: false, colors: [] });
   }
 
   blackout(roomId) {

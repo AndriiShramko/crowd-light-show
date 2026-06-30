@@ -916,6 +916,10 @@
     function killFlash() { if (st.flash !== 0) { st.flash = 0; push(); } } // dropped finger / backgrounded tab must never leave the crowd strobing
     window.addEventListener('blur', killFlash);
     document.addEventListener('visibilitychange', function () { if (document.hidden) killFlash(); });
+    // round 14 fix: best-effort release of the manual override + palette when the console tab closes, so a
+    // /studio guest leaving doesn't freeze the crowd on their last frame. (On /operator the server also
+    // releases on the WS drop; this covers the HTTP-only /studio path where there is no operator socket.)
+    window.addEventListener('pagehide', function () { try { if (vjOn) tx('manual', { on: false, mode: vjMode, hue: st.hue, sat: st.sat, bri: st.bri, flash: 0 }); if (palette.on) tx('palette', { on: false, colors: [] }); } catch (e) {} });
 
     var painters = [];
     function paint() { for (var i = 0; i < painters.length; i++) { try { painters[i](); } catch (e) {} } }
