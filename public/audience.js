@@ -223,7 +223,7 @@
       if (audioOn) cacheAudio(); else preloadAudio(); // round 11: pre-fetch+decode before the tap (main show)
       showAudioBtn(); return;
     }
-    if (m.t === 'start') { runState = { status: 'running', T0: m.T0, epoch: m.epoch, pausePos: 0 }; window.__cls.status = 'running'; window.__cls.gotStart = m.T0; prevLum = 0; flashArmed = true; if (audio && audioOn) audio.start(m.T0); setStatus('st_play'); showWave(); return; }
+    if (m.t === 'start') { runState = { status: 'running', T0: m.T0, epoch: m.epoch, pausePos: 0, loop: !!m.loop }; window.__cls.status = 'running'; window.__cls.gotStart = m.T0; window.__cls.loop = !!m.loop; prevLum = 0; flashArmed = true; if (audio && audioOn) playRoomAudio(m.T0); setStatus('st_play'); showWave(); return; }
     if (m.t === 'pause') { runState.status = 'paused'; runState.pausePos = m.pos; window.__cls.status = 'paused'; if (audio) audio.stop(); setStatus('st_paused'); return; }
     if (m.t === 'stop') { runState = { status: 'idle', T0: null, epoch: m.epoch, pausePos: 0 }; preset = null; torchPreset = null; window.__cls.preset = null; window.__cls.screen.preset = null; window.__cls.torch.preset = null; window.__cls.status = 'idle'; if (audio) audio.stop(); hideWave(); setStatus('st_wait'); return; }
     if (m.t === 'blackout') { runState = { status: 'blackout', T0: null, epoch: m.epoch }; preset = null; torchPreset = null; window.__cls.preset = null; window.__cls.screen.preset = null; window.__cls.torch.preset = null; window.__cls.status = 'blackout'; if (audio) audio.stop(); hideWave(); return; }
@@ -254,10 +254,19 @@
   }
 
   function applyState(s) {
-    runState.status = s.status; runState.T0 = s.T0; runState.epoch = s.epoch; runState.pausePos = s.pausePos || 0;
-    window.__cls.status = s.status;
+    runState.status = s.status; runState.T0 = s.T0; runState.epoch = s.epoch; runState.pausePos = s.pausePos || 0; runState.loop = !!s.loop;
+    window.__cls.status = s.status; window.__cls.loop = !!s.loop;
     prevLum = 0; flashArmed = true; // late-join: don't suppress the first legitimate flash
-    if (s.status === 'running' && s.T0 != null && audio && audioOn) audio.start(s.T0); // late-join audio
+    if (s.status === 'running' && s.T0 != null && audio && audioOn) playRoomAudio(s.T0); // late-join audio
+  }
+  // Round 12 (pt 2): pick the audio engine. A LOOPING room (a /studio playlist) uses the SEAMLESS
+  // fixed-anchor loop the /try demo uses (startLoop) — its tight corrector holds sync to end-of-song
+  // and never lets the gentle one-shot trim slide the whole group off the lights. A non-looping show
+  // (main show, plays once) keeps the one-shot start(). The loop period == the track's duration.
+  function playRoomAudio(T0) {
+    if (!audio) return;
+    if (runState.loop && timeline && timeline.durationMs) audio.startLoop(T0, timeline.durationMs);
+    else audio.start(T0);
   }
 
   // ---- per-phone synchronized music ----
@@ -295,7 +304,7 @@
         window.__cls.audio.preload = 'decoding'; updateAudioBtn();
         return audio.cache(ab).then(function () {
           audioCaching = false; window.__cls.audio.preload = 'ready'; window.__cls.audio.lightsOnly = false; updateAudioBtn();
-          if (audioOn && runState.status === 'running' && runState.T0 != null) audio.start(runState.T0); // already opted-in: jump in now
+          if (audioOn && runState.status === 'running' && runState.T0 != null) playRoomAudio(runState.T0); // already opted-in: jump in now
         });
       })
       .catch(function () { audioCaching = false; window.__cls.audio.preload = 'error'; updateAudioBtn(); });
@@ -331,7 +340,7 @@
     // tap = the gesture: resume the (possibly preloaded) context, then play immediately if the buffer
     // is already decoded; otherwise fall back to fetch-in-the-tap.
     audio.init().then(function () {
-      if (audio.ready()) { if (runState.status === 'running' && runState.T0 != null) audio.start(runState.T0); }
+      if (audio.ready()) { if (runState.status === 'running' && runState.T0 != null) playRoomAudio(runState.T0); }
       else cacheAudio();
     }).catch(function () {});
   }
@@ -378,8 +387,8 @@
         window.__cls.audio.lightsOnly = false;
         return audio.cache(ab).then(function () {
           showAudioBtn();
-          // if the show is already running, jump in at the right position now
-          if (runState.status === 'running' && runState.T0 != null) audio.start(runState.T0);
+          // if the show is already running, jump in at the right position now (loop-aware: pt 2)
+          if (runState.status === 'running' && runState.T0 != null) playRoomAudio(runState.T0);
         });
       })
       .catch(function () { audioCaching = false; window.__cls.audio.lightsOnly = true; showAudioBtn(); });
@@ -440,6 +449,12 @@
       } else if (synced && demoMode && timeline) {
         var d = timeline.durationMs; pos = ((clock.serverNow() - demoT0) % d + d) % d; // loop forever
         var cd = sampleCue(pos); lum = cd.b; rgb = cd.rgb; playing = true;
+      } else if (synced && timeline && runState.loop && timeline.durationMs) {
+        // round 12 (pt 2): a looping /studio room runs lights on ONE fixed anchor, modulo the track
+        // duration — exactly like the /try demo — so lights + the seamless-looped audio share one
+        // clock and never drift apart by end-of-song. The track never "ends" here; STOP clears it.
+        var dl = timeline.durationMs; pos = ((clock.serverNow() - runState.T0) % dl + dl) % dl;
+        var cl = sampleCue(pos); lum = cl.b; rgb = cl.rgb; playing = true; setStatus('st_play');
       } else if (synced && timeline && runState.status === 'running') {
         pos = clock.serverNow() - runState.T0;
         if (pos > timeline.durationMs + 250) {
@@ -472,6 +487,10 @@
     // can't point into a different/stale track's envelope.
     var wavePos = pos, waveFromAudio = false;
     if (audio && audio.isLive && audio.isLive()) { var pm = audio.playedMs ? audio.playedMs() : null; if (pm != null && pm >= 0) { wavePos = pm; waveFromAudio = true; } }
+    // round 12 (pt 3): the audio cursor (playedMs) grows monotonically and a looped buffer plays past
+    // the track length, so without this the playhead pinned to the right edge and stayed there on every
+    // loop. Wrap it modulo the track duration so it snaps back to the start each pass (lights + demo too).
+    if (timeline && timeline.durationMs && wavePos >= 0) { var wd = timeline.durationMs; wavePos = ((wavePos % wd) + wd) % wd; }
     window.__cls.wavePos = Math.round(wavePos); window.__cls.waveFromAudio = waveFromAudio; // test seam (pt 8)
     if ((++waveTick % 5) === 0) { drawWave(playing && timeline ? wavePos : -1); if (DIAG) updateDiag(pos); }
     } catch (e) { noteError(); /* this frame degrades to whatever was last painted; the loop survives */ }

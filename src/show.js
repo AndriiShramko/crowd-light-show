@@ -277,12 +277,18 @@ export class ShowHub {
     const tl = this.loadTimeline(h.run.trackId);
     const dur = tl && tl.durationMs;
     if (!dur) return;
+    // Round 12 (pt 2): a SINGLE-track loop (plOrder length 1) no longer re-arms+re-GOes the same
+    // track each pass (that fresh T0 every ~song let the audio slide off the lights by end-of-song).
+    // The phone now loops both lights and audio on ONE stable anchor (the seamless /try engine), so
+    // there is NOTHING to schedule — the room just keeps running. Only a MULTI-track playlist needs
+    // a real boundary (advance to the NEXT track); a no-playlist show still auto-stops at the end.
+    if (h.run.plOrder && h.run.plOrder.length === 1) return; // seamless client-side loop; no re-GO
     const remaining = (h.run.T0 + dur) - serverClock() + 300; // +tail
     const timer = setTimeout(() => {
       const hh = this._rt(roomId, false);
       if (!hh || hh.run.status !== 'running') return;
-      // Round 10: a public room with a playlist ADVANCES (looping) instead of stopping.
-      if (hh.run.plOrder && hh.run.plOrder.length) this.advance(roomId);
+      // Round 10: a public room with a MULTI-track playlist ADVANCES (looping) instead of stopping.
+      if (hh.run.plOrder && hh.run.plOrder.length > 1) this.advance(roomId);
       else this.stop(roomId);
     }, Math.max(0, remaining));
     if (timer.unref) timer.unref();
@@ -391,8 +397,13 @@ export class ShowHub {
   // real show; trackId is the ROOM's own (never the main show's).
   roomPublicState(r) {
     const run = r.run || newRun();
-    return { epoch: run.epoch || 0, status: run.status || 'idle', trackId: run.trackId == null ? null : run.trackId, T0: run.T0 == null ? null : run.T0, pausePos: run.pausePos || 0, demo: true };
+    return { epoch: run.epoch || 0, status: run.status || 'idle', trackId: run.trackId == null ? null : run.trackId, T0: run.T0 == null ? null : run.T0, pausePos: run.pausePos || 0, demo: true, loop: !!(run.plOrder && run.plOrder.length) };
   }
+  // Round 12 (pt 2): a public/studio room with a playlist LOOPS its track(s). The phone then runs
+  // BOTH lights and audio in a single fixed-anchor modulo loop (the seamless engine the /try demo
+  // already uses) instead of a one-shot that the gentle sub-JND corrector can't hold to end-of-song.
+  // Main show (no playlist) plays once -> loop:false (unchanged one-shot).
+  _roomLoops(run) { return !!(run && run.plOrder && run.plOrder.length); }
 
   // ---- transport actions — room-scoped (roomId omitted => MAIN, back-compat) ----
   arm(trackId, opts = {}, roomId) {
@@ -431,7 +442,7 @@ export class ShowHub {
     h.run.status = 'running';
     h.run.T0 = T0;
     h.run.pausePos = 0;
-    h.broadcast({ t: 'start', epoch: h.run.epoch, trackId: h.run.trackId, T0 });
+    h.broadcast({ t: 'start', epoch: h.run.epoch, trackId: h.run.trackId, T0, loop: this._roomLoops(h.run) });
     h.announceState();
     this.scheduleEnd(roomId);
     return { ok: true };
@@ -457,7 +468,7 @@ export class ShowHub {
     h.run.epoch++;
     h.run.status = 'running';
     h.run.T0 = serverClock() - h.run.pausePos;
-    h.broadcast({ t: 'start', epoch: h.run.epoch, trackId: h.run.trackId, T0: h.run.T0 });
+    h.broadcast({ t: 'start', epoch: h.run.epoch, trackId: h.run.trackId, T0: h.run.T0, loop: this._roomLoops(h.run) });
     h.announceState();
     this.scheduleEnd(roomId);
     return { ok: true, pos: h.run.pausePos };
