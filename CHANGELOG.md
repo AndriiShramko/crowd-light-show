@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-07-01
+
+Round 14 — a live "VJ pult": control the crowd by hand under the music, restrict the palette to chosen colours, and drive the show from professional VJ software.
+
+### Added
+
+- **VJ pult — live manual control.** A new panel on both consoles to drive the crowd by hand — **saturation, colour, brightness, and flash** — like a VJ console. Toggle it on, open it fullscreen, and play with your fingers. Four touch-first layouts to choose from (a tab each): **Faders** (four vertical faders), **Colour wheel** (angle = hue, radius = saturation, plus brightness/flash faders), **XY pad** (x = hue, y = brightness, plus a saturation fader and a momentary flash pad), and **Big pads** (large momentary punches + hue swatches). A mode switch chooses **“intervene in preset”** (the running preset keeps going and the sliders modulate it) or **“manual only”** (presets off — the colour is purely yours). The whole block can be turned off, and then the show behaves exactly as before. The flash always zeroes if your finger slips or the tab is backgrounded. Everything is safety-clamped on the phone (≤3 flashes/s, no red strobe).
+- **Palette restriction.** Restrict the whole show to a chosen set of colours — a flag's or a brand's — and everything snaps to the nearest one. One-tap presets (Poland, Ukraine, EU, Pride, Germany, plus Cool/Warm) or your own hex list. Works with or without the manual controls, and even fireworks honour it.
+- **Professional VJ software integration.** Drive the show from **Resolume, TouchOSC, Bitfocus Companion, Chataigne, QLC+** — anything that speaks **OSC** — via a small standalone **VJ Bridge** (`tools/vj-bridge/`) that runs on the VJ's own laptop and forwards OSC to the show's existing token-scoped control API over HTTPS. Zero dependencies, no inbound port on the show server. A documented `/cls/*` address map covers manual hue/sat/bri/flash, presets, fireworks, palette, blackout, seek, mute, and marquee. Companion users can also POST straight at `/api/console/*` with a Bearer token — no bridge needed. Optional **WebMIDI** in the console maps a USB fader/pad controller to the same four values (Chrome/Edge desktop).
+
+### Safety
+
+- The manual layer, palette snap, and every OSC command flow through the **unchanged** on-device governors (clampColor + backstop for the screen, the torch rate gate for the flash) as the last stage, and are re-validated server-side — so the ≤3 flashes/s / no-saturated-red guarantee provably holds even under hostile input. New tests: manual safety (hostile sweep + any palette), manual/OSC parity, manual logic, manual e2e, room-scope isolation, VJ pult UI, and the OSC bridge end-to-end.
+
 ## [0.14.0] - 2026-06-30
 
 Round 13 — nine console/show improvements: special-effect fireworks, even flash reactivity, a working live preview, a music seek bar, a global mute, and more.
