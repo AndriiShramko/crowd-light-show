@@ -84,7 +84,18 @@
   var isAndroid = /Android/i.test(navigator.userAgent);
   var isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
   // iOS has NO web torch API (WebKit) -> torch impossible; Android may have it (camera LED).
-  var canTryTorch = isAndroid && !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+  // Round 12 (pt 1): the UA-only `/Android/` test hid the "Join + flashlight" button on tablets whose
+  // UA doesn't carry the literal "Android" (e.g. a Lenovo TB132FU / some WebViews). Offer it on ANY
+  // non-iOS touch device with getUserMedia (coarse pointer / touch points) — a desktop (fine pointer,
+  // no touch) is still excluded, and a phone that turns out to have no LED degrades gracefully
+  // (startTorch probes getCapabilities().torch and applyTorch is a no-op with no track).
+  var hasGUM = !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+  // touch device (phone/tablet)? A COARSE pointer is the reliable cross-device signal — a mouse desktop
+  // reports a fine pointer, a touch tablet/phone reports coarse — and unlike navigator.maxTouchPoints
+  // (which some engines/headless mis-report as >0 on desktop) it holds in the real world. A Lenovo/other
+  // tablet whose UA lacks the literal "Android" is now caught here; iOS still excluded (no web torch).
+  var isTouch = !!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches) || ('ontouchstart' in window && navigator.maxTouchPoints > 0);
+  var canTryTorch = !isIOS && hasGUM && (isAndroid || isTouch);
   window.__cls.torch.capable = canTryTorch ? null : false; // false on iOS/desktop; null=unknown until probed (Android)
   if (isIOS) window.__cls.torch.note = 'ios-screen-only';  // iPhone: torch channel is a no-op; screen is the light
   if (canTryTorch) joinTorch.classList.remove('hidden');
@@ -186,6 +197,12 @@
       if (DEMO) {
         fetch('/api/demo').then(function (r) { return r.json(); }).then(function (d) {
           timeline = d.timeline; demoT0 = d.T0; demoMode = true; demoLoopMs = d.timeline.durationMs; demoHasAudio = !!d.hasAudio;
+          // round 12 (pt 5): the demo now carries a TORCH preset too, so /try drives the camera LED
+          // (the autonomous torch channel) — not just the screen. Anchored to the demo loop epoch.
+          if (d.torch && d.torch.type && P && P.TORCH_PRESETS && P.TORCH_PRESETS[d.torch.type]) {
+            torchPreset = { type: d.torch.type, params: d.torch.params || (P.torchDefaults ? P.torchDefaults(d.torch.type) : {}), epoch: d.torch.epoch | 0, startedAt: d.torch.startedAt };
+            window.__cls.torch.preset = d.torch.type; window.__cls.torch.startedAt = d.torch.startedAt;
+          }
           buildEnvelope(); setStatus('st_play');
           if (audio && demoHasAudio) startDemoAudio(); // play the admin track's music, looped + synced
         }).catch(function () {});
@@ -409,6 +426,14 @@
   // perfectly in sync (every phone samples the same cue b at the same synced trackPos).
   // Neutral (level 0) whenever no track is running -> presets behave exactly as before.
   function sampleEnv() {
+    // round 12 (pt 5): the DEMO drives its timeline off demoT0 (modulo loop), NOT runState.T0 — so the
+    // old guard returned level 0 on the demo and the reactive torch never fired (screen flashed from the
+    // cue list directly, but the torch reads THIS level). Give the demo its looped loudness here too so
+    // the 'beat' torch reacts on /try exactly like a room.
+    if (demoMode && timeline && timeline.cues && timeline.durationMs && clock && clock.ready) {
+      var dd = timeline.durationMs, dp = ((clock.serverNow() - demoT0) % dd + dd) % dd;
+      return { level: sampleCue(dp).b, active: true, trackPos: dp };
+    }
     if (!timeline || !timeline.cues || runState.T0 == null || runState.status !== 'running' || !(clock && clock.ready)) {
       return { level: 0, active: false, trackPos: -1 };
     }

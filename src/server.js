@@ -232,12 +232,24 @@ function demoTrack() {
   try { return db.prepare("SELECT * FROM track WHERE analysis_status='done' AND timeline_path IS NOT NULL ORDER BY position ASC, id ASC LIMIT 1").get(); } catch { return null; }
 }
 app.get('/api/demo', () => {
+  // Round 12 (pt 5): the demo now ALSO drives the autonomous TORCH channel (it only had the screen
+  // before — so /try flashed the screen but the camera LED never reacted). Anchor a validated torch
+  // preset to the demo's loop epoch so a phone that joins the demo flashes its flash like a real room.
+  // Use the owner's default torch (or a sensible 'beat'); allow_torch can switch it off. Still passes
+  // validateTorchPreset, so the <=3 flashes/s safety governor is never bypassed.
+  const d = readValidatedDefaults();
+  let torch = null;
+  if (d.allow_torch) {
+    const base = d.torch || { type: DEFAULT_TORCH, params: {} };
+    const v = validateTorchPreset(base.type, base.params || {});
+    if (v.ok) torch = { type: v.type, params: v.params, startedAt: DEMO_T0, epoch: 0 };
+  }
   const t = demoTrack();
   if (t) {
     const tl = hub.loadTimeline(t.id);
-    if (tl) return { timeline: tl, T0: DEMO_T0, duration: tl.durationMs, loop: true, hasAudio: !!(t.file_path && fs.existsSync(t.file_path)), serverTime: serverClock() };
+    if (tl) return { timeline: tl, T0: DEMO_T0, duration: tl.durationMs, loop: true, hasAudio: !!(t.file_path && fs.existsSync(t.file_path)), torch, serverTime: serverClock() };
   }
-  return { timeline: DEMO, T0: DEMO_T0, duration: DEMO.durationMs, loop: true, hasAudio: false, serverTime: serverClock() };
+  return { timeline: DEMO, T0: DEMO_T0, duration: DEMO.durationMs, loop: true, hasAudio: false, torch, serverTime: serverClock() };
 });
 // Public, rate-limited demo audio = the demo track's file (the operator's deliberate
 // showcase choice; landing carries the disclaimers). Decoded + looped on the phone.
