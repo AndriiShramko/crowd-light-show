@@ -38,7 +38,7 @@
     room: ROOM || 'main', idx: 0, total: 1, preset: null, presetRgb: null, presetPos: -1, presetEpoch: 0,
     // round 8B: the two autonomous channels are independent readback seams (screen never moves the torch & vice-versa)
     screen: { preset: null, epoch: 0 }, torch: { preset: null, epoch: 0, on: 0, intensity: 0, capable: null, startedAt: 0 },
-    synced: false, degraded: false, quality: null, audio: { wanted: false, ready: false, scheduled: false } };
+    synced: false, degraded: false, quality: null, audio: { wanted: false, ready: false, scheduled: false, preload: 'idle' } };
 
   var ws = null, clock = null, timeline = null;
   var runState = { status: 'idle', T0: null, epoch: 0, pausePos: 0 };
@@ -220,7 +220,8 @@
         audioTrackId = m.trackId;
         if (audio && audio.dropBuffer) audio.dropBuffer(); // drop the old track's cached audio so the new one is fetched
       }
-      if (audioOn) cacheAudio(); showAudioBtn(); return;
+      if (audioOn) cacheAudio(); else preloadAudio(); // round 11: pre-fetch+decode before the tap (main show)
+      showAudioBtn(); return;
     }
     if (m.t === 'start') { runState = { status: 'running', T0: m.T0, epoch: m.epoch, pausePos: 0 }; window.__cls.status = 'running'; window.__cls.gotStart = m.T0; prevLum = 0; flashArmed = true; if (audio && audioOn) audio.start(m.T0); setStatus('st_play'); showWave(); return; }
     if (m.t === 'pause') { runState.status = 'paused'; runState.pausePos = m.pos; window.__cls.status = 'paused'; if (audio) audio.stop(); setStatus('st_paused'); return; }
@@ -261,7 +262,37 @@
       if (window.__cls.audio.lightsOnly) { audioBtn.classList.add('hidden'); return; } // nothing to mute (guest upload / decode-fail)
       audioBtn.classList.remove('hidden'); updateMuteBtn(); return;
     }
-    if (timeline && runState.status !== 'blackout') audioBtn.classList.remove('hidden'); // main show: opt-in enable button
+    if (timeline && runState.status !== 'blackout') updateAudioBtn(); // main show: opt-in enable button + preload status
+  }
+  // round 11 (pt 15): the main-show audio button reflects the PRELOAD state so the user isn't left
+  // tapping into a blank wait — "Connecting to music…" while it fetches+decodes, then tappable.
+  function updateAudioBtn() {
+    if (!audioBtn || ROOM || DEMO) return;
+    var pl = window.__cls.audio.preload;
+    if (pl === 'lightsOnly') { audioBtn.classList.add('hidden'); return; } // no served audio -> honest, hide it
+    audioBtn.classList.remove('hidden');
+    if (audioOn) { audioBtn.textContent = i18n.t('audio_on'); audioBtn.disabled = true; return; }
+    if (pl === 'fetching' || pl === 'decoding') { audioBtn.textContent = i18n.t('audio_connecting'); audioBtn.disabled = true; }
+    else { audioBtn.textContent = i18n.t('audio_btn'); audioBtn.disabled = false; } // 'ready' or 'idle' -> tappable (instant when ready)
+  }
+  // Fetch+decode the main-show track BEFORE the tap (decode needs no gesture), so the tap is instant.
+  function preloadAudio() {
+    if (DEMO || ROOM || !window.AudioSync || !timeline) return; // room/demo build the ctx in the join tap
+    if (!audio) { audio = new AudioSync(clock || new ClockSync(function () {})); if (window.__forceLatComp) audio.compensateLatency = true; audio.tele = function (o) { for (var k in o) window.__cls.audio[k] = o[k]; }; }
+    if (clock) audio.clock = clock;
+    if (audio.ready() || audioCaching) { updateAudioBtn(); return; }
+    if (!audio.ensureCtx || !audio.ensureCtx()) { window.__cls.audio.preload = 'error'; return; } // no WebAudio -> stay opt-in
+    audioCaching = true; window.__cls.audio.preload = 'fetching'; updateAudioBtn();
+    fetch('/api/audience/audio?v=' + (audioTrackId == null ? '' : audioTrackId)).then(function (r) { return r.ok ? r.arrayBuffer() : null; })
+      .then(function (ab) {
+        if (!ab) { audioCaching = false; window.__cls.audio.preload = 'lightsOnly'; window.__cls.audio.lightsOnly = true; updateAudioBtn(); return; }
+        window.__cls.audio.preload = 'decoding'; updateAudioBtn();
+        return audio.cache(ab).then(function () {
+          audioCaching = false; window.__cls.audio.preload = 'ready'; window.__cls.audio.lightsOnly = false; updateAudioBtn();
+          if (audioOn && runState.status === 'running' && runState.T0 != null) audio.start(runState.T0); // already opted-in: jump in now
+        });
+      })
+      .catch(function () { audioCaching = false; window.__cls.audio.preload = 'error'; updateAudioBtn(); });
   }
   function updateMuteBtn() {
     if (!audioBtn || !(ROOM || DEMO)) return;
@@ -288,11 +319,15 @@
   function enableAudio() {
     if (audioOn || !window.AudioSync) return;
     audioOn = true; window.__cls.audio.wanted = true;
-    if (audioBtn && !(ROOM || DEMO)) { audioBtn.textContent = i18n.t('audio_on'); audioBtn.disabled = true; }
-    audio = new AudioSync(clock || new ClockSync(function () {}));
-    if (window.__forceLatComp) audio.compensateLatency = true;   // opt-in (heterogeneous fleet / harness)
-    audio.tele = function (o) { for (var k in o) window.__cls.audio[k] = o[k]; };
-    audio.init().then(function () { cacheAudio(); }).catch(function () {});
+    if (!audio) { audio = new AudioSync(clock || new ClockSync(function () {})); if (window.__forceLatComp) audio.compensateLatency = true; audio.tele = function (o) { for (var k in o) window.__cls.audio[k] = o[k]; }; } // reuse a preloaded instance
+    if (clock) audio.clock = clock;
+    updateAudioBtn();
+    // tap = the gesture: resume the (possibly preloaded) context, then play immediately if the buffer
+    // is already decoded; otherwise fall back to fetch-in-the-tap.
+    audio.init().then(function () {
+      if (audio.ready()) { if (runState.status === 'running' && runState.T0 != null) audio.start(runState.T0); }
+      else cacheAudio();
+    }).catch(function () {});
   }
   // Landing demo music: create+resume the AudioContext inside the Join tap (iOS autoplay),
   // then (once the track is fetched + clock synced) loop the admin track's audio in sync.

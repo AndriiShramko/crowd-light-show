@@ -1,0 +1,17 @@
+{
+  "base": "http://localhost:3030",
+  "pre": {
+    "preload": "ready",
+    "ready": true,
+    "lightsOnly": false,
+    "wanted": false,
+    "btn": "🔊 Odtwórz muzykę też na moim telefonie",
+    "disabled": false
+  },
+  "afterTap": {
+    "wanted": true,
+    "scheduled": false
+  },
+  "audioFetches": 1,
+  "fails": []
+}

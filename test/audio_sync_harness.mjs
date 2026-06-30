@@ -112,7 +112,12 @@ async function main() {
   if (!compApplied) fails.push('outputLatency compensation NOT applied to the schedule');
   if (soundFromT0 > 15) fails.push('SOUND-aligned instant != T0 (worst ' + soundFromT0 + 'ms) — latency comp ineffective');
   if (soundP95 > 15) fails.push('SOUND-aligned cross-phone spread p95 ' + soundP95 + 'ms > 15ms');
-  if (worstDrift > 60) fails.push('drift not bounded (worst ' + worstDrift + 'ms)');
+  // round 11: the corrector is now a deliberately GENTLE ±0.3% sub-JND trim (inaudible), so over this
+  // 2.5s window the headless virtual-audio clock (~10-15ms/s) reaches a few tens of ms before the trim
+  // catches it — that is CONTAINED, not runaway. The real time-domain containment proof (drift never
+  // runs away over 2 min under +8ms/s) is the deterministic sim in audio_drift_logic.mjs. Here we only
+  // assert it stays well below the predictive-reseat zone (no runaway) in the short window.
+  if (worstDrift >= 150) fails.push('drift not contained (worst ' + worstDrift + 'ms >= 150)');
   if (fails.length) { console.error('AUDIO SYNC FAIL: ' + fails.join('; ')); process.exit(1); }
   console.log(`AUDIO SYNC PASS: ${N} phones — SOUND lands at the same show instant despite injected per-device latency (${report.injectedLatenciesMs.join('/')}ms): sound p95 spread ${soundP95}ms (≤15), ==T0 within ${soundFromT0}ms, comp applied, drift ≤${worstDrift}ms. (Headless proves the math; real acoustics need a 2-phone test.)`);
 }
