@@ -367,6 +367,12 @@ img, svg { max-width: 100%; }
 .m-footer-note a { color: var(--m-accent); }
 .m-footer-brand { font-weight: 800; display: flex; align-items: center; gap: 8px; }
 
+/* ---------- In-the-wild videos (embedded Shorts) ---------- */
+.m-vids { display: grid; gap: clamp(14px, 2.5vw, 22px); grid-template-columns: 1fr; max-width: 920px; margin: 0 auto; }
+@media (min-width: 620px) { .m-vids { grid-template-columns: repeat(3, 1fr); } }
+.m-vid { position: relative; aspect-ratio: 9 / 16; border-radius: 14px; overflow: hidden; background: #0a0d15; box-shadow: 0 20px 50px rgba(0,0,0,.5); }
+.m-vid iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+
 /* utility */
 .m-center { text-align: center; }
 
@@ -694,6 +700,22 @@ img, svg { max-width: 100%; }
       <p>Open the live demo, scan the QR with your phone, and watch your own screen join the show. Grab a few phones for the full effect.</p>
       <a class="m-btn m-btn-primary m-studio-cta" href="/studio" style="display:none">Start a light show — you're the operator →</a>
       <a class="m-btn m-btn-primary m-try-cta" href="/try">Open the live demo →</a>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== SEEN IN THE WILD (embedded videos) ===================== -->
+<section class="m-section alt" id="wild">
+  <div class="m-container">
+    <div class="m-section-head">
+      <p class="m-kicker" data-i18n="wild.kicker">Seen in the wild</p>
+      <h2 data-i18n="wild.title">Crowds already light up with their phones</h2>
+      <p class="m-lead" data-i18n="wild.lead">It's a real moment people create — a wave of phone light across a stadium or a concert. Crowd Light Show turns it into a show you actually control: one operator drives every colour, flash and effect live, and the music plays in sync on every phone.</p>
+    </div>
+    <div class="m-vids">
+      <div class="m-vid"><iframe src="https://www.youtube-nocookie.com/embed/vW4kT_Y4q0s" title="Crowd phone light show" loading="lazy" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe></div>
+      <div class="m-vid"><iframe src="https://www.youtube-nocookie.com/embed/ZUhx4fn1f78" title="Thousands of phone flashlights in a crowd" loading="lazy" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe></div>
+      <div class="m-vid"><iframe src="https://www.youtube-nocookie.com/embed/9OtAGXRHPH8" title="Stadium phone light show" loading="lazy" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe></div>
     </div>
   </div>
 </section>
