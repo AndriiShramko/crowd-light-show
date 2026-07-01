@@ -57,7 +57,8 @@
   var elConsent = document.getElementById('consent');
   var elLive = document.getElementById('live');
   var elLeft = document.getElementById('left');
-  var agree = document.getElementById('agree');
+  var agreeBtn = document.getElementById('agreeBtn'), consented = false;
+  var cStep1 = document.getElementById('cStep1'), cStep2 = document.getElementById('cStep2');
   var joinScreen = document.getElementById('joinScreen');
   var joinTorch = document.getElementById('joinTorch');
   var brightToast = document.getElementById('brightToast');
@@ -129,11 +130,15 @@
   var canTryTorch = !isIOS && hasGUM && (isAndroid || isTouch);
   window.__cls.torch.capable = canTryTorch ? null : false; // false on iOS/desktop; null=unknown until probed (Android)
   if (isIOS) window.__cls.torch.note = 'ios-screen-only';  // iPhone: torch channel is a no-op; screen is the light
-  if (canTryTorch) joinTorch.classList.remove('hidden');
+  // round 15c: the flashlight join is the PROMINENT CTA (brighter on Android); the screen-only join is a
+  // quiet secondary so people reach for the flashlight more often. On iOS/desktop the torch is impossible
+  // -> the torch button stays hidden and the screen button is the single, primary CTA.
+  if (canTryTorch) { joinTorch.classList.remove('hidden'); joinScreen.classList.remove('cls-bigcta', 'primary'); joinScreen.classList.add('cls-quiet'); }
 
-  agree.addEventListener('change', function () {
-    joinScreen.disabled = !agree.checked; joinTorch.disabled = !agree.checked;
-  });
+  // Consent is ONE big tap (grandma-test): confirming reveals the two join buttons and hides the long
+  // explainer, so everything the visitor must do fits the first screen without scrolling.
+  function goStep2() { if (consented) return; consented = true; window.__cls.consented = true; if (cStep1) cStep1.classList.add('hidden'); if (cStep2) cStep2.classList.remove('hidden'); }
+  if (agreeBtn) agreeBtn.addEventListener('click', goStep2);
   joinScreen.addEventListener('click', function () { join(false); });
   joinTorch.addEventListener('click', function () { join(true); });
   stopBtn.addEventListener('click', leave);
@@ -143,7 +148,7 @@
   // MUTE toggle; on the main timeline show it stays the opt-in "tap for sound" enable button.
   if (audioBtn) audioBtn.addEventListener('click', function () { if (ROOM || DEMO) toggleMute(); else enableAudio(); });
 
-  if (AUTO) { agree.checked = true; joinScreen.disabled = false; setTimeout(function () { join(false); }, 50); }
+  if (AUTO) { consented = true; window.__cls.consented = true; setTimeout(function () { join(false); }, 50); }
 
   document.addEventListener('visibilitychange', function () {
     if (document.hidden || !window.__cls.started) return;
@@ -168,7 +173,7 @@
   function setStatus(key) { if (key === lastStatusKey) return; lastStatusKey = key; pill.classList.remove('hidden'); pill.textContent = i18n.t(key); }
 
   function join(withTorch) {
-    if (!agree.checked) return;
+    if (!consented) return;
     window.__cls.consented = true; window.__cls.started = true;
     useTorch = withTorch;
     elConsent.classList.add('hidden');
@@ -731,9 +736,10 @@
     flashEl.style.backgroundColor = '#000'; lastBg = '#000';
     hideWave(); if (brightToast) brightToast.classList.add('hidden');
     elLive.classList.add('hidden'); stopBtn.classList.add('hidden'); pill.classList.add('hidden'); lastStatusKey = '';
-    // Back to the main menu with consent ALREADY accepted — one tap to rejoin, no
-    // re-checking the box (the user already agreed this session).
-    agree.checked = true; joinScreen.disabled = false; joinTorch.disabled = false;
+    // Back to the menu with consent ALREADY accepted — go straight to the join buttons (step 2), so
+    // it's one tap to rejoin without re-confirming (the user already agreed this session).
+    consented = true; window.__cls.consented = true;
+    if (cStep1) cStep1.classList.add('hidden'); if (cStep2) cStep2.classList.remove('hidden');
     elLeft.classList.add('hidden');
     elConsent.classList.remove('hidden');
   }
