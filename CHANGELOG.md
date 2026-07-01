@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.1] - 2026-07-01
+
+- **Landing "Seen in the wild" section** — a closing section with three embedded videos of crowds lighting up with their phones, framed around what Crowd Light Show adds (one operator drives it live + the music streams to every phone in sync). Privacy-enhanced `youtube-nocookie` embeds, lazy-loaded; i18n EN/PL/ES/FR.
+
 ## [0.16.0] - 2026-07-01
 
 Round 15 — a marketing + docs pass for the full VJ feature set, a free tier, and three VJ-pult UX fixes.
