@@ -13,31 +13,33 @@
 <div id="stage">
   <div class="lang"><a data-lang="pl">PL</a><a data-lang="en">EN</a></div>
 
-  <!-- CONSENT GATE: nothing flashes until the user joins here -->
+  <!-- CONSENT GATE: nothing flashes until the user joins here. Two steps so everything the visitor
+       must do fits on the first screen (no scrolling): STEP 1 = the safety warning + ONE big confirm
+       button; tapping it reveals STEP 2 = the two join buttons (flashlight is the prominent CTA, the
+       screen-only option is a quiet secondary) and hides the long text. -->
   <div id="consent" class="wrap">
-    <h1 data-t="title">Światło z tłumu</h1>
-    <p class="muted" data-t="sub">Twój telefon stanie się częścią wspólnego pokazu świateł zsynchronizowanego z muzyką.</p>
-
-    <div class="card warn">
-      <b data-t="epi_h">⚠️ Ostrzeżenie: błyski światła</b>
-      <p data-t="epi_b">Ten pokaz miga jasnym światłem. Nie dołączaj, jeśli masz padaczkę światłoczułą lub źle reagujesz na migające światło. Możesz wyjść w każdej chwili przyciskiem „Stop”.</p>
+    <!-- STEP 1: warning + one big confirm button -->
+    <div id="cStep1">
+      <h1 data-t="title">Światło z tłumu</h1>
+      <p class="muted" data-t="sub">Twój telefon stanie się częścią wspólnego pokazu świateł zsynchronizowanego z muzyką.</p>
+      <div class="card warn">
+        <b data-t="epi_h">⚠️ Ostrzeżenie: błyski światła</b>
+        <p data-t="epi_b">Ten pokaz miga jasnym światłem. Nie dołączaj, jeśli masz padaczkę światłoczułą lub źle reagujesz na migające światło. Możesz wyjść w każdej chwili przyciskiem „Stop”.</p>
+      </div>
+      <button id="agreeBtn" class="primary cls-bigcta" data-t="agree_btn">✓ Rozumiem — chcę dołączyć</button>
+      <details class="cls-how">
+        <summary data-t="how_more">Jak to działa? Prywatność</summary>
+        <p class="muted" data-t="how">Domyślnie świeci <b>ekran telefonu</b> (działa na każdym telefonie). Na Androidzie możesz dodatkowo włączyć <b>prawdziwą latarkę</b> — przeglądarka poprosi wtedy o dostęp do kamery. <b>Nie nagrywamy ani nie wysyłamy żadnego obrazu</b> — kamera służy wyłącznie do włączania diody.</p>
+        <p class="muted" data-t="batt">Pokaz zużywa baterię, telefon może się nagrzać, a ekran pozostaje włączony. Trzymaj telefon ekranem do sceny i nie blokuj go.</p>
+      </details>
     </div>
 
-    <div class="card">
-      <p data-t="how">Domyślnie świeci <b>ekran telefonu</b> (działa na każdym telefonie). Na Androidzie możesz dodatkowo włączyć <b>prawdziwą latarkę</b> — przeglądarka poprosi wtedy o dostęp do kamery. <b>Nie nagrywamy ani nie wysyłamy żadnego obrazu</b> — kamera służy wyłącznie do włączania diody.</p>
-      <p class="muted" data-t="batt">Pokaz zużywa baterię, telefon może się nagrzać, a ekran pozostaje włączony. Trzymaj telefon ekranem do sceny i nie blokuj go.</p>
-
-      <!-- brightness ask: instruction only, NOT a gate (join stays gated solely by #agree) -->
-      <div class="card warn" id="brightAsk" style="margin:12px 0 0">
-        <b data-t="bright_h">🔆 Ustaw jasność na maksimum</b>
-        <p data-t="bright_b">Przesuń jasność ekranu na maksimum i wyłącz jasność automatyczną (adaptacyjną) — w ciemnej sali telefon sam ją przyciemnia. Im jaśniej, tym mocniejszy wspólny efekt.</p>
-      </div>
-
-      <label class="muted" style="display:flex;gap:8px;align-items:flex-start;margin-top:8px">
-        <input type="checkbox" id="agree"><span data-t="agree">Rozumiem ostrzeżenie o błyskach i zgadzam się dołączyć.</span>
-      </label>
-      <button id="joinScreen" class="primary" disabled data-t="join">Dołącz — użyj ekranu</button>
-      <button id="joinTorch" class="accent-blue hidden" disabled data-t="join_torch">Dołącz + latarka (Android, używa kamery)</button>
+    <!-- STEP 2: pick how the phone lights up (revealed after confirming) -->
+    <div id="cStep2" class="hidden">
+      <h1 data-t="join_h">Świetnie! Dotknij, by dołączyć 👇</h1>
+      <button id="joinTorch" class="accent-blue cls-bigcta hidden" data-t="join_torch">🔦 Dołącz z latarką — jaśniej</button>
+      <button id="joinScreen" class="primary cls-bigcta" data-t="join">Dołącz — ekran</button>
+      <p class="muted cls-jointip" data-t="join_tip">🔆 Ustaw jasność na maksimum i trzymaj ekran w stronę sceny.</p>
     </div>
 
     <div class="credit">

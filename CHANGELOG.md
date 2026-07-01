@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.2] - 2026-07-01
+
+### Changed / Fixed
+
+- **Audience /join redesigned for the "grandma test"** — the first screen now shows just the flashing-safety warning and ONE big confirm button ("✓ I understand — let me in"), so everything the visitor must do fits without scrolling (the old small checkbox and long explainer pushed the join buttons off-screen). Tapping confirm reveals the two join buttons and hides the extra text. The "how it works / privacy" detail is a collapsible line. On Android the **flashlight join is the prominent CTA** and the screen-only join is a quiet secondary, so people reach for the brighter option more often; on iOS/desktop (no web torch) the single screen button stays primary. Clearer button labels; auto-join for tests/demo is unchanged.
+
 ## [0.16.1] - 2026-07-01
 
 - **Landing "Seen in the wild" section** — a closing section with three embedded videos of crowds lighting up with their phones, framed around what Crowd Light Show adds (one operator drives it live + the music streams to every phone in sync). Privacy-enhanced `youtube-nocookie` embeds, lazy-loaded; i18n EN/PL/ES/FR.
