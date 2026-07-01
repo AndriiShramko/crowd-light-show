@@ -1016,7 +1016,13 @@
     // ---- tabs ----
     if ($('vjTabs')) $('vjTabs').addEventListener('click', function (e) { var t = e.target.getAttribute('data-vjtab'); if (!t) return; tab = t; Array.prototype.forEach.call($('vjTabs').children, function (b) { b.className = (b.getAttribute('data-vjtab') === t) ? 'on' : ''; }); buildTab(); });
     // ---- enable / mode ----
-    function setEnable(v) { vjOn = v; $('vjEnable').textContent = tr(v ? 'console.vj_on' : 'console.vj_off', v ? '● Manual control: ON' : 'Manual control: OFF'); $('vjEnable').className = v ? 'primary' : 'ghost'; $('vjEnable').style.width = 'auto'; push(); }
+    // round 15 (#3): the manual widgets (tabs + stage + readout + mode/fullscreen) only mean anything when
+    // manual control is ON — hide them when it's OFF so the user understands what they belong to. The
+    // palette/flags section and MIDI stay visible (they work independently of the manual controls).
+    function showManualUI(v) {
+      ['vjTabs', 'vjStage', 'vjReadout', 'vjModeBtn', 'vjFull'].forEach(function (id) { var el = $(id); if (el) el.style.display = v ? '' : 'none'; });
+    }
+    function setEnable(v) { vjOn = v; $('vjEnable').textContent = tr(v ? 'console.vj_on' : 'console.vj_off', v ? '● Manual control: ON' : 'Manual control: OFF'); $('vjEnable').className = v ? 'primary' : 'ghost'; $('vjEnable').style.width = 'auto'; showManualUI(v); push(); }
     if ($('vjEnable')) $('vjEnable').addEventListener('click', function () { setEnable(!vjOn); });
     if ($('vjModeBtn')) $('vjModeBtn').addEventListener('click', function () { vjMode = (vjMode === 'full') ? 'intervene' : 'full'; $('vjModeBtn').textContent = tr(vjMode === 'full' ? 'console.vj_mode_full' : 'console.vj_mode_intervene', vjMode === 'full' ? 'Mode: manual only (presets off)' : 'Mode: intervene in preset'); push(); });
     // ---- fullscreen ----
@@ -1047,6 +1053,40 @@
     if ($('vjPalApply')) $('vjPalApply').addEventListener('click', function () { var c = parseHex($('vjPalHex').value); if (c.length) { palette = { on: true, colors: c }; sendPalette(); } });
     if ($('vjPalToggle')) $('vjPalToggle').addEventListener('click', function () { palette.on = !palette.on && palette.colors.length > 0 ? true : false; if (!palette.colors.length) palette.on = false; sendPalette(); });
 
+    // round 15 (#4): visual custom-palette builder — pick colours on a wheel (hue×sat) + a brightness
+    // slider, add each to a custom set (removable chips), then "Use" applies it. The hex box stays as a
+    // text alternative. Reuses the same P.hsl2rgb engine + bindDrag as the manual wheel.
+    (function buildPalWheel() {
+      var P = window.CLS_PRESETS;
+      var host = $('vjPalWheel'); if (!host || !P || !P.hsl2rgb) return;
+      var custom = [], pick = { hue: 210, sat: 1, l: 0.5 };
+      var wrap = document.createElement('div'); wrap.style.cssText = 'display:flex;gap:12px;align-items:center;flex-wrap:wrap';
+      var box = document.createElement('div'); box.style.cssText = 'position:relative;width:130px;height:130px;flex:0 0 auto';
+      var cv = document.createElement('canvas'); cv.width = 130; cv.height = 130; cv.className = 'vj-widget'; cv.style.cssText = 'width:130px;height:130px;border-radius:50%;touch-action:none;cursor:crosshair';
+      var dot = document.createElement('div'); dot.style.cssText = 'position:absolute;width:14px;height:14px;border-radius:50%;border:3px solid #fff;box-shadow:0 0 4px #000;pointer-events:none;transform:translate(-50%,-50%)';
+      box.appendChild(cv); box.appendChild(dot);
+      var R = 63, cx = 65, cy = 65, cc = cv.getContext('2d'), img = cc.createImageData(130, 130), Dp = img.data;
+      for (var y = 0; y < 130; y++) for (var x = 0; x < 130; x++) { var dx = x - cx, dy = y - cy, dist = Math.sqrt(dx * dx + dy * dy), i4 = (y * 130 + x) * 4; if (dist > R) { Dp[i4 + 3] = 0; continue; } var h = (Math.atan2(dy, dx) * 180 / Math.PI + 360) % 360, s = Math.min(1, dist / R); var rgb = P.hsl2rgb(h, s, 0.5); Dp[i4] = rgb[0]; Dp[i4 + 1] = rgb[1]; Dp[i4 + 2] = rgb[2]; Dp[i4 + 3] = 255; }
+      cc.putImageData(img, 0, 0);
+      var col = document.createElement('div'); col.style.cssText = 'display:flex;flex-direction:column;gap:6px;min-width:150px;flex:1';
+      var sw = document.createElement('div'); sw.id = 'vjPickSwatch'; sw.style.cssText = 'width:100%;height:30px;border-radius:8px;border:1px solid rgba(255,255,255,.2)';
+      var briR = document.createElement('input'); briR.type = 'range'; briR.min = '0.1'; briR.max = '0.9'; briR.step = '0.01'; briR.value = '0.5'; briR.className = 'vj-widget'; briR.title = 'brightness';
+      var addB = document.createElement('button'); addB.style.width = 'auto'; addB.id = 'vjPalAdd'; addB.textContent = tr('console.vj_pal_add', '＋ Add colour');
+      col.appendChild(sw); col.appendChild(briR); col.appendChild(addB);
+      wrap.appendChild(box); wrap.appendChild(col);
+      var chips = document.createElement('div'); chips.id = 'vjPalChips'; chips.style.cssText = 'display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;align-items:center';
+      var useB = document.createElement('button'); useB.style.width = 'auto'; useB.className = 'primary'; useB.textContent = tr('console.vj_pal_use', 'Use these colours');
+      host.appendChild(wrap); host.appendChild(chips);
+      function rgbNow() { return P.hsl2rgb(pick.hue, pick.sat, pick.l); }
+      function refresh() { var c = rgbNow(); sw.style.background = 'rgb(' + c[0] + ',' + c[1] + ',' + c[2] + ')'; var a = pick.hue * Math.PI / 180, rr = pick.sat * R; dot.style.left = (cx + rr * Math.cos(a)) + 'px'; dot.style.top = (cy + rr * Math.sin(a)) + 'px'; }
+      function drawChips() { chips.innerHTML = ''; custom.forEach(function (c, i) { var bt = document.createElement('button'); bt.style.cssText = 'width:26px;height:26px;border-radius:6px;border:1px solid rgba(255,255,255,.3);background:rgb(' + c[0] + ',' + c[1] + ',' + c[2] + ');cursor:pointer'; bt.title = 'remove'; bt.addEventListener('click', function () { custom.splice(i, 1); drawChips(); }); chips.appendChild(bt); }); if (custom.length) chips.appendChild(useB); }
+      bindDrag(cv, function (e) { var r = cv.getBoundingClientRect(); var dx = e.clientX - (r.left + r.width / 2), dy = e.clientY - (r.top + r.height / 2); pick.hue = (Math.atan2(dy, dx) * 180 / Math.PI + 360) % 360; pick.sat = clamp01(Math.sqrt(dx * dx + dy * dy) / (r.width / 2)); refresh(); });
+      briR.addEventListener('input', function () { pick.l = Number(briR.value); refresh(); });
+      addB.addEventListener('click', function () { if (custom.length < 8) { custom.push(rgbNow()); drawChips(); } });
+      useB.addEventListener('click', function () { if (custom.length) { palette = { on: true, colors: custom.slice() }; sendPalette(); } });
+      refresh(); drawChips();
+    })();
+
     // ---- WebMIDI (progressive enhancement; Chrome/Edge desktop) ----
     var midiMap = {}; try { midiMap = JSON.parse(localStorage.getItem('cls_midi_map') || '{}'); } catch (e) {}
     var learn = null;
@@ -1066,11 +1106,18 @@
     });
     if ($('vjMidiLearn')) $('vjMidiLearn').addEventListener('click', function (e) { var t = e.target.getAttribute('data-midilearn'); if (t) { learn = t; if ($('vjMidiStatus')) $('vjMidiStatus').textContent = 'learning ' + t + ' — move a control…'; } });
 
-    buildTab(); readout();
+    buildTab(); readout(); showManualUI(vjOn); // round 15 (#3): start collapsed (manual OFF) — tabs appear on enable
   }
 
   // ---- boot ----
   window.__opMode = { mode: MODE, room: ROOM, features: FEAT }; // test seam
+  // round 15 (#2): on a touchscreen PC a long-press pops the browser context menu over the controls and
+  // blocks live VJ-ing. Suppress it on buttons, range sliders and the VJ pult widgets (NOT on links/text,
+  // so right-click-to-copy the join URL still works).
+  document.addEventListener('contextmenu', function (e) {
+    var t = e.target;
+    if (t && t.closest && (t.closest('button') || t.closest('input[type=range]') || t.closest('#vjStage') || t.closest('.vj-widget'))) e.preventDefault();
+  });
   if (PUBLIC) window.__opRefreshPublic = loadPublic; // test seam: re-fetch the room playlist (a real UI upload calls this via armTrack)
   applyMode();
   ga('studio_open', { is_public: !!PUBLIC });

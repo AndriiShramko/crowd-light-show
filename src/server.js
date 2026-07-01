@@ -188,6 +188,7 @@ function renderPage(file, extra) {
 app.get('/', (req, reply) => reply.type('text/html').send(renderPage('index.html')));
 app.get('/join', (req, reply) => reply.type('text/html').send(renderPage('audience.html')));
 app.get('/about', (req, reply) => reply.type('text/html').send(renderPage('about.html')));
+app.get('/vj', (req, reply) => reply.type('text/html').send(renderPage('vj.html'))); // round 15: VJ & OSC guide
 app.get('/try', (req, reply) => reply.type('text/html').send(renderPage('try.html')));
 app.get('/privacy', (req, reply) => reply.type('text/html').send(renderPage('privacy.html')));
 

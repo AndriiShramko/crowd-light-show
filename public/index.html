@@ -59,7 +59,7 @@
   --m-bg: #07080d;
   --m-bg2: #0b0d14;
   --m-card: #11151f;
-  --m-line: #232a39;
+  --m-line: #1a2130;
   --m-fg: #eef1f6;
   --m-muted: #9aa3b2;
   --m-accent: #5aa0ff;
@@ -255,6 +255,18 @@ img, svg { max-width: 100%; }
   border: 1px solid rgba(90,160,255,.25);
 }
 
+/* ---------- Feature rows (control room) — screenshots of the real UI ---------- */
+.m-feat { display: grid; gap: clamp(28px, 5vw, 56px); }
+.m-featrow { display: grid; gap: clamp(16px, 3vw, 40px); align-items: center; }
+@media (min-width: 840px) { .m-featrow { grid-template-columns: 1fr 1fr; } .m-featrow.rev .m-featshot { order: 2; } }
+.m-featshot { border-radius: 16px; overflow: hidden; background: #0a0d15; box-shadow: 0 24px 60px rgba(0,0,0,.55); }
+.m-featshot img { display: block; width: 100%; height: auto; }
+.m-feattext h3 { font-size: clamp(1.2rem, 2.6vw, 1.6rem); margin: 0 0 10px; letter-spacing: -.01em; font-weight: 800; }
+.m-feattext > p { color: var(--m-muted); line-height: 1.6; margin: 0; font-size: clamp(.96rem, 1.6vw, 1.06rem); }
+.m-featlist { list-style: none; margin: 14px 0 0; padding: 0; display: grid; gap: 7px; }
+.m-featlist li { color: var(--m-fg); font-size: .94rem; padding-left: 22px; position: relative; line-height: 1.45; }
+.m-featlist li::before { content: "→"; position: absolute; left: 0; color: var(--m-accent); }
+
 /* ---------- Use cases ---------- */
 .m-cases { display: grid; gap: clamp(12px, 2vw, 18px); grid-template-columns: 1fr; }
 @media (min-width: 720px) { .m-cases { grid-template-columns: 1fr 1fr; } }
@@ -357,6 +369,10 @@ img, svg { max-width: 100%; }
 
 /* utility */
 .m-center { text-align: center; }
+
+/* round 15: on the landing the top-right nav CTA sits where the global language switcher floats — drop
+   the switcher just below the sticky nav on desktop so they never overlap (mobile is handled at ≤680px). */
+@media (min-width: 681px) { body.m-page #cls-lang { top: 60px; } }
 </style>
 </head>
 <body class="m-page">
@@ -368,9 +384,10 @@ img, svg { max-width: 100%; }
       <span class="m-dot" aria-hidden="true"></span>Crowd Light Show
     </a>
     <div class="m-nav-links">
+      <a href="#control">What you can do</a>
       <a href="#how">How it works</a>
-      <a href="#use-cases">Use cases</a>
-      <a href="/try">Try it</a>
+      <a href="#pricing">Pricing</a>
+      <a href="https://github.com/AndriiShramko/crowd-light-show" target="_blank" rel="noopener">GitHub</a>
       <a href="#contact">Contact</a>
     </div>
     <a class="m-btn m-btn-primary m-btn-sm" href="#contact">Request access / Get a quote</a>
@@ -388,18 +405,18 @@ img, svg { max-width: 100%; }
   <div class="m-container m-hero-inner">
     <div>
       <span class="m-eyebrow"><span class="m-dot" aria-hidden="true" style="width:8px;height:8px"></span>Live, synced light show — from any laptop</span>
-      <h1>Turn every phone in the crowd into <span class="m-grad-text">one giant light show</span></h1>
-      <p class="m-hero-sub">Synced to your music, with no app to install — it works on any phone. The audience just scans a QR, and the whole room lights up together on the beat.</p>
+      <h1>Your crowd is the <span class="m-grad-text">light show</span></h1>
+      <p class="m-hero-sub">Free and open source. No wristbands to buy, no app to install — the lights are already in the crowd's hands. They scan a QR; you drive the whole room by hand or from your VJ rig, in time with the music.</p>
       <div class="m-hero-cta">
         <a class="m-btn m-btn-primary m-studio-cta" href="/studio" style="display:none">Start a light show — you're the operator →</a>
         <a class="m-btn m-btn-primary m-try-cta" href="/try">Try the live demo →</a>
         <a class="m-btn m-btn-ghost" href="#contact">Get it for your event</a>
       </div>
       <div class="m-hero-meta">
-        <span>✓ No app install</span>
-        <span>✓ Works on any phone</span>
-        <span>✓ Set up in minutes</span>
-        <span>✓ Free &amp; open-source</span>
+        <span>✓ No app, no wristbands</span>
+        <span>✓ VJ-grade live control</span>
+        <span>✓ Epilepsy-safe (≤3 flashes/s)</span>
+        <span>✓ Free &amp; self-hostable</span>
       </div>
     </div>
     <div class="m-hero-visual" role="img" aria-label="Illustration of a crowd of phones flashing in sync to make one big light show">
@@ -464,6 +481,66 @@ img, svg { max-width: 100%; }
       <article class="m-card m-benefit"><span class="m-ico" aria-hidden="true">🎵</span><h3>Synced to your playlist</h3><p>Build the show around your music. Every flash lands exactly on the beat, in perfect sync.</p></article>
       <article class="m-card m-benefit"><span class="m-ico" aria-hidden="true">⚡</span><h3>Set up in minutes</h3><p>Run the whole thing from a laptop. Build the playlist, project the QR, press GO.</p></article>
       <article class="m-card m-benefit"><span class="m-ico" aria-hidden="true">🛡️</span><h3>Safe by design</h3><p>Flash-rate limited with a photosensitivity warning and consent, so the show stays fun for everyone.</p></article>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== CONTROL ROOM (real UI screenshots) ===================== -->
+<section class="m-section" id="control">
+  <div class="m-container">
+    <div class="m-section-head">
+      <p class="m-kicker">The control room</p>
+      <h2>You drive it. The crowd is the light.</h2>
+      <p class="m-lead">One laptop or tablet runs the whole show — from a single “GO” to VJ-grade live control, all in the browser.</p>
+    </div>
+    <div class="m-feat">
+      <div class="m-featrow">
+        <div class="m-featshot"><img src="/static/shots/pult.png" alt="The VJ pult: faders for saturation, colour, brightness and flash, plus a colour wheel and flag palettes" loading="lazy"></div>
+        <div class="m-feattext">
+          <h3>The VJ pult — play the crowd by hand</h3>
+          <p>Grab saturation, colour, brightness and flash and ride them under the music — like a VJ console, right in the browser. Open it fullscreen and mix with your fingers on a tablet.</p>
+          <ul class="m-featlist">
+            <li>Four touch layouts: faders, colour wheel, XY pad, big momentary pads</li>
+            <li>Intervene in a running preset, or go fully manual</li>
+            <li>Map a USB MIDI controller with WebMIDI</li>
+          </ul>
+        </div>
+      </div>
+      <div class="m-featrow rev">
+        <div class="m-featshot"><img src="/static/shots/presets.png" alt="Music-reactive presets, a separate flash channel, one-tap firework effects and a scrolling marquee" loading="lazy"></div>
+        <div class="m-feattext">
+          <h3>Presets, flash &amp; big moments</h3>
+          <p>Upload a track and the lights follow the music. Layer a separate camera-flash channel, fire one-tap synchronized fireworks, scroll a message across every phone, or hit BLACKOUT — the music keeps playing.</p>
+          <ul class="m-featlist">
+            <li>Pulse · Colour Waves · Rainbow Chase · Ocean, plus a wave that reads across the crowd</li>
+            <li>Five one-tap firework bursts, then the show resumes</li>
+            <li>Scrolling marquee, global mute, seek, blackout</li>
+          </ul>
+        </div>
+      </div>
+      <div class="m-featrow">
+        <div class="m-featshot"><img src="/static/shots/wheel.png" alt="A colour wheel used to lock the show to chosen colours" loading="lazy"></div>
+        <div class="m-feattext">
+          <h3>Lock it to your colours</h3>
+          <p>Restrict the whole crowd to a flag’s or a brand’s palette — pick colours on the wheel and everything snaps to the nearest one. Perfect for a product launch, a club night, or a team’s colours.</p>
+          <ul class="m-featlist">
+            <li>One-tap flag &amp; brand palettes, or build your own on the wheel</li>
+            <li>Works with the presets or under full manual control</li>
+          </ul>
+        </div>
+      </div>
+      <div class="m-featrow rev">
+        <div class="m-featshot"><img src="/static/shots/phone.png" alt="An audience phone turned into one glowing light" loading="lazy" style="max-width:280px;margin:0 auto"></div>
+        <div class="m-feattext">
+          <h3>Plug into your VJ rig</h3>
+          <p>Already run Resolume, TouchOSC or Bitfocus Companion? Drive the crowd’s phones from the console you already use, over OSC — a tiny bridge runs on your own laptop, no cloud lock-in.</p>
+          <ul class="m-featlist">
+            <li>OSC address map for presets, colour, flash, fireworks and blackout</li>
+            <li>Optional WebMIDI for a hardware fader/pad box</li>
+          </ul>
+          <p style="margin-top:14px"><a class="m-btn m-btn-ghost m-btn-sm" href="/vj">Read the VJ &amp; OSC guide →</a></p>
+        </div>
+      </div>
     </div>
   </div>
 </section>
@@ -545,10 +622,13 @@ img, svg { max-width: 100%; }
     .pr-head h2{font-size:clamp(1.6rem,4.6vw,2.4rem);margin:0 0 12px;font-weight:800;letter-spacing:-.02em;color:#fff}
     .pr-head p{margin:0;color:#aab3c7;line-height:1.6}
     .pr-grid{display:grid;grid-template-columns:1fr;gap:14px}
-    @media(min-width:640px){.pr-grid{grid-template-columns:1fr 1fr}}
-    @media(min-width:1000px){.pr-grid{grid-template-columns:repeat(4,1fr)}}
-    .pr-card{min-width:0;display:flex;flex-direction:column;background:#121726;border:1px solid rgba(255,255,255,.09);border-radius:16px;padding:22px 20px}
+    @media(min-width:560px){.pr-grid{grid-template-columns:1fr 1fr}}
+    @media(min-width:1040px){.pr-grid{grid-template-columns:repeat(5,1fr)}}
+    .pr-card{min-width:0;display:flex;flex-direction:column;background:#121726;border:1px solid rgba(255,255,255,.09);border-radius:16px;padding:22px 18px}
     .pr-card.feat{border-color:rgba(124,77,255,.45);box-shadow:0 0 0 1px rgba(124,77,255,.25)}
+    .pr-card.free{border-color:rgba(110,231,168,.4);box-shadow:0 0 0 1px rgba(110,231,168,.18)}
+    .pr-card.free .pr-cta{background:linear-gradient(135deg,#2fbf71,#1f9d8c);border:0;color:#06120c}
+    .pr-badge{display:inline-block;font-size:.66rem;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:#6ee7a8;border:1px solid rgba(110,231,168,.35);border-radius:999px;padding:2px 8px;margin-bottom:8px}
     .pr-name{font-size:1.15rem;font-weight:800;color:#fff;margin:0}
     .pr-cap{color:#8b93a7;font-size:.86rem;margin:2px 0 14px}
     .pr-price{font-size:1.7rem;font-weight:800;color:#fff;letter-spacing:-.02em}
@@ -560,11 +640,19 @@ img, svg { max-width: 100%; }
   </style>
   <div class="pr-wrap">
     <div class="pr-head">
-      <p class="pr-kicker" data-i18n="price.kicker">Done-for-you</p>
-      <h2 data-i18n="price.title">Want the show run for you?</h2>
-      <p data-i18n="price.lead">The app is free and open-source — run it yourself any time. These tiers are a managed service: we plan, set up, operate and tune your light show on the night. Final scope is confirmed on a quick call.</p>
+      <p class="pr-kicker" data-i18n="price.kicker">Pricing</p>
+      <h2 data-i18n="price.title">Free to run yourself. Done-for-you if you'd rather not.</h2>
+      <p data-i18n="price.lead">The app is free and open-source (Apache-2.0) — self-host it with no limits, or try the hosted demo. The paid tiers are an optional managed service: we plan, set up, operate and tune your show on the night. Final scope is confirmed on a quick call.</p>
     </div>
     <div class="pr-grid">
+      <div class="pr-card free">
+        <span class="pr-badge" data-i18n="price.free.badge">Start here</span>
+        <p class="pr-name" data-i18n="price.free">Free</p>
+        <p class="pr-cap" data-i18n="price.free.cap">self-host or demo</p>
+        <div class="pr-price">€0<span class="from" data-i18n="price.free.from">forever</span></div>
+        <p class="pr-desc" data-i18n="price.free.desc">Run the full app yourself with no limits — Docker, open source. Or try the hosted demo here. No per-person fee, no wristbands, no app for your crowd.</p>
+        <a class="pr-cta" href="/try" data-i18n="price.free.cta">Try it free →</a>
+      </div>
       <div class="pr-card">
         <p class="pr-name" data-i18n="price.spark">Spark</p>
         <p class="pr-cap" data-i18n="price.spark.cap">up to 100 phones</p>
