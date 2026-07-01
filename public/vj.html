@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VJ &amp; OSC guide — Crowd Light Show</title>
+<meta name="description" content="Drive the Crowd Light Show from Resolume, TouchOSC or Bitfocus Companion over OSC, or map a USB MIDI controller with WebMIDI. Full /cls/* address map and setup steps.">
+<link rel="canonical" href="https://lightshow.flyreelstudio.eu/vj">
+@@GA@@
+<link rel="stylesheet" href="/static/style.css">
+<style>
+  :root{--v-bg:#07080d;--v-fg:#eef1f6;--v-muted:#9aa3b2;--v-line:#1a2130;--v-card:#11151f;--v-accent:#5aa0ff;--v-maxw:860px}
+  html,body{background:var(--v-bg);color:var(--v-fg)}
+  body{overflow-x:hidden}
+  .v-wrap{max-width:var(--v-maxw);margin:0 auto;padding:0 clamp(16px,4vw,28px)}
+  .v-nav{position:sticky;top:0;z-index:20;backdrop-filter:blur(10px);background:rgba(7,8,13,.8);border-bottom:1px solid var(--v-line)}
+  .v-nav .v-wrap{display:flex;align-items:center;gap:14px;padding:11px clamp(16px,4vw,28px)}
+  .v-brand{font-weight:800;text-decoration:none;color:var(--v-fg);margin-right:auto}
+  .v-nav a{color:var(--v-muted);text-decoration:none;font-size:.92rem}
+  .v-nav a:hover{color:var(--v-fg)}
+  h1{font-size:clamp(1.8rem,5vw,2.6rem);line-height:1.08;letter-spacing:-.02em;margin:clamp(30px,6vw,60px) 0 12px;font-weight:800}
+  .v-lead{color:var(--v-muted);font-size:clamp(1rem,2vw,1.14rem);line-height:1.6;margin:0 0 6px;max-width:60ch}
+  h2{font-size:clamp(1.25rem,3vw,1.6rem);margin:clamp(30px,5vw,48px) 0 8px;font-weight:800;letter-spacing:-.01em}
+  h3{font-size:1.05rem;margin:22px 0 6px;font-weight:700}
+  p{color:var(--v-muted);line-height:1.65;margin:0 0 12px}
+  a{color:var(--v-accent)}
+  ol,ul{color:var(--v-muted);line-height:1.7;padding-left:22px;margin:0 0 14px}
+  li{margin:4px 0}
+  code{background:#0c1019;border:1px solid var(--v-line);border-radius:6px;padding:2px 6px;font-size:.9em;color:#cfe0ff}
+  pre{background:#0a0d15;border:1px solid var(--v-line);border-radius:12px;padding:16px;overflow:auto;font-size:.86rem;line-height:1.55}
+  pre code{background:none;border:0;padding:0;color:#d6e2f5}
+  table{width:100%;border-collapse:collapse;margin:6px 0 16px;font-size:.9rem;display:block;overflow-x:auto}
+  th,td{text-align:left;padding:8px 12px;border-bottom:1px solid var(--v-line);white-space:nowrap;vertical-align:top}
+  th{color:var(--v-fg);font-weight:700}
+  td code{white-space:nowrap}
+  .v-note{background:linear-gradient(165deg,var(--v-card),#0b0e16);border:1px solid var(--v-line);border-radius:14px;padding:16px 18px;margin:16px 0}
+  .v-note p:last-child{margin:0}
+  .v-foot{border-top:1px solid var(--v-line);margin-top:48px;padding:26px 0 60px;color:var(--v-muted);font-size:.9rem}
+  .v-foot a{color:var(--v-accent)}
+</style>
+</head>
+<body>
+<header class="v-nav"><div class="v-wrap"><a class="v-brand" href="/">◀ Crowd Light Show</a><a href="/studio">Open console</a> <a href="https://github.com/AndriiShramko/crowd-light-show" target="_blank" rel="noopener">GitHub</a></div></header>
+
+<main class="v-wrap">
+  <h1>VJ &amp; OSC guide</h1>
+  <p class="v-lead">Drive the crowd's phones by hand, or from the professional software you already run — Resolume, TouchOSC, Bitfocus Companion, or any OSC source. Optional WebMIDI maps a hardware fader/pad box.</p>
+
+  <h2>1 · The VJ pult (nothing to install)</h2>
+  <p>Open the console at <a href="/studio">/studio</a> (or <code>/operator</code> for the main show), press <b>Start</b>, then open <b>“🎛️ VJ pult”</b> and switch <b>Manual control</b> on. You get four touch layouts — <b>Faders</b>, <b>Colour wheel</b>, <b>XY pad</b>, and <b>Big pads</b> — plus a fullscreen button. Toggle <b>“intervene in preset”</b> (the running preset keeps going and your moves ride on top) or <b>“manual only”</b> (presets off, the colour is purely yours). The <b>Palette</b> section locks the whole crowd to a flag's or a brand's colours — pick them on the wheel or tap a flag.</p>
+  <p>Everything is safety-clamped on every phone: at most 3 flashes per second, no red strobe — you can't push it past that no matter how hard you ride the faders.</p>
+
+  <h2>2 · Drive it from Resolume / TouchOSC / Companion (OSC)</h2>
+  <p>A tiny <b>bridge</b> runs on your own laptop. It listens for OSC over UDP and forwards each message to the show over HTTPS — so nothing new is opened on the show server, and it works through NAT and TLS. It's zero-dependency Node; the source is in <a href="https://github.com/AndriiShramko/crowd-light-show/tree/main/tools/vj-bridge" target="_blank" rel="noopener"><code>tools/vj-bridge/</code></a>.</p>
+
+  <h3>Run the bridge</h3>
+  <p>Grab your room's token from <code>/studio</code> (it's <code>window.__SESSION__.token</code> in the page), then:</p>
+  <pre><code>node tools/vj-bridge/bridge.mjs \
+  --api https://lightshow.flyreelstudio.eu \
+  --token "$CLS_CONSOLE_TOKEN" \
+  --osc-port 9000 --osc-host 0.0.0.0</code></pre>
+  <p>For the main show instead of a <code>/studio</code> room, pass <code>--operator-pass "$OP_PASS"</code> in place of <code>--token</code>.</p>
+
+  <h3>Point your software at it</h3>
+  <ul>
+    <li><b>Resolume Arena/Avenue:</b> Preferences → OSC → enable Output, IP = the bridge laptop (<code>127.0.0.1</code> if it's the same machine), Outgoing port = <code>9000</code>. Then in Shortcuts → Edit OSC, map a fader to <code>/cls/manual/hue</code> or a clip to <code>/cls/fx</code> with value <code>salute</code>.</li>
+    <li><b>TouchOSC / Lemur:</b> add an OSC connection, host = the bridge laptop's IP, send port <code>9000</code>, address your controls <code>/cls/*</code>.</li>
+    <li><b>Bitfocus Companion (no bridge needed for buttons):</b> add a <b>Generic HTTP</b> connection to <code>https://lightshow.flyreelstudio.eu</code>; on a button, POST to <code>/api/console/fx</code> with header <code>Authorization: Bearer &lt;token&gt;</code> and body <code>{"name":"salute"}</code>.</li>
+  </ul>
+
+  <h3>OSC address map (<code>/cls/*</code>)</h3>
+  <table>
+    <thead><tr><th>Address</th><th>Args</th><th>Effect</th></tr></thead>
+    <tbody>
+      <tr><td><code>/cls/manual/hue</code></td><td>f 0..1</td><td>colour (×360), auto-enables manual</td></tr>
+      <tr><td><code>/cls/manual/sat</code></td><td>f 0..1</td><td>saturation</td></tr>
+      <tr><td><code>/cls/manual/bri</code></td><td>f 0..1</td><td>brightness</td></tr>
+      <tr><td><code>/cls/manual/flash</code></td><td>f 0..1</td><td>flash (torch) intensity</td></tr>
+      <tr><td><code>/cls/manual/on</code></td><td>f ≥0.5</td><td>enable / disable the manual layer</td></tr>
+      <tr><td><code>/cls/manual/mode</code></td><td>s</td><td><code>intervene</code> or <code>full</code></td></tr>
+      <tr><td><code>/cls/palette</code></td><td>s</td><td>restrict to colours, e.g. <code>"e30613,ffffff"</code></td></tr>
+      <tr><td><code>/cls/preset</code></td><td>s</td><td><code>pulse</code>, <code>rainbow_chase</code>, <code>color_waves</code>, <code>ocean</code>, <code>off</code></td></tr>
+      <tr><td><code>/cls/torch</code></td><td>s</td><td><code>beat</code>, <code>strobe</code>, <code>sparkle</code>, <code>off</code></td></tr>
+      <tr><td><code>/cls/fx</code></td><td>s / button</td><td>firework: <code>salute</code>, <code>twinkle</code>, <code>ripple</code>, <code>strobe_burst</code>, <code>color_burst</code></td></tr>
+      <tr><td><code>/cls/blackout</code></td><td>—</td><td>blackout (lights only; music keeps playing)</td></tr>
+      <tr><td><code>/cls/seek</code></td><td>f ms</td><td>jump the music + lights</td></tr>
+      <tr><td><code>/cls/mute</code></td><td>f ≥0.5</td><td>mute the music on every phone</td></tr>
+      <tr><td><code>/cls/marquee</code></td><td>s</td><td>scrolling text on every phone</td></tr>
+    </tbody>
+  </table>
+  <div class="v-note"><p><b>It stays safe.</b> Every command is re-validated and re-governed on the server and is scoped to your own room by a signed token — even hostile OSC can't exceed the epilepsy-safety limits or drive another show.</p></div>
+
+  <h2>3 · WebMIDI (a hardware controller)</h2>
+  <p>On the laptop running the console, plug in a USB MIDI fader/pad box (Korg nanoKONTROL, Akai APCmini, …). In the pult's <b>MIDI controller</b> panel press <b>Connect</b>, then <b>Learn</b> a fader for each value — wiggle the control to bind it. Faders map to the four values; note pads fire the flash. Chrome or Edge on desktop only; the mapping is remembered.</p>
+
+  <h2>4 · Self-host it</h2>
+  <p>The whole app is open source (Apache-2.0). Run it yourself with Docker and drive it exactly the same way — see the <a href="https://github.com/AndriiShramko/crowd-light-show" target="_blank" rel="noopener">repository</a> and the <a href="https://github.com/AndriiShramko/crowd-light-show/tree/main/tools/vj-bridge" target="_blank" rel="noopener">bridge README</a>.</p>
+</main>
+
+<footer class="v-foot"><div class="v-wrap">Crowd Light Show · Free &amp; open-source (Apache-2.0) · <a href="/">Home</a> · <a href="/studio">Console</a> · <a href="https://github.com/AndriiShramko/crowd-light-show" target="_blank" rel="noopener">GitHub</a></div></footer>
+</body>
+</html>
