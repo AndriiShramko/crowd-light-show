@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.0] - 2026-07-01
+
+Round 15 — a marketing + docs pass for the full VJ feature set, a free tier, and three VJ-pult UX fixes.
+
+### Added
+
+- **Landing "Control room" section** with real UI screenshots (the VJ pult, presets/effects, colour wheel, a lit audience phone), a new hero, and copy grounded in real community pains (VJs, wedding DJs, worship tech, sports supporters). Fewer borders, stricter style; the screenshots are served by the app itself at `/static/shots/`.
+- **Free / self-host pricing tier** (€0, "Start here") added to the pricing grid, reframed as "free to run yourself · done-for-you if you'd rather not". i18n EN/PL/ES/FR.
+- **VJ & OSC guide** at `/vj` — the pult, the OSC bridge (Resolume / TouchOSC / Bitfocus Companion), the `/cls/*` address map, WebMIDI, and self-hosting. Linked from the landing and README.
+- **README rewritten** for the v0.15 feature set with hosted screenshots and an honest quickstart (`npm` / `docker run -p`); added `config.env.example`.
+- **Custom palette colour picker** — build a palette visually on a hue×sat colour wheel + brightness slider (removable chips), in addition to the hex box.
+
+### Changed / Fixed
+
+- **No context menu on the controls** — a long-press on a touchscreen PC no longer pops the browser context menu over the pult buttons, sliders and pads (right-click on links/text is untouched).
+- **Manual tabs hide when Manual control is OFF** — the four widget tabs + mode/fullscreen only show when manual control is on, so it's clear what they belong to; the palette/flags section stays visible.
+- Fixed the desktop language switcher overlapping the landing's top-right nav button.
+
 ## [0.15.0] - 2026-07-01
 
 Round 14 — a live "VJ pult": control the crowd by hand under the music, restrict the palette to chosen colours, and drive the show from professional VJ software.
