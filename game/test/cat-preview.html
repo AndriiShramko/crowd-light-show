@@ -1,0 +1,20 @@
+<!doctype html><html><head><meta charset="utf-8"><style>body{margin:0;background:#07080c}</style>
+<script type="importmap">{"imports":{"three":"../vendor/three.module.min.js","three/addons/":"../vendor/three-addons/"}}</script></head>
+<body><script type="module">
+import * as THREE from 'three';
+import { CatLayer, chainColor } from '../cat.js';
+const r = new THREE.WebGLRenderer({ antialias: true }); r.setSize(700, 400); document.body.appendChild(r.domElement);
+const sc = new THREE.Scene(); sc.background = new THREE.Color(0x07080c);
+const cam = new THREE.PerspectiveCamera(45, 700/400, 0.1, 100); cam.position.set(0, 1.4, 4); cam.lookAt(0, 0.5, 0);
+sc.add(new THREE.HemisphereLight(0xffffff, 0x223, 1.1)); const d = new THREE.DirectionalLight(0xfff2d0, 1.2); d.position.set(3, 5, 2); sc.add(d);
+const layer = new CatLayer(sc, 8);
+const cats = [
+  { x: -1.1, z: 0, heading: 0.3, preset: 'A', colorId: 3 },
+  { x: 1.1, z: 0, heading: -0.3, preset: 'B', colorId: 5 },
+];
+window.__ready = false;
+function frame(){ layer.update(cats, cam.position); r.render(sc, cam); }
+frame(); frame();
+window.__ready = true;
+window.__shot = () => { frame(); return r.domElement.toDataURL('image/png').split(',')[1]; };
+</script></body></html>

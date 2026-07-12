@@ -1,0 +1,14 @@
+{
+  "noToken": {
+    "rejected": true,
+    "err": "Unexpected server response: 401"
+  },
+  "expiredToken": {
+    "rejected": true,
+    "err": "Unexpected server response: 401"
+  },
+  "validToken": {
+    "accepted": true
+  },
+  "pass": true
+}

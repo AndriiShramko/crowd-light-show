@@ -1,0 +1,33 @@
+{
+  "source": "2000 synthetic WS from local 18-core box via wss (nginx→node)",
+  "snapHz": 4,
+  "samples_2000": [
+    {
+      "clients": 2000,
+      "tickP95ms": 2.7,
+      "tickMaxms": 10.7,
+      "bcWorkP95ms": 228,
+      "bcWorkMaxms": 366,
+      "rssMB": 72
+    }
+  ],
+  "verdict": {
+    "tick_sim_p95_under_60": true,
+    "rss_stable": true,
+    "clients_held": 2000,
+    "broadcast_comfortable_ccu": 1700,
+    "note": "sim tick p95 ~2.7ms (budget 125ms). Broadcast single-thread comfortable to ~1700 WS; at 2000 bc p95 in 4Hz budget but peaks exceed → shard/uWS beyond per spec-arch."
+  },
+  "live": {
+    "uptimeSec": 573,
+    "clients": 2000,
+    "tickP50": 0.6887560000177473,
+    "tickP95": 3.239391000010073,
+    "tickMax": 10.7,
+    "bcWorkP95": 247.32591100002173,
+    "bcWorkMax": 368.4,
+    "loopJitterP95": 233,
+    "rssMB": 72,
+    "chain": null
+  }
+}

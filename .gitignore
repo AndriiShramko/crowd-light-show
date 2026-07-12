@@ -31,3 +31,5 @@ torch_channel_report.json
 site_8c_report.json
 game/static/worlds/
 game/test/out/
+game/server/node_modules/
+game/static/worlds/arena-mask-v1.*

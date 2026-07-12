@@ -1,0 +1,92 @@
+{
+  "N": 300,
+  "checks": {
+    "attachAll": {
+      "attached": 300,
+      "N": 300,
+      "pass": true
+    },
+    "chainDump": {
+      "members": 300,
+      "unique": true,
+      "orphans": 0,
+      "leaders": [
+        0,
+        25,
+        50,
+        75,
+        100,
+        125,
+        150,
+        175,
+        200,
+        225,
+        250,
+        275
+      ],
+      "pathPoints": 88,
+      "maxGap": 0.4999999999999998,
+      "pass": true
+    },
+    "ringBuffer": {
+      "maxGapSeen": 0.5,
+      "pass": true
+    },
+    "latency": {
+      "rttP95": 48,
+      "posP95est": 86.5,
+      "samples": 1000,
+      "pass": true
+    },
+    "headTransfer": {
+      "transferMs": 25,
+      "pass": true
+    },
+    "reconnectGrace": {
+      "oldSeat": 20,
+      "ghostSeatDuringGrace": 20,
+      "heldAsGhostDuringGrace": true,
+      "newSeat": 20,
+      "connectedAgain": true,
+      "pass": true
+    },
+    "graceExpiry": {
+      "membersBefore": 290,
+      "membersAfter": 289,
+      "pass": true
+    },
+    "antiCheat": {
+      "maxSpeed": 2.1,
+      "samples": 59,
+      "pass": true
+    },
+    "walls": {
+      "maxX": 55.7,
+      "pass": true
+    },
+    "nearCap": {
+      "maxCountSeen": 48,
+      "cap": 48,
+      "pass": true
+    },
+    "backpressure": {
+      "closedCode": null,
+      "rssMB": 66,
+      "pass": true
+    }
+  },
+  "metrics": {
+    "uptimeSec": 398,
+    "clients": 44,
+    "tickP50": 14,
+    "tickP95": 15,
+    "tickMax": 35,
+    "rssMB": 64,
+    "chain": {
+      "members": 288,
+      "pathPoints": 706,
+      "maxGap": 1.1980510316305886
+    }
+  },
+  "pass": true
+}

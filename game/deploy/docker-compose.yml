@@ -1,5 +1,5 @@
-# lightshow-game — Фаза A: только статика + healthz. Изолирован от лайтшоу и соседей.
-# Деплой: /home/fpv/lightshow-game/ (app/, worlds/, nginx/, этот файл). Сеть web-proxy — external.
+# lightshow-game — Фаза A (nginx статика + limit_rate) + Фазы B/C (Node WS-сервер, internal).
+# Деплой: /home/fpv/lightshow-game/. Секреты — config.env (chmod 600, НЕ в git). Сеть web-proxy — external.
 services:
   lightshow-game:
     # Пин по digest (снят с сервера 2026-07-12); тег-комментарий: 1.27-alpine
@@ -15,6 +15,7 @@ services:
       - ./app:/srv/app:ro
       - ./worlds:/srv/worlds:ro
       - ./nginx/default.conf.template:/etc/nginx/templates/default.conf.template:ro
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro   # поднятые worker_connections/nofile под WS-толпу
     expose:
       - "8080"
     networks:
@@ -22,12 +23,50 @@ services:
       - game-net
     read_only: true
     tmpfs:
-      # uid 101 = nginx в unprivileged-образе; без этого entrypoint не может записать конфиг из шаблона
       - /tmp:uid=101,gid=101
       - /etc/nginx/conf.d:uid=101,gid=101
-    mem_limit: 512m
+    ulimits:
+      nofile: { soft: 65536, hard: 65536 }
+    mem_limit: 256m
     pids_limit: 256
-    cpus: 1.0
+    cpus: 0.5
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+    depends_on:
+      - lightshow-game-ws
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+  lightshow-game-ws:
+    image: node:20-alpine
+    container_name: lightshow-game-ws
+    working_dir: /srv/ws
+    command: ["node", "server.js"]
+    env_file: ./config.env      # GAME_SESSION_SECRET (chmod 600, не в git)
+    environment:
+      - PORT=8081
+      - NODE_ENV=production
+      - DATA_DIR=/srv/data
+      - GAME_ENABLED=1
+    volumes:
+      - ./ws:/srv/ws:ro          # node_modules лежит внутри ws/ (read_only rootfs не даёт mount в несущ. точку)
+      - ./static/worlds:/srv/static/worlds:ro
+      - game-data:/srv/data
+    expose:
+      - "8081"
+    networks:
+      - game-net
+    read_only: true
+    tmpfs:
+      - /tmp
+    mem_limit: 512m
+    pids_limit: 512
+    cpus: 2.0
+    user: "1000:1000"
     cap_drop:
       - ALL
     security_opt:
@@ -35,11 +74,12 @@ services:
     restart: unless-stopped
     logging:
       driver: json-file
-      options:
-        max-size: "10m"
-        max-file: "3"
+      options: { max-size: "10m", max-file: "3" }
 
 networks:
   web-proxy:
     external: true
   game-net: {}
+
+volumes:
+  game-data: {}
