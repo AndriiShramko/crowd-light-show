@@ -2,7 +2,8 @@
 # Деплой: /home/fpv/lightshow-game/ (app/, worlds/, nginx/, этот файл). Сеть web-proxy — external.
 services:
   lightshow-game:
-    image: nginxinc/nginx-unprivileged:1.27-alpine
+    # Пин по digest (снят с сервера 2026-07-12); тег-комментарий: 1.27-alpine
+    image: nginxinc/nginx-unprivileged@sha256:65e3e85dbaed8ba248841d9d58a899b6197106c23cb0ff1a132b7bfe0547e4c0
     container_name: lightshow-game
     environment:
       - VIRTUAL_HOST=game.flyreelstudio.eu

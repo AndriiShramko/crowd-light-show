@@ -4,7 +4,7 @@ import * as THREE from 'three';
 import { SparkRenderer, SplatMesh } from '@sparkjsdev/spark';
 
 const qs = new URLSearchParams(location.search);
-const WORLD_URL = qs.get('world') || './static/worlds/dubai-b4-v1.sog';
+const WORLD_URL = qs.get('world') || './static/worlds/dubai-b5-v1.sog';
 const PROBE_SECONDS = Number(qs.get('fpsprobe')) > 0 ? Number(qs.get('fpsprobe')) : 10;
 const FPS_FLOOR = 20; // ниже за окно пробы → авто-2D
 

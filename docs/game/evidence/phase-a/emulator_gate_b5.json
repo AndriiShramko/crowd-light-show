@@ -1,0 +1,136 @@
+{
+  "base": "https://game.flyreelstudio.eu/?world=./static/worlds/dubai-b5-v1.sog",
+  "minutes": 10,
+  "device": "android-emulator host-gpu",
+  "samples": [
+    {
+      "tSec": 30,
+      "fps": 41.5,
+      "mode": "3d",
+      "errs": 0
+    },
+    {
+      "tSec": 60,
+      "fps": 53.7,
+      "mode": "3d",
+      "errs": 0
+    },
+    {
+      "tSec": 90,
+      "fps": 49,
+      "mode": "3d",
+      "errs": 0
+    },
+    {
+      "tSec": 120,
+      "fps": 42.5,
+      "mode": "3d",
+      "errs": 0
+    },
+    {
+      "tSec": 150,
+      "fps": 50,
+      "mode": "3d",
+      "errs": 0
+    },
+    {
+      "tSec": 180,
+      "fps": 37.1,
+      "mode": "3d",
+      "errs": 0
+    },
+    {
+      "tSec": 210,
+      "fps": 31.2,
+      "mode": "3d",
+      "errs": 0
+    },
+    {
+      "tSec": 240,
+      "fps": 29.2,
+      "mode": "3d",
+      "errs": 0
+    },
+    {
+      "tSec": 270,
+      "fps": 28.2,
+      "mode": "3d",
+      "errs": 0
+    },
+    {
+      "tSec": 300,
+      "fps": 29.4,
+      "mode": "3d",
+      "errs": 0
+    },
+    {
+      "tSec": 330,
+      "fps": 35.3,
+      "mode": "3d",
+      "errs": 0
+    },
+    {
+      "tSec": 361,
+      "fps": 35.3,
+      "mode": "3d",
+      "errs": 0
+    },
+    {
+      "tSec": 391,
+      "fps": 30.1,
+      "mode": "3d",
+      "errs": 0
+    },
+    {
+      "tSec": 421,
+      "fps": 32.6,
+      "mode": "3d",
+      "errs": 0
+    },
+    {
+      "tSec": 451,
+      "fps": 29.5,
+      "mode": "3d",
+      "errs": 0
+    },
+    {
+      "tSec": 481,
+      "fps": 30.5,
+      "mode": "3d",
+      "errs": 0
+    },
+    {
+      "tSec": 511,
+      "fps": 27.4,
+      "mode": "3d",
+      "errs": 0
+    },
+    {
+      "tSec": 541,
+      "fps": 26.9,
+      "mode": "3d",
+      "errs": 0
+    },
+    {
+      "tSec": 571,
+      "fps": 25.8,
+      "mode": "3d",
+      "errs": 0
+    },
+    {
+      "tSec": 601,
+      "fps": 28,
+      "mode": "3d",
+      "errs": 0
+    }
+  ],
+  "at": "2026-07-12T18:36:00.053Z",
+  "result": {
+    "avgFps": 34.7,
+    "minFps": 25.8,
+    "stayed3d": true,
+    "crashed": false,
+    "pass": true,
+    "honesty": "host-GPU эмулятор; реальный iPhone/термалка/батарея НЕ покрыты — финальная валидация на живом событии"
+  }
+}
