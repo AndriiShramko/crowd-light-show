@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#07080c">
+<title>Cat Conga — world preview</title>
+<meta name="robots" content="noindex">
+<style>
+  html, body { margin:0; padding:0; height:100%; background:#07080c; color:#e8e6df;
+    font:15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; overflow:hidden;
+    -webkit-user-select:none; user-select:none; }
+  #stage { position:fixed; inset:0; touch-action:none; }
+  #stage canvas { display:block; width:100%; height:100%; touch-action:none; }
+  .hud { position:fixed; left:0; right:0; display:flex; justify-content:center;
+    pointer-events:none; z-index:5; }
+  #topline { top:calc(8px + env(safe-area-inset-top)); }
+  #topline span { background:rgba(10,12,18,.55); border:1px solid rgba(255,255,255,.08);
+    border-radius:999px; padding:4px 12px; font-size:12px; letter-spacing:.04em; }
+  #loader { position:fixed; inset:0; display:flex; flex-direction:column; gap:14px;
+    align-items:center; justify-content:center; background:#07080c; z-index:10;
+    transition:opacity .4s; }
+  #loader.hidden { opacity:0; pointer-events:none; }
+  .cat { font-size:44px; animation:bob 1.2s ease-in-out infinite; }
+  @keyframes bob { 50% { transform:translateY(-7px) rotate(-4deg); } }
+  #bar { width:min(240px, 60vw); height:4px; border-radius:4px; background:rgba(255,255,255,.12); overflow:hidden; }
+  #bar i { display:block; height:100%; width:0%; background:#ffc93c; border-radius:4px; transition:width .2s; }
+  #loadmsg { font-size:13px; opacity:.7; }
+  #err { position:fixed; inset:0; display:none; flex-direction:column; gap:12px; align-items:center;
+    justify-content:center; background:#07080c; z-index:20; text-align:center; padding:24px; }
+  #err.show { display:flex; }
+  #err button { background:#ffc93c; color:#1b1400; border:0; border-radius:10px;
+    padding:12px 26px; font-size:15px; font-weight:600; }
+  #badge { position:fixed; right:8px; bottom:calc(8px + env(safe-area-inset-bottom)); z-index:5;
+    font-size:10px; opacity:.45; letter-spacing:.05em; }
+</style>
+</head>
+<body data-mode="loading">
+  <div id="stage"></div>
+  <div class="hud" id="topline"><span id="status">Cat Conga · Phase A world preview</span></div>
+  <div id="loader">
+    <div class="cat">🐈‍⬛</div>
+    <div id="bar"><i></i></div>
+    <div id="loadmsg">loading the world…</div>
+  </div>
+  <div id="err">
+    <div class="cat">🙀</div>
+    <div><strong>The world didn't load.</strong><br><span style="opacity:.7">Check the connection and try again.</span></div>
+    <button id="retry">Retry</button>
+  </div>
+  <div id="badge">crowd-light-show · game phase A</div>
+  <script>
+    // SW первым — кеширует мир и shell для оффлайн-reload (iOS роняет WebGL-контекст при блокировке).
+    if ('serviceWorker' in navigator) { navigator.serviceWorker.register('./sw.js').catch(()=>{}); }
+  </script>
+  <script type="importmap">
+    { "imports": {
+        "three": "./vendor/three.module.min.js",
+        "three/addons/": "./vendor/three-addons/",
+        "@sparkjsdev/spark": "./vendor/spark.module.min.js"
+    } }
+  </script>
+  <script type="module" src="./main.js"></script>
+</body>
+</html>

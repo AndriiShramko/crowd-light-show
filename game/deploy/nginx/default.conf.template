@@ -1,0 +1,40 @@
+# lightshow-game — статика Фазы A за nginx-proxy (vhost game.flyreelstudio.eu).
+# envsubst подставляет ТОЛЬКО определённые env (${GAME_ENABLED}); $uri и пр. остаются nginx'у.
+server {
+    listen 8080;
+    server_name _;
+
+    gzip on;
+    gzip_types application/javascript text/css text/html application/json;
+    gzip_min_length 1024;
+
+    # kill-switch уровень 1: GAME_ENABLED=0 -> 503 (healthz остаётся живым для диагностики)
+    set $game_enabled "${GAME_ENABLED}";
+
+    location = /healthz {
+        default_type text/plain;
+        return 200 "ok";
+    }
+
+    # Тяжёлые миры: immutable-кеш, range/206 нативно, канал клампится per-connection.
+    location /static/worlds/ {
+        if ($game_enabled = "0") { return 503; }
+        alias /srv/worlds/;
+        limit_rate 2m;
+        add_header Cache-Control "public, max-age=31536000, immutable";
+    }
+
+    location /vendor/ {
+        if ($game_enabled = "0") { return 503; }
+        root /srv/app;
+        add_header Cache-Control "public, max-age=86400";
+    }
+
+    location / {
+        if ($game_enabled = "0") { return 503; }
+        root /srv/app;
+        index index.html;
+        add_header Cache-Control "no-cache";
+        try_files $uri $uri/ =404;
+    }
+}

@@ -1,0 +1,44 @@
+# lightshow-game — Фаза A: только статика + healthz. Изолирован от лайтшоу и соседей.
+# Деплой: /home/fpv/lightshow-game/ (app/, worlds/, nginx/, этот файл). Сеть web-proxy — external.
+services:
+  lightshow-game:
+    image: nginxinc/nginx-unprivileged:1.27-alpine
+    container_name: lightshow-game
+    environment:
+      - VIRTUAL_HOST=game.flyreelstudio.eu
+      - VIRTUAL_PORT=8080
+      - LETSENCRYPT_HOST=game.flyreelstudio.eu
+      - LETSENCRYPT_EMAIL=zmei116@gmail.com
+      - GAME_ENABLED=1
+    volumes:
+      - ./app:/srv/app:ro
+      - ./worlds:/srv/worlds:ro
+      - ./nginx/default.conf.template:/etc/nginx/templates/default.conf.template:ro
+    expose:
+      - "8080"
+    networks:
+      - web-proxy
+      - game-net
+    read_only: true
+    tmpfs:
+      # uid 101 = nginx в unprivileged-образе; без этого entrypoint не может записать конфиг из шаблона
+      - /tmp:uid=101,gid=101
+      - /etc/nginx/conf.d:uid=101,gid=101
+    mem_limit: 512m
+    pids_limit: 256
+    cpus: 1.0
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  web-proxy:
+    external: true
+  game-net: {}
