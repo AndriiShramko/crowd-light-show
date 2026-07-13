@@ -409,6 +409,21 @@ export class ShowHub {
     return h.isMain ? { ok: true } : { ok: true, members: h.members.size };
   }
 
+  // Cat Conga handoff (Фаза D игрового модуля): АДДИТИВНО — только broadcast, run-state/эпилепси-governor не трогаются.
+  // Клиенты без игрового кода просто игнорируют {t:'prefetch'|'game'}. MAIN-поведение показа байт-идентично.
+  gamePrefetch(roomId, sceneUrl) {
+    const h = this._rt(roomId, true);
+    if (!h) return { ok: false, error: 'room unavailable' };
+    h.broadcast({ t: 'prefetch', sceneUrl: String(sceneUrl || '').slice(0, 300) });
+    return { ok: true };
+  }
+  gameLaunch(roomId, url, T0) {
+    const h = this._rt(roomId, true);
+    if (!h) return { ok: false, error: 'room unavailable' };
+    h.broadcast({ t: 'game', url: String(url || '').slice(0, 300), T0: Number(T0) || (serverClock() + 3000) });
+    return { ok: true };
+  }
+
   addOperator(ws) { this.operators.add(ws); this.send(ws, { t: 'state', state: this.publicState() }); this.broadcastCount(); }
   removeOperator(ws) {
     this.operators.delete(ws);

@@ -345,6 +345,12 @@ app.post('/api/operator/marquee', (req, reply) => {
   if (!requireOperator(req, reply)) return;
   return hub.setMarquee('main', String((req.body && req.body.text) || '').slice(0, 200));
 });
+// Cat Conga handoff (Фаза D): оператор рассылает prefetch мира в начале шоу и переход в игру по кнопке.
+// Аддитивно — только broadcast нового сообщения; run-state/эпилепси-governor нетронуты.
+app.post('/api/operator/game-prefetch', (req, reply) => { if (!requireOperator(req, reply)) return; return hub.gamePrefetch('main', String((req.body && req.body.sceneUrl) || '')); });
+app.post('/api/operator/game-launch', (req, reply) => { if (!requireOperator(req, reply)) return; return hub.gameLaunch('main', String((req.body && req.body.url) || ''), req.body && req.body.T0); });
+app.post('/api/console/game-prefetch', (req, reply) => { const room = consoleRoom(req, reply); if (!room) return; return hub.gamePrefetch(room, String((req.body && req.body.sceneUrl) || '')); });
+app.post('/api/console/game-launch', (req, reply) => { const room = consoleRoom(req, reply); if (!room) return; return hub.gameLaunch(room, String((req.body && req.body.url) || ''), req.body && req.body.T0); });
 // Round 13 (pt 7): seek the music/show to any position. (pt 8): mute the music on ALL phones.
 app.post('/api/console/seek', (req, reply) => { const room = consoleRoom(req, reply); if (!room) return; return hub.seek(room, Number(req.body && req.body.offsetMs)); });
 app.post('/api/operator/seek', (req, reply) => { if (!requireOperator(req, reply)) return; return hub.seek('main', Number(req.body && req.body.offsetMs)); });

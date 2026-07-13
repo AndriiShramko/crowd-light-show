@@ -3,7 +3,7 @@
 // Один InstancedMesh на всех котов; heading через per-instance matrix; LOD инстанс→билборд→точка.
 import * as THREE from 'three';
 
-const INK = 0x111014, EYE = 0xffc21e;
+const INK = 0x2a2730, EYE = 0xffd21e;   // чуть светлее чернильного, чтобы кот читался на тёмном 3DGS-мире
 
 function buildCatGeometry(preset) {
   const parts = [];
@@ -31,7 +31,7 @@ function buildCatGeometry(preset) {
 }
 function buildEyes() {
   const geos = [];
-  for (const s of [-1, 1]) { const e = new THREE.SphereGeometry(0.1, 6, 5); e.scale(1, 1.25, 1); e.translate(s * 0.13, 0.74, 0.6); geos.push(e); }
+  for (const s of [-1, 1]) { const e = new THREE.SphereGeometry(0.15, 6, 5); e.scale(1, 1.3, 1); e.translate(s * 0.14, 0.75, 0.62); geos.push(e); }  // крупнее для читаемости издалека
   return mergeGeometries(geos);
 }
 // минимальный merge без BufferGeometryUtils (только position/normal)
@@ -74,7 +74,8 @@ export class CatLayer {
     this.max = max;
     this.geoA = buildCatGeometry('A'); this.geoB = buildCatGeometry('B');
     this.eyesA = buildEyes(); this.eyesB = buildEyes();
-    const bodyMat = new THREE.MeshLambertMaterial({ color: INK });
+    // rim-подсветка (emissive) — кот не сливается с тёмным миром; глаза светятся
+    const bodyMat = new THREE.MeshLambertMaterial({ color: INK, emissive: 0x141118, emissiveIntensity: 0.6 });
     const eyeMat = new THREE.MeshBasicMaterial({ color: EYE });
     this.meshA = new THREE.InstancedMesh(this.geoA, bodyMat, max);
     this.meshB = new THREE.InstancedMesh(this.geoB, bodyMat, max);
@@ -97,9 +98,9 @@ export class CatLayer {
     const posArr = this.pointGeo.attributes.position.array, colArr = this.pointGeo.attributes.color.array;
     for (const c of cats) {
       const d = Math.hypot(c.x - camPos.x, c.z - camPos.z);
-      if (d < 25) { // полный инстанс
+      if (d < 40) { // полный инстанс (радиус LOD расширен — коты крупнее в большом мире)
         this._e.set(0, -c.heading + Math.PI / 2, 0); this._q.setFromEuler(this._e);
-        this._p.set(c.x, 0, c.z); this._m.compose(this._p, this._q, this._s);
+        this._p.set(c.x, 0, c.z); this._s.set(1.6, 1.6, 1.6); this._m.compose(this._p, this._q, this._s);
         if (c.preset === 'B') { this.meshB.setMatrixAt(b, this._m); this.eyeMeshB.setMatrixAt(b, this._m); b++; }
         else { this.meshA.setMatrixAt(a, this._m); this.eyeMeshA.setMatrixAt(a, this._m); a++; }
       } else { // средний/дальний → точка с цветом цепочки

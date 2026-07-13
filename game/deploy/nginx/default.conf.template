@@ -21,7 +21,9 @@ server {
 
     # Метрики/дебаг игрового сервера — за HMAC debug-токеном (проверяет сам Node); наружу только через токен.
     location = /metrics { proxy_pass http://game_ws; proxy_set_header Host $host; }
-    location = /debug/chain { proxy_pass http://game_ws; proxy_set_header Host $host; }
+    location /debug/ { proxy_pass http://game_ws; proxy_set_header Host $host; }
+    # Игровое API (анонимный /api/join, флаги /api/invite|inscription) → game-ws
+    location /api/ { if ($game_enabled = "0") { return 503; } proxy_pass http://game_ws; proxy_set_header Host $host; }
 
     # WS игрового сервера (Фазы B/C): апгрейд + без буферизации + длинные таймауты.
     location /ws {

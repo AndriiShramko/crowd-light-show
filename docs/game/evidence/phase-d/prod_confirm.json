@@ -1,0 +1,1 @@
+{"prod_confirm":{"identify":"PASS","report":"PASS (acked+logged)","flags":"invite 403, inscription 403","handoff_endpoints":"game-launch/prefetch live (401 без auth), MAIN цел","chat":"механика PASS локально (phase_d_report); прод — тайминг схождения при широком спавне"}}

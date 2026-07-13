@@ -3,8 +3,9 @@
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import { WebSocketServer } from 'ws';
-import { verifyToken } from './auth.js';
+import { verifyToken, issueToken } from './auth.js';
 import { loadMask } from './mask.js';
 import { Chain, SPACING, SEG, JOIN_RADIUS } from './chain.js';
 
@@ -18,6 +19,9 @@ const BP_SOFT = 256 * 1024, BP_HARD = 1024 * 1024; // backpressure
 const Q = 32;                            // квантование позиций (1/32 м)
 const DATA_DIR = process.env.DATA_DIR || './data';
 const MASK_PATH = process.env.MASK_PATH || '../static/worlds/arena-mask-v1.bin';
+// Фаза 2 за фиче-флагами (тёмный код до юр/операторского гейта — [[spec-legal]])
+const INVITES_ENABLED = process.env.INVITES_ENABLED === '1';
+const INSCRIPTIONS_ENABLED = process.env.INSCRIPTIONS_ENABLED === '1';
 
 const mask = loadMask(new URL(MASK_PATH, import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1'));
 fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -28,6 +32,15 @@ const players = new Map();  // playerId -> P
 let chain = null;           // MVP: одна цепочка на комнату
 let nextNum = 1;
 const numOf = new Map();    // playerId -> u32 для бинарного протокола
+const CHAT_PHRASES = 12;    // индексов пресет-чата (тексты — на клиенте, PL/EN/RU/UA)
+const chatBubbles = [];     // {num,i,at,x,z} — раздаём соседям, живут ~4 с
+const purrs = [];           // {num,x,z,at} — волна мурлыка
+const reports = [];         // {by,targetNum,at,snapshot} — лог оператору
+let milestoneHit = 0;       // последний достигнутый milestone длины цепи
+let pendingMilestone = 0;   // milestone к рассылке в ближайшем broadcast
+const MILESTONES = [50, 100, 500, 1000];
+// Игровые метрики события (§D): агрегаты для отчёта оператору
+const metrics = { joins: 0, attaches: 0, identifies: 0, maxChainLen: 0, uniquePlayers: 0, worldLoadedBeacons: 0, fallback2dBeacons: 0 };
 
 const SPAWN_R = Number(process.env.SPAWN_R || 60);
 function spawnPos() {
@@ -72,8 +85,33 @@ function rec(arr, v) { arr.push(v); if (arr.length > 2000) arr.splice(0, 1000); 
 const server = http.createServer((req, res) => {
   const u = new URL(req.url, 'http://x');
   if (u.pathname === '/healthz') { res.writeHead(200, { 'content-type': 'text/plain' }); return res.end('ok'); }
+  // Анонимный вход: после handoff из лайтшоу клиент дёргает /api/join и получает game-токен (уникальный playerId).
+  // Игра анонимна — auth-gate избыточен; токен подписан игровым секретом (celebrant playerId + room).
+  if (u.pathname === '/api/join') {
+    if (process.env.GAME_ENABLED === '0') { res.writeHead(503); return res.end('game disabled'); }
+    const room = (u.searchParams.get('room') || 'MAIN').slice(0, 32);
+    const playerId = 'p' + crypto.randomUUID();
+    metrics.joins++;
+    const token = issueToken('game', 10 * 60 * 1000, { room, playerId }); // TTL 10 мин
+    res.writeHead(200, { 'content-type': 'application/json' });
+    return res.end(JSON.stringify({ token, playerId, room, ws: '/ws' }));
+  }
+  // Клиентский beacon метрик (world-loaded / 2D-fallback) — для conversion-статистики
+  if (u.pathname === '/api/metric') {
+    const kind = u.searchParams.get('k');
+    if (kind === 'world_loaded') metrics.worldLoadedBeacons++;
+    else if (kind === 'fallback_2d') metrics.fallback2dBeacons++;
+    res.writeHead(204); return res.end();
+  }
+  // Фаза 2 фиче-флаги: выключены → 403 (тест §29). При включении подключается модерация ([[spec-moderation]] Ф1).
+  if (u.pathname === '/api/invite') { res.writeHead(INVITES_ENABLED ? 501 : 403); return res.end(INVITES_ENABLED ? 'not-impl' : 'invites disabled'); }
+  if (u.pathname === '/api/inscription') { res.writeHead(INSCRIPTIONS_ENABLED ? 501 : 403); return res.end(INSCRIPTIONS_ENABLED ? 'not-impl' : 'inscriptions disabled'); }
   const tok = verifyToken(u.searchParams.get('token'));
   if (!tok || tok.role !== 'debug') { res.writeHead(401); return res.end('unauthorized'); }
+  if (u.pathname === '/debug/reports') {
+    res.writeHead(200, { 'content-type': 'application/json' });
+    return res.end(JSON.stringify({ count: reports.length, recent: reports.slice(-5) }));
+  }
   if (u.pathname === '/metrics') {
     res.writeHead(200, { 'content-type': 'application/json' });
     return res.end(JSON.stringify({
@@ -86,6 +124,7 @@ const server = http.createServer((req, res) => {
       loopJitterP95: pct(tickLags, 0.95),
       rssMB: Math.round(process.memoryUsage().rss / 1048576),
       chain: chain ? { members: chain.length, pathPoints: chain.path.length, maxGap: chain.maxGap() } : null,
+      game: { ...metrics, uniquePlayers: numOf.size },   // §D игровые метрики события
     }));
   }
   if (u.pathname === '/debug/chain') {
@@ -169,11 +208,41 @@ function onConn(ws, tok) {
         return send(ws, { t: 'err', code: 'too_far', tail });
       }
       const seat2 = chain.attach(pid);
+      metrics.attaches++;
       scheduleSave();
       return send(ws, { t: 'joined', seat: seat2, head: false, leader: chain.isLeaderSeat(seat2) });
     }
     if (m.t === 'detach') { leaveChain(pid); return; }
     if (m.t === 'map') { p.wantMap = !!m.on; return; }    // zoom-out подписка
+    if (m.t === 'chat') {                                 // пресет-чат: только индекс фразы (не свободный текст)
+      if (now - (p.lastChatAt || 0) < 2000) return;       // rate-limit 1 msg/2 с
+      const idx = m.i | 0;
+      if (idx < 0 || idx >= CHAT_PHRASES) return;
+      p.lastChatAt = now;
+      chatBubbles.push({ num: p.num, i: idx, at: now, x: p.x, z: p.z });
+      return;
+    }
+    if (m.t === 'identify') {                             // identify me: цвет цепи (или свой) + номер, TTL 60 с, cooldown 10 с
+      if (now - (p.lastIdAt || 0) < 10000) return send(ws, { t: 'err', code: 'id_cooldown' });
+      p.lastIdAt = now;
+      metrics.identifies++;
+      const seatI = chain ? chain.seatOf(pid) : -1;
+      return send(ws, { t: 'identify', num: p.num, colorId: seatI >= 0 ? chain.colorId : 0, ttl: 60 });
+    }
+    if (m.t === 'purr') {                                 // «мурлык»: волна по соседям (микро-агентность звена)
+      if (now - (p.lastPurrAt || 0) < 1500) return;
+      p.lastPurrAt = now;
+      purrs.push({ num: p.num, x: p.x, z: p.z, at: now });
+      return;
+    }
+    if (m.t === 'report') {                               // жалоба: снапшот последних чат-событий рядом → оператору-логу
+      if (now - (p.lastReportAt || 0) < 5000) return;
+      p.lastReportAt = now;
+      const near = chatBubbles.filter((c) => now - c.at < 60000).slice(-20);
+      reports.push({ by: p.num, targetNum: m.target | 0, at: now, snapshot: near });
+      if (reports.length > 500) reports.splice(0, 250);
+      return send(ws, { t: 'report_ack' });
+    }
   });
   ws.on('close', () => {
     if (players.get(pid)?.ws !== ws) return;              // уже replaced
@@ -246,6 +315,16 @@ setInterval(() => {
   for (const p of players.values()) {
     if (p.ghost && now - p.ghostAt > GRACE_MS) { leaveChain(p.id); players.delete(p.id); }
   }
+
+  // 5) milestone цепи (эффекты ТОЛЬКО на 50/100/500/1000 — не на каждый attach)
+  if (chain) {
+    const len = chain.length;
+    if (len > metrics.maxChainLen) metrics.maxChainLen = len;
+    for (const ms of MILESTONES) {
+      if (len >= ms && milestoneHit < ms) { milestoneHit = ms; pendingMilestone = ms; }
+    }
+  } else { milestoneHit = 0; }
+
   rec(tickWork, performance.now() - workStart);
 }, 1000 / TICK_HZ);
 
@@ -299,6 +378,14 @@ function simplify(pts, maxN) {
 }
 
 function broadcast(now) {
+  // Канал событий (JSON, редкий): чат/мурлык/milestone. Соседям по AOI (чат/мурлык), всем (milestone).
+  const freshChat = chatBubbles.filter((c) => now - c.at < 800);   // новые за окно снапшота
+  if (chatBubbles.length > 400) chatBubbles.splice(0, 200);
+  const freshPurr = purrs.filter((c) => now - c.at < 800);
+  if (purrs.length > 400) purrs.splice(0, 200);
+  let msMsg = null;
+  if (pendingMilestone) { msMsg = JSON.stringify({ t: 'milestone', ms: pendingMilestone, len: chain?.length ?? 0 }); pendingMilestone = 0; }
+
   // соберём игроков по ячейкам + бинарные подбуферы per cell (сериализация 1 раз на ячейку)
   const cells = new Map();
   for (const p of players.values()) {
@@ -373,6 +460,12 @@ function broadcast(now) {
       if (mapOnly) continue;   // soft backpressure: только MAP
     }
     if (tailMsg && ws.bufferedAmount < BP_SOFT && (!chain || chain.seatOf(p.id) < 0)) ws.send(tailMsg);
+    // события (редкие, JSON): milestone всем; чат/мурлык — если источник в NEAR-радиусе
+    if (ws.bufferedAmount < BP_SOFT) {
+      if (msMsg) ws.send(msMsg);
+      for (const c of freshChat) { if (c.num !== p.num && Math.abs(c.x - p.x) < CELL_AOI && Math.abs(c.z - p.z) < CELL_AOI) ws.send(JSON.stringify({ t: 'chat', num: c.num, i: c.i })); }
+      for (const c of freshPurr) { if (c.num !== p.num && Math.abs(c.x - p.x) < CELL_AOI && Math.abs(c.z - p.z) < CELL_AOI) ws.send(JSON.stringify({ t: 'purr', num: c.num })); }
+    }
     const cx = Math.floor(p.x / CELL_AOI), cz = Math.floor(p.z / CELL_AOI);
     const f = frameFor(cx, cz);
     if (f.nums.has(p.num)) { ws.send(f.buf); continue; }             // общий кадр ячейки (без копии)

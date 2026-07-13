@@ -1,0 +1,15 @@
+{
+  "base": "wss://game.flyreelstudio.eu",
+  "N": 25,
+  "netProfile": "4G ~90ms one-way",
+  "at": "2026-07-13T01:07:27.740Z",
+  "result": {
+    "entered": 25,
+    "attached": 25,
+    "N": 25,
+    "identified": 25,
+    "timeToTailMedianMs": 15849,
+    "timeToTailP90Ms": 21262,
+    "pass": true
+  }
+}

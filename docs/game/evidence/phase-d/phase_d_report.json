@@ -1,0 +1,42 @@
+{
+  "at": "2026-07-13T00:48:23.418Z",
+  "checks": {
+    "handoff": {
+      "prefetchReceived": true,
+      "gameReceived": true,
+      "gameUrl": "https://game/play.html",
+      "hasT0": true,
+      "enteredAndAttached": true,
+      "pass": true
+    },
+    "identify": {
+      "got": true,
+      "num": 273,
+      "ttl": 60,
+      "pass": true
+    },
+    "chat": {
+      "deliveredToNeighbor": true,
+      "phraseIndex": 3,
+      "textFieldExists": false,
+      "note": "протокол = только индекс фразы, свободного текста нет (XSS невозможен by design)",
+      "pass": true
+    },
+    "milestone": {
+      "note": "milestone-события шлются в broadcast только при len>=MILESTONE; проверено кодом + chain-харнесс growth",
+      "currentMembers": 1,
+      "pass": true
+    },
+    "featureFlags": {
+      "invite": 403,
+      "inscription": 403,
+      "pass": true
+    },
+    "report": {
+      "acked": true,
+      "serverLogged": true,
+      "pass": true
+    }
+  },
+  "pass": true
+}
