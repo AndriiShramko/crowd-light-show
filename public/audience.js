@@ -25,6 +25,7 @@
   var palette = { on: false, colors: [] };
   function clampM(x, lo, hi, d) { x = Number(x); return (x !== x) ? d : x < lo ? lo : x > hi ? hi : x; }
   var myIndex = 0, N = 1;   // sticky index in the crowd + grid width
+  var gameHandoff = { prefetched: false, going: false }; // Cat Conga handoff latches (game module, additive)
   var backstop = P ? P.makeBackstop(150) : null; // client-side safety slew (defense in depth)
   var torchGate = (P && P.makeTorchGate) ? P.makeTorchGate() : null; // torch rate cap <=2.8/s (defense in depth)
   // round 13 (pt 3): a per-phone TORCH AGC. The torch read the AGC'd cue brightness but then re-flattened
@@ -322,6 +323,33 @@
       if (m.colors) for (var pi = 0; pi < m.colors.length && pi < 8; pi++) { var c = m.colors[pi]; if (c && c.length >= 3) cols.push([c[0] | 0, c[1] | 0, c[2] | 0]); }
       palette = { on: !!m.on && cols.length > 0, colors: cols };
       window.__cls.palette = palette; return;
+    }
+    // Cat Conga handoff (game module, additive): two message types the show never emits on its own —
+    // only an explicit operator action sends them, so MAIN show behaviour stays byte-identical.
+    if (m.t === 'prefetch') { // warm the browser HTTP cache for the game world, randomized across the show window so the crowd never stampedes the box
+      if (gameHandoff.prefetched || !m.sceneUrl) return;
+      gameHandoff.prefetched = true;
+      var pwin = Math.max(10, (m.windowSec | 0) || 240) * 1000;
+      var pdel = (myIndex >= 0 ? (myIndex * 2654435761) >>> 0 : Math.floor(Math.random() * 4294967296)) % pwin;
+      window.__cls.gamePrefetch = { url: m.sceneUrl, delayMs: pdel, ok: null, ms: null };
+      setTimeout(function () {
+        var pt0 = Date.now();
+        fetch(m.sceneUrl, { mode: 'no-cors', cache: 'force-cache' })
+          .then(function () { window.__cls.gamePrefetch.ok = true; window.__cls.gamePrefetch.ms = Date.now() - pt0; })
+          .catch(function () { window.__cls.gamePrefetch.ok = false; });
+      }, pdel);
+      return;
+    }
+    if (m.t === 'game') { // operator pushed the crowd into the game: leave at T0 (synced clock) + per-phone entry jitter <5s
+      if (gameHandoff.going || !m.url || !/^https:\/\//.test(m.url)) return;
+      gameHandoff.going = true;
+      var gT0 = Number(m.T0) || clock.serverNow();
+      var gjit = (myIndex >= 0 ? (myIndex * 2654435761) >>> 0 : Math.floor(Math.random() * 4294967296)) % 5000;
+      // кламп ожидания ≤15с: T0 из чужого клок-домена не должен заморозить телефон навсегда
+      var gwait = Math.min(15000, Math.max(0, gT0 - clock.serverNow())) + gjit;
+      window.__cls.gameGo = { url: m.url, T0: gT0, jitterMs: gjit, waitMs: gwait };
+      setTimeout(function () { try { location.href = m.url; } catch (e) {} }, gwait);
+      return;
     }
   }
 

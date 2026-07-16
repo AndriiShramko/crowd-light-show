@@ -411,16 +411,24 @@ export class ShowHub {
 
   // Cat Conga handoff (Фаза D игрового модуля): АДДИТИВНО — только broadcast, run-state/эпилепси-governor не трогаются.
   // Клиенты без игрового кода просто игнорируют {t:'prefetch'|'game'}. MAIN-поведение показа байт-идентично.
-  gamePrefetch(roomId, sceneUrl) {
+  gamePrefetch(roomId, sceneUrl, windowSec) {
     const h = this._rt(roomId, true);
     if (!h) return { ok: false, error: 'room unavailable' };
-    h.broadcast({ t: 'prefetch', sceneUrl: String(sceneUrl || '').slice(0, 300) });
+    // windowSec — окно рандомизации закачки на клиентах (оператор знает длину шоу); дефолт клиента 240 с
+    const msg = { t: 'prefetch', sceneUrl: String(sceneUrl || '').slice(0, 300) };
+    if (Number(windowSec) > 0) msg.windowSec = Math.min(3600, Number(windowSec) | 0);
+    h.broadcast(msg);
     return { ok: true };
   }
   gameLaunch(roomId, url, T0) {
     const h = this._rt(roomId, true);
     if (!h) return { ok: false, error: 'room unavailable' };
-    h.broadcast({ t: 'game', url: String(url || '').slice(0, 300), T0: Number(T0) || (serverClock() + 3000) });
+    // T0 — в домене serverClock() (см. go()): вне ближнего окна (эпоха-мс и прочие чужие домены) → дефолт +3 с,
+    // иначе телефон, сравнив с clock.serverNow(), ждал бы годами (пойман эмулятором на реальном audience.js)
+    let t0 = Number(T0);
+    const nowS = serverClock();
+    if (!Number.isFinite(t0) || t0 < nowS - 2000 || t0 > nowS + 60000) t0 = nowS + 3000;
+    h.broadcast({ t: 'game', url: String(url || '').slice(0, 300), T0: t0 });
     return { ok: true };
   }
 

@@ -1,0 +1,38 @@
+{
+  "at": "2026-07-16T11:20:37.446Z",
+  "device": "android-emulator (real Chrome, host-GPU)",
+  "checks": {
+    "joinedShow": {
+      "pass": true
+    },
+    "prefetch": {
+      "delayMs": 0,
+      "fetchMs": 150,
+      "ok": true,
+      "pass": true
+    },
+    "transition": {
+      "jitterMs": 0,
+      "navigated": true,
+      "pass": true
+    },
+    "attach": {
+      "num": 3,
+      "seat": 0,
+      "mode": "play",
+      "viaMagnetNoInput": true,
+      "pass": true
+    },
+    "identify": {
+      "num": 3,
+      "colorId": 4,
+      "color": "#4ad6a0",
+      "pattern": 19,
+      "stepMs": 350,
+      "hz": 2.86,
+      "blinkObserved": true,
+      "pass": true
+    }
+  },
+  "pass": true
+}

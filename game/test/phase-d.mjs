@@ -22,10 +22,10 @@ const dbg = async (path) => (await fetch(`${GAME_HTTP}${path}${path.includes('?'
 async function joinGame() {
   const j = await fetch(`${GAME_HTTP}/api/join?room=MAIN`).then((r) => r.json());
   const ws = new WebSocket(`${GAME}/ws?token=${j.token}`, { perMessageDeflate: false });
-  ws.binaryType = 'arraybuffer';
-  const st = { num: null, seat: -1, tail: null, events: [], identify: null };
+  ws.binaryType = 'nodebuffer';
+  const st = { num: null, seat: -1, tail: null, pos: null, events: [], identify: null };
   ws.on('message', (d, bin) => {
-    if (bin) return;                             // бинарные near-кадры в e2e-тесте не парсим
+    if (bin) { const cnt = d.readUInt16LE(5); for (let k = 0; k < cnt; k++) { const o = 7 + k * 10; if (d.readUInt32LE(o) === st.num) st.pos = { x: d.readInt16LE(o + 4) / 32, z: d.readInt16LE(o + 6) / 32 }; } return; }
     let m; try { m = JSON.parse(d); } catch { return; }
     if (m.t === 'hello') st.num = m.num;
     if (m.t === 'joined') st.seat = m.seat;
@@ -80,9 +80,10 @@ async function identifyCheck(g) {
 async function chatCheck() {
   const a = await joinGame(), b = await joinGame();
   await sleep(300);
-  // подвинем их в одну зону
-  a.send({ t: 'intent', x: 0, z: 0 }); b.send({ t: 'intent', x: 0, z: 0 });
-  await sleep(600);
+  // реально сводим обоих в центр (нулевой интент никого не двигает — чат требует AOI-соседства)
+  const drv = setInterval(() => { for (const c of [a, b]) { if (!c.pos) continue; const d = Math.hypot(c.pos.x, c.pos.z) || 1; c.send({ t: 'intent', x: -c.pos.x / d, z: -c.pos.z / d }); } }, 200);
+  for (let w = 0; w < 60; w++) { if (a.pos && b.pos && Math.abs(a.pos.x - b.pos.x) < 20 && Math.abs(a.pos.z - b.pos.z) < 20) break; await sleep(300); }
+  clearInterval(drv);
   a.send({ t: 'chat', i: 3 });
   await sleep(500);
   const bGotChat = b.events.find((e) => e.t === 'chat');

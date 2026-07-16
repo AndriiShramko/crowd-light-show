@@ -1,0 +1,33 @@
+{
+  "at": "2026-07-16T11:23:36.395Z",
+  "N": 25,
+  "netProfile": "4G 70-130ms one-way",
+  "game": "wss://game.flyreelstudio.eu",
+  "checks": {
+    "prefetch": {
+      "received": 25,
+      "fetched": 25,
+      "delaySpreadMs": [
+        0,
+        14987
+      ],
+      "distinctDelays": 25,
+      "fetchMsMedian": 2748,
+      "pass": true
+    },
+    "transition": {
+      "entered": 25,
+      "attached": 25,
+      "identified": 25,
+      "entryJitterSpreadMs": [
+        0,
+        4987
+      ],
+      "distinctJitters": 25,
+      "timeToTailMedianMs": 19748,
+      "timeToTailP90Ms": 47537,
+      "pass": true
+    }
+  },
+  "pass": true
+}

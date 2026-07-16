@@ -53,6 +53,7 @@ function onMsg(ev) {
   else if (m.t === 'purr') { window.__probe.purrSeen++; }
   else if (m.t === 'milestone') { window.__probe.milestones.push(m.ms); toast('chain reached ' + m.ms + '! ✨'); if (navigator.vibrate) navigator.vibrate([30, 60, 30]); }
   else if (m.t === 'identify') { showIdentify(m.num, m.colorId, m.ttl); }
+  else if (m.t === 'hint') { window.__probe.hint = m.kind; toast('🐾'); if (navigator.vibrate) navigator.vibrate(40); } // телепорт к хвосту — бессловесно
   else if (m.t === 'err') { if (m.code === 'too_far') tail = m.tail; }
 }
 
@@ -95,13 +96,28 @@ $('bId').onclick = () => { audioUnlock(); ws?.send(JSON.stringify({ t: 'identify
 $('bMap').onpointerdown = () => ws?.send(JSON.stringify({ t: 'map', on: true }));
 $('bMap').onpointerup = () => ws?.send(JSON.stringify({ t: 'map', on: false }));
 
+// identify me: цепочка ОДНА, цвет не различает людей → различает УНИКАЛЬНЫЙ ПАТТЕРН мигания
+// (8 слотов из хеша номера) + гигантский номер. Шаг ≥334 мс = кламп ≤3 Гц (эпилепси-duty-of-care,
+// как governor лайтшоу). TTL 60 с; тап по крестику = panic-сброс.
+const ID_STEP_MS = 350; // 1/0.35 ≈ 2.86 Гц < 3 Гц
+function identPattern(num) {
+  let bits = ((num * 2654435761) >>> 0) & 0xff;
+  if (bits === 0 || bits === 0xff) bits = 0b10110100; // гарантируем переходы (не ровный свет/тьма)
+  return bits;
+}
 function showIdentify(num, colorId, ttl) {
   const col = colorId ? chainColorHex(colorId) : '#ffc93c';
-  const el = $('ident'); el.style.background = col; $('idnum').textContent = '#' + num; el.classList.add('show'); $('idclose').classList.add('show');
-  window.__probe.identify = { num, colorId, color: col };
+  const el = $('ident'); $('idnum').textContent = '#' + num; el.classList.add('show'); $('idclose').classList.add('show');
+  const pattern = identPattern(num);
+  let step = 0;
+  clearInterval(showIdentify._blink);
+  const paint = () => { el.style.background = (pattern >> (step & 7)) & 1 ? col : '#0d0c10'; step++; };
+  paint();
+  showIdentify._blink = setInterval(paint, ID_STEP_MS);
+  window.__probe.identify = { num, colorId, color: col, pattern, stepMs: ID_STEP_MS, hz: +(1000 / ID_STEP_MS / 1).toFixed(2) };
   clearTimeout(showIdentify._t); showIdentify._t = setTimeout(closeId, (ttl || 60) * 1000);
 }
-function closeId() { $('ident').classList.remove('show'); $('idclose').classList.remove('show'); }
+function closeId() { clearInterval(showIdentify._blink); $('ident').classList.remove('show'); $('idclose').classList.remove('show'); }
 $('idclose').onclick = closeId;
 
 // чат-бабблы над котами (упрощённо — тост)

@@ -43,6 +43,8 @@ const MILESTONES = [50, 100, 500, 1000];
 const metrics = { joins: 0, attaches: 0, identifies: 0, maxChainLen: 0, uniquePlayers: 0, worldLoadedBeacons: 0, fallback2dBeacons: 0 };
 
 const SPAWN_R = Number(process.env.SPAWN_R || 60);
+const MAGNET_MS = Number(process.env.MAGNET_MS || 30000); // «магнит» новичка (онбординг)
+const HINT_MS = Number(process.env.HINT_MS || 60000);     // телепорт-подсказка без цепи
 function spawnPos() {
   for (let i = 0; i < 100; i++) {
     const a = Math.random() * Math.PI * 2, r = 8 + Math.random() * SPAWN_R;
@@ -173,6 +175,7 @@ function onConn(ws, tok) {
     const s = spawnPos();
     p = { id: pid, num: numOf.get(pid) ?? nextNum++, x: s.x, z: s.z, heading: 0,
       ix: 0, iz: 0, lastIntentAt: 0, lastMoveAt: Date.now(), intents: 0, joins: 0,
+      enteredAt: Date.now(), hinted: false,               // онбординг: «магнит» 30 с + телепорт-подсказка 60 с
       ghost: false, ghostAt: 0, ws, mapOnly: false };
     numOf.set(pid, p.num);
     players.set(pid, p);
@@ -274,6 +277,19 @@ setInterval(() => {
   lastTick = now;
   const workStart = performance.now();
 
+  // 0) холодный старт: мира без цепи не бывает — первый вошедший через 5 с автоматически
+  // становится головой (иначе клиенты, ждущие «хвоста», никогда не создадут цепь — ноль инструкций)
+  if (!chain && players.size > 0) {
+    let first = null;
+    for (const p of players.values()) if (!p.ghost && (!first || (p.enteredAt || 0) < (first.enteredAt || 0))) first = p;
+    if (first && now - (first.enteredAt || 0) > 5000) {
+      chain = new Chain('c1', 1 + Math.floor(Math.random() * 7), first);
+      send(first.ws, { t: 'joined', seat: 0, head: true });
+      send(first.ws, { t: 'you_are_head' });
+      scheduleSave();
+    }
+  }
+
   // 1) интеграция свободных игроков и головы
   for (const p of players.values()) {
     p.intents = 0;
@@ -282,12 +298,29 @@ setInterval(() => {
     if (isFollower) continue;                             // ведомых двигает полилиния
     if (p.ghost) continue;
     const step = SPEED * DT;
-    const nx = p.x + p.ix * step, nz = p.z + p.iz * step;
-    if ((p.ix || p.iz)) {
+    let ix = p.ix, iz = p.iz;
+    // онбординг-«магнит» (без слов): свободный новичок БЕЗ ввода первые 30 с дрейфует к хвосту.
+    // Скорость = тот же SPEED-кламп (анти-чит §15 не ослабляем), просто интент подставляется сервером.
+    if (seat < 0 && chain && chain.length > 0 && !ix && !iz && now - (p.enteredAt || 0) < MAGNET_MS) {
+      const t = chain.tailPos();
+      if (t) { const d = Math.hypot(t.x - p.x, t.z - p.z); if (d > 2.2) { ix = (t.x - p.x) / d; iz = (t.z - p.z) / d; } }
+    }
+    const nx = p.x + ix * step, nz = p.z + iz * step;
+    if ((ix || iz)) {
       if (mask.walkable(nx, nz)) { p.x = nx; p.z = nz; p.lastMoveAt = now; }
       else if (mask.walkable(nx, p.z)) { p.x = nx; p.lastMoveAt = now; }   // скольжение вдоль стены
       else if (mask.walkable(p.x, nz)) { p.z = nz; p.lastMoveAt = now; }
-      p.heading = Math.atan2(p.iz, p.ix);
+      p.heading = Math.atan2(iz, ix);
+    }
+    // телепорт-подсказка: 60 с так и не в цепи → одноразовый перенос к хвосту + бессловесный тост 🐾
+    if (seat < 0 && chain && chain.length > 0 && !p.hinted && now - (p.enteredAt || 0) > HINT_MS) {
+      const t = chain.tailPos();
+      if (t) {
+        const tx = t.x + 1.5, tz = t.z + 1.5;
+        if (mask.walkable(tx, tz)) { p.x = tx; p.z = tz; } else if (mask.walkable(t.x, t.z)) { p.x = t.x; p.z = t.z; }
+      }
+      p.hinted = true;
+      send(p.ws, { t: 'hint', kind: 'teleport' });
     }
     if (seat === 0 && chain) chain.appendHead(p.x, p.z);
   }

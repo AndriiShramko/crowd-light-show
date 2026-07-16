@@ -1,0 +1,26 @@
+{
+  "at": "2026-07-16T10:44:30.014Z",
+  "checks": {
+    "magnet": {
+      "dStart": 13.3,
+      "dAfter5s": 2.5,
+      "pass": true,
+      "attached": true
+    },
+    "teleportHint": {
+      "hint": "teleport",
+      "dToTailAfter": 6.7,
+      "pass": true
+    },
+    "milestone": {
+      "attached": 60,
+      "headSaw": [
+        50
+      ],
+      "exactlyOneAt50": true,
+      "allEventsAreCanon": true,
+      "pass": true
+    }
+  },
+  "pass": true
+}
