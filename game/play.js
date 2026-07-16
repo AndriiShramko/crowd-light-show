@@ -130,6 +130,13 @@ function audioUnlock() { if (!audioCtx) { try { audioCtx = new (window.AudioCont
 document.addEventListener('pointerdown', audioUnlock, { once: true });
 
 // ---------- рендер ----------
+// §D метрики события: beacon серверу (conversion / time-to-world / % 2D-fallback)
+function beacon(kind) {
+  try {
+    const ms = Math.round(performance.now());
+    (navigator.sendBeacon && navigator.sendBeacon(`/api/metric?k=${kind}&ms=${ms}`)) || fetch(`/api/metric?k=${kind}&ms=${ms}`).catch(() => {});
+  } catch {}
+}
 async function boot() {
   errBox.classList.remove('show');
   try {
@@ -139,6 +146,7 @@ async function boot() {
     await start3D();
     loader.classList.add('hidden');
     setMode('play');
+    beacon('world_loaded');
   } catch (e) {
     window.__probe.errors.push('boot: ' + (e && e.message || e));
     setMode('error'); loader.classList.add('hidden'); errBox.classList.add('show');
@@ -224,6 +232,7 @@ async function start3D() {
 }
 
 function start2D() {
+  beacon('fallback_2d');
   // облегчённый режим — топ-даун точки (fallback)
   stage.replaceChildren(); const cv = document.createElement('canvas'); stage.appendChild(cv);
   const ctx = cv.getContext('2d');

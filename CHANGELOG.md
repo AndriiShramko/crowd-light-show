@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.17.0] - 2026-07-16
+
+### Added — Cat Conga game module MVP (Phases A–D, live at game.flyreelstudio.eu)
+- 3DGS world in mobile browsers (Spark 2.1, SOG worlds, Cache API offline, FPS-probe → 2D fallback).
+- Multiplayer core: Node+ws, authoritative 8 Hz sim, AOI grid with per-cell shared binary frames (NEAR-cap 48), backpressure, JSON crash-recovery.
+- Conga chain: head-path polyline + seatIndex, segment leaders every 25, stalled-head transfer, reconnect grace, mask collisions.
+- Show→game handoff (additive to the light show): operator `game-prefetch` (client download randomized across the show window) and `game-launch` (`inSec`; entry jitter `hash(index)%5000ms`, wait clamp ≤15 s).
+- Onboarding with zero instructions: newcomer magnet (30 s drift to tail, anti-cheat speed clamp intact), teleport hint after 60 s seatless, cold-start auto-head.
+- Identify me: unique blink pattern (8-slot hash of player number) at ≤3 Hz + giant number, TTL 60 s, cooldown, tap-to-dismiss.
+- Preset chat (phrase indexes only — no free text by design), purr, milestone effects strictly at 50/100/500/1000.
+- Moderation Phase-0: report with server log, rate limits; Phase-1 features (invites/inscriptions) dark behind flags, endpoints 403.
+- Test harnesses: chain/load/jwt bots, onboarding facts, full-cycle dress rehearsal (25 clients, 4G profile), real-Android-emulator end-to-end, soak.
+
 ## [0.16.2] - 2026-07-01
 
 ### Changed / Fixed

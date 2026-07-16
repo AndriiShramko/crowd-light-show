@@ -1,1 +1,24 @@
-{"soak":{"clients":200,"durationMin":10,"rssMB_series":[54,58,59,60,61],"rss_stable":true,"tickP95ms":0.13,"crashes":0,"drops":0,"pass":true}}
+{
+  "soak": {
+    "clients": 200,
+    "durationMin": 10,
+    "rssMB_series": [
+      48,
+      56,
+      44,
+      48,
+      43,
+      48,
+      51,
+      56,
+      56,
+      56
+    ],
+    "rss_stable": true,
+    "tickP95ms": 1.0619999915361404,
+    "crashes": 0,
+    "drops": 0,
+    "aliveAtEnd": 200,
+    "pass": true
+  }
+}

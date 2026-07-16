@@ -79,6 +79,8 @@ restore();
 // ---------- HTTP ----------
 const t0boot = Date.now();
 const tickLags = [];       // джиттер интервала sim (вторичное — включает конкуренцию за event loop)
+const worldLoadMs = [];    // §D метрика: time-to-world-loaded (beacon клиента)
+const timeToTailMs = [];   // §D метрика: вход→прицепился
 const tickWork = [];       // ВРЕМЯ ВЫПОЛНЕНИЯ sim-тика (первичное: справляется ли sim в бюджете)
 const bcWork = [];         // время выполнения broadcast
 function pct(arr, p) { if (!arr.length) return 0; const s = [...arr].sort((a, b) => a - b); return s[Math.floor(p * (s.length - 1))]; }
@@ -101,7 +103,7 @@ const server = http.createServer((req, res) => {
   // Клиентский beacon метрик (world-loaded / 2D-fallback) — для conversion-статистики
   if (u.pathname === '/api/metric') {
     const kind = u.searchParams.get('k');
-    if (kind === 'world_loaded') metrics.worldLoadedBeacons++;
+    if (kind === 'world_loaded') { metrics.worldLoadedBeacons++; const ms = Number(u.searchParams.get('ms')); if (ms > 0 && ms < 600000) rec(worldLoadMs, ms); }
     else if (kind === 'fallback_2d') metrics.fallback2dBeacons++;
     res.writeHead(204); return res.end();
   }
@@ -126,7 +128,10 @@ const server = http.createServer((req, res) => {
       loopJitterP95: pct(tickLags, 0.95),
       rssMB: Math.round(process.memoryUsage().rss / 1048576),
       chain: chain ? { members: chain.length, pathPoints: chain.path.length, maxGap: chain.maxGap() } : null,
-      game: { ...metrics, uniquePlayers: numOf.size },   // §D игровые метрики события
+      game: { ...metrics, uniquePlayers: numOf.size,
+        worldLoadedMsP50: pct(worldLoadMs, 0.5), timeToTailMsP50: pct(timeToTailMs, 0.5), timeToTailMsP90: pct(timeToTailMs, 0.9),
+        identifyPct: numOf.size ? Math.round(100 * metrics.identifies / numOf.size) : 0,
+        fallback2dPct: metrics.worldLoadedBeacons + metrics.fallback2dBeacons ? Math.round(100 * metrics.fallback2dBeacons / (metrics.worldLoadedBeacons + metrics.fallback2dBeacons)) : 0 },
     }));
   }
   if (u.pathname === '/debug/chain') {
@@ -212,6 +217,7 @@ function onConn(ws, tok) {
       }
       const seat2 = chain.attach(pid);
       metrics.attaches++;
+      rec(timeToTailMs, now - (p.enteredAt || now));       // §D метрика time-to-tail
       scheduleSave();
       return send(ws, { t: 'joined', seat: seat2, head: false, leader: chain.isLeaderSeat(seat2) });
     }
