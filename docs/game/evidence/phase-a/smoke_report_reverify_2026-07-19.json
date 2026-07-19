@@ -1,0 +1,38 @@
+{
+  "base": "https://game.flyreelstudio.eu",
+  "at": "2026-07-19T05:33:08.556Z",
+  "checks": {
+    "smoke": {
+      "mode": "2d",
+      "splatCount": 405862,
+      "worldBytes": 5028526,
+      "fps_swiftshader": 3.8,
+      "nonblackPct": 100,
+      "jsErrors": [],
+      "pass": true,
+      "note": "headless SwiftShader — smoke, не перф"
+    },
+    "offlineReload": {
+      "pass": true,
+      "mode": "3d",
+      "splatCount": 405862,
+      "worldBytes": 5028526,
+      "nonblackPct": 100
+    },
+    "worldUnavailable": {
+      "pass": true,
+      "errShown": true,
+      "retryVisible": true
+    },
+    "fallback2d": {
+      "pass": true,
+      "sampledLitPixels": 29625
+    },
+    "cpuThrottle6x": {
+      "fps": 1.2,
+      "endMode": "2d",
+      "note": "SwiftShader+throttle — консервативная нижняя граница, не реальный GPU"
+    }
+  },
+  "pass": true
+}
