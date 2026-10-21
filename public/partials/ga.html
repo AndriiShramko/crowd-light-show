@@ -16,10 +16,10 @@
   .cls-cookie a { color: #8fc6ff; }
   /* Accept and Reject have EQUAL visual weight (same fill, border, weight, size) — T6 */
   .cls-cookie button { font: inherit; font-weight: 700; cursor: pointer; border-radius: 10px; padding: 9px 22px; min-width: 120px;
-    background: #26304a; color: #ffffff; border: 1px solid #8fa3c8; }
+    width: auto; margin: 0; flex: 0 0 auto; background: #26304a; color: #ffffff; border: 1px solid #8fa3c8; }
   .cls-cookie button:hover, .cls-cookie button:focus-visible { background: #33406a; outline: 2px solid #8fc6ff; outline-offset: 2px; }
-  #clsCookieSettings { display: block; text-align: center; margin: 10px auto; font-size: .8rem; color: #9aa3b2; cursor: pointer;
-    background: none; border: 0; text-decoration: underline; font-family: inherit; }
+  #clsCookieSettings { display: block; width: auto; text-align: center; margin: 10px auto; padding: 4px 8px; font-size: .8rem; color: #9aa3b2;
+    cursor: pointer; background: none; border: 0; border-radius: 6px; text-decoration: underline; font-family: inherit; }
 </style>
 <script>
 (function () {
@@ -114,9 +114,8 @@
     a.addEventListener('click', function () { buildBanner(true); });
     var foot = document.querySelector('footer');
     var credit = document.querySelector('.credit');
-    if (foot) foot.appendChild(a);
-    else if (credit && credit.parentNode) credit.parentNode.insertBefore(a, credit.nextSibling);
-    else document.body.appendChild(a);
+    // inside the footer / credit line (inserting next to .credit would become a stray grid cell on the console)
+    (foot || credit || document.body).appendChild(a);
   }
   function buildBanner(force) {
     addSettingsLink();
