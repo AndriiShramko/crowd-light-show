@@ -1,60 +1,274 @@
-<!-- ROUND 10 — Google Analytics 4 (G-46C2GKVHPR) with Consent Mode v2, DEFAULT DENIED.
+<!-- Google Analytics 4 (G-46C2GKVHPR) — Consent Mode BASIC (2026-10-21, WEB-TECH-BASELINE §T6).
      Injected by the server into the <head> of every page EXCEPT /join (the epilepsy consent
-     gate — a fixed banner there could intercept the join tap, round-8C lesson). The tag loads
-     but writes NO cookies and sends only cookieless pings until the visitor accepts via the
-     banner. IP is anonymized; no advertising signals. window.clsGA(ev, params) is the event seam. -->
+     gate — a fixed banner there could intercept the join tap, round-8C lesson; keep it that way).
+     NOTHING is requested from Google until the visitor clicks Accept/Akceptuję: gtag.js is loaded
+     only then, and `config` runs only then, so the page_view of the landing page is GRANTED.
+     (Round 10 shipped ADVANCED mode — gtag.js + config before consent, cookieless G100 pings and no
+     page_view after Accept — that is forbidden by T6 and made the landing invisible in reports.)
+     The measurement id is committed here on purpose (public, not a secret); scripts/check-ga.mjs
+     fails the Docker build if it goes missing. window.clsGA(ev, params) is the event seam:
+     a real no-op until consent. Withdraw: "Cookie settings" link (always present) -> Reject. -->
 <style>
   .cls-cookie { position: fixed; left: 0; right: 0; bottom: 0; z-index: 9999; background: #0f131b; color: #eef1f6;
     border-top: 1px solid #2a3140; padding: 14px 16px; display: flex; gap: 12px; flex-wrap: wrap; align-items: center;
     justify-content: center; font: 14px/1.45 system-ui, -apple-system, sans-serif; box-shadow: 0 -6px 22px rgba(0,0,0,.45); }
-  .cls-cookie p { margin: 0; max-width: 620px; color: #c8d0dd; }
+  .cls-cookie p { margin: 0; max-width: 680px; color: #c8d0dd; }
   .cls-cookie a { color: #8fc6ff; }
-  .cls-cookie button { font: inherit; cursor: pointer; border-radius: 10px; padding: 9px 20px; border: 1px solid #3a4252; }
-  .cls-cookie .cls-acc { background: #5aa0ff; color: #04122b; border-color: #5aa0ff; font-weight: 700; }
-  .cls-cookie .cls-rej { background: #1d2330; color: #eef1f6; border-color: #3a4252; }
-  #clsCookieSettings { display: block; text-align: center; margin-top: 10px; font-size: .8rem; color: #9aa3b2; cursor: pointer; }
+  /* Accept and Reject have EQUAL visual weight (same fill, border, weight, size) — T6 */
+  .cls-cookie button { font: inherit; font-weight: 700; cursor: pointer; border-radius: 10px; padding: 9px 22px; min-width: 120px;
+    background: #26304a; color: #ffffff; border: 1px solid #8fa3c8; }
+  .cls-cookie button:hover, .cls-cookie button:focus-visible { background: #33406a; outline: 2px solid #8fc6ff; outline-offset: 2px; }
+  #clsCookieSettings { display: block; text-align: center; margin: 10px auto; font-size: .8rem; color: #9aa3b2; cursor: pointer;
+    background: none; border: 0; text-decoration: underline; font-family: inherit; }
 </style>
 <script>
 (function () {
-  window.dataLayer = window.dataLayer || [];
-  function gtag() { dataLayer.push(arguments); }
-  window.gtag = gtag;
-  // 1) default DENIED before anything loads (EU ePrivacy: no analytics cookies without consent)
-  gtag('consent', 'default', { ad_storage: 'denied', ad_user_data: 'denied', ad_personalization: 'denied', analytics_storage: 'denied', wait_for_update: 500 });
-  var stored = null; try { stored = localStorage.getItem('cls_consent'); } catch (e) {}
-  if (stored === 'granted') gtag('consent', 'update', { analytics_storage: 'granted' });
-  gtag('js', new Date());
-  gtag('config', 'G-46C2GKVHPR', { anonymize_ip: true });
-  // event seam used across the app; no-ops if gtag is somehow unavailable
-  window.clsGA = function (ev, p) { try { if (window.gtag) gtag('event', ev, p || {}); } catch (e) {} };
-  // load the GA library
-  var s = document.createElement('script'); s.async = true; s.src = 'https://www.googletagmanager.com/gtag/js?id=G-46C2GKVHPR';
-  (document.head || document.documentElement).appendChild(s);
+  'use strict';
+  var GA_ID = 'G-46C2GKVHPR';
+  var KEY = 'cls_consent';                       // 'granted' | 'denied' (first-party localStorage, not a cookie)
+  var LANGS = /^(en|pl|es|fr)$/;
+  var loaded = false;
+  var onceKeys = {};
+  var isConsole = function () { return !!window.__SESSION__; };   // /studio + /operator (operator.html)
 
+  function stored() { try { return localStorage.getItem(KEY); } catch (e) { return null; } }
+  function store(v) { try { localStorage.setItem(KEY, v); } catch (e) {} }
   function t(key, fallback) { try { return (window.CLSI18N && window.CLSI18N.t && window.CLSI18N.t(key)) || fallback; } catch (e) { return fallback; } }
-  function grant() { gtag('consent', 'update', { analytics_storage: 'granted', ad_user_data: 'denied', ad_personalization: 'denied', ad_storage: 'denied' }); try { localStorage.setItem('cls_consent', 'granted'); } catch (e) {} stored = 'granted'; }
-  function deny() { try { localStorage.setItem('cls_consent', 'denied'); } catch (e) {} stored = 'denied'; }
+  // same detection as site-i18n.js pick(), so site_lang is right even before site-i18n.js has run
+  function lang() {
+    try { if (window.CLSI18N && window.CLSI18N.lang) return window.CLSI18N.lang; } catch (e) {}
+    var q = null; try { q = new URLSearchParams(location.search).get('lang'); } catch (e) {}
+    if (q && LANGS.test(q)) return q;
+    try { var l = localStorage.getItem('cls_lang'); if (l && LANGS.test(l)) return l; } catch (e) {}
+    var n = (navigator.language || 'en').slice(0, 2).toLowerCase();
+    return LANGS.test(n) ? n : 'en';
+  }
+
+  // ---- load GA only after consent (basic mode) ----
+  function load() {
+    if (loaded) return;
+    loaded = true;
+    window['ga-disable-' + GA_ID] = false;
+    window.dataLayer = window.dataLayer || [];
+    window.gtag = window.gtag || function () { window.dataLayer.push(arguments); };
+    gtag('consent', 'default', { ad_storage: 'denied', ad_user_data: 'denied', ad_personalization: 'denied', analytics_storage: 'granted' });
+    gtag('js', new Date());
+    gtag('set', { allow_google_signals: false, allow_ad_personalization_signals: false });
+    // config sends the GRANTED page_view of this page (the only page_view — no manual one)
+    gtag('config', GA_ID, { cookie_domain: location.hostname, site_lang: lang() });
+    var s = document.createElement('script'); s.async = true;
+    s.src = 'https://www.googletagmanager.com/gtag/js?id=' + GA_ID;
+    (document.head || document.documentElement).appendChild(s);
+  }
+  // event seam: nothing at all before consent; low-cardinality params only, never PII
+  function event(name, params) {
+    if (!loaded || stored() !== 'granted') return;
+    var p = {}; for (var k in (params || {})) p[k] = params[k];
+    if (!p.site_lang) p.site_lang = lang();
+    try { gtag('event', name, p); } catch (e) {}
+  }
+  window.clsGA = event;
+
+  function clearGaCookies() {
+    var names = { '_ga': 1 }; names['_ga_' + GA_ID.slice(2)] = 1;
+    document.cookie.split(';').forEach(function (c) { var n = c.split('=')[0].trim(); if (/^_ga/.test(n)) names[n] = 1; });
+    var parts = location.hostname.split('.'), domains = [''];
+    for (var i = 0; i < parts.length - 1; i++) { var d = parts.slice(i).join('.'); domains.push(d, '.' + d); }
+    Object.keys(names).forEach(function (n) {
+      domains.forEach(function (d) { document.cookie = n + '=; Max-Age=0; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/' + (d ? '; domain=' + d : ''); });
+    });
+  }
+  function grant() {
+    var was = stored();
+    store('granted');
+    if (!loaded) { load(); return; }
+    if (was === 'granted' && !window['ga-disable-' + GA_ID]) return;   // already on — no second page_view
+    // re-consent in the same tab after a withdraw: GA is already loaded, so re-enable and re-send
+    window['ga-disable-' + GA_ID] = false;
+    gtag('consent', 'update', { analytics_storage: 'granted' });
+    gtag('config', GA_ID, { cookie_domain: location.hostname, site_lang: lang() });
+  }
+  // Reject on first visit = nothing ever loaded. Reject after Accept = WITHDRAW:
+  // consent update denied + ga-disable + remove _ga* cookies (host + parent domain), choice stored.
+  function deny() {
+    store('denied');
+    if (loaded && window.gtag) { try { gtag('consent', 'update', { analytics_storage: 'denied' }); } catch (e) {} }
+    window['ga-disable-' + GA_ID] = true;
+    clearGaCookies();
+  }
+  window.clsConsent = { accept: function () { grant(); removeBanner(); }, reject: function () { deny(); removeBanner(); },
+    withdraw: function () { deny(); }, status: stored, open: function () { buildBanner(true); } };
+
+  // ---- banner + always-present "Cookie settings" link (withdraw) ----
   function removeBanner() { var b = document.getElementById('clsCookie'); if (b) b.remove(); }
+  function paint() {
+    var p = document.getElementById('clsCookieText');
+    if (p) p.innerHTML = t('cookie.text', 'With your consent we use Google Analytics 4 (Google Ireland Ltd.) to see in aggregate how the app is used — no advertising. Nothing is loaded or sent to Google until you click Accept; it then sets the cookies _ga and _ga_46C2GKVHPR (up to 14 months). Withdraw anytime via “Cookie settings” at the bottom of the page.') + ' <a href="/privacy">' + t('cookie.more', 'Privacy & cookies') + '</a>';
+    var a = document.getElementById('clsCookieAcc'); if (a) a.textContent = t('cookie.accept', 'Accept');
+    var r = document.getElementById('clsCookieRej'); if (r) r.textContent = t('cookie.reject', 'Reject');
+    var s = document.getElementById('clsCookieSettings'); if (s) s.textContent = t('cookie.settings', 'Cookie settings');
+  }
   function addSettingsLink() {
     if (document.getElementById('clsCookieSettings')) return;
-    var a = document.createElement('a'); a.id = 'clsCookieSettings'; a.href = 'javascript:void 0';
-    a.textContent = t('cookie.settings', 'Cookie settings');
-    a.onclick = function () { try { localStorage.removeItem('cls_consent'); } catch (e) {} stored = null; var ex = document.getElementById('clsCookieSettings'); if (ex) ex.remove(); buildBanner(); };
-    var foot = document.querySelector('.credit') || document.querySelector('footer') || document.body;
-    (foot.parentNode || document.body).appendChild(a);
+    var a = document.createElement('button'); a.type = 'button'; a.id = 'clsCookieSettings';
+    a.addEventListener('click', function () { buildBanner(true); });
+    var foot = document.querySelector('footer');
+    var credit = document.querySelector('.credit');
+    if (foot) foot.appendChild(a);
+    else if (credit && credit.parentNode) credit.parentNode.insertBefore(a, credit.nextSibling);
+    else document.body.appendChild(a);
   }
-  function buildBanner() {
-    if (stored === 'granted' || stored === 'denied') { addSettingsLink(); return; }
+  function buildBanner(force) {
+    addSettingsLink();
+    var st = stored();
+    if (!force && (st === 'granted' || st === 'denied')) { paint(); return; }
+    if (document.getElementById('clsCookie')) return;
     var bar = document.createElement('div'); bar.className = 'cls-cookie'; bar.id = 'clsCookie';
-    var p = document.createElement('p');
-    p.innerHTML = t('cookie.text', 'We use Google Analytics — only with your consent — to understand in aggregate how the app is used (IP-anonymized, no advertising). It does not run until you accept.') + ' <a href="/privacy">' + t('cookie.more', 'Privacy & cookies') + '</a>';
-    var acc = document.createElement('button'); acc.className = 'cls-acc'; acc.textContent = t('cookie.accept', 'Accept');
-    var rej = document.createElement('button'); rej.className = 'cls-rej'; rej.textContent = t('cookie.reject', 'Reject');
-    acc.onclick = function () { grant(); removeBanner(); addSettingsLink(); };
-    rej.onclick = function () { deny(); removeBanner(); addSettingsLink(); };
+    bar.setAttribute('role', 'region'); bar.setAttribute('aria-label', 'Cookies');
+    var p = document.createElement('p'); p.id = 'clsCookieText';
+    var acc = document.createElement('button'); acc.type = 'button'; acc.className = 'cls-acc'; acc.id = 'clsCookieAcc';
+    var rej = document.createElement('button'); rej.type = 'button'; rej.className = 'cls-rej'; rej.id = 'clsCookieRej';
+    acc.onclick = function () { grant(); removeBanner(); };
+    rej.onclick = function () { deny(); removeBanner(); };
     bar.appendChild(p); bar.appendChild(acc); bar.appendChild(rej);
     document.body.appendChild(bar);
+    paint();
   }
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', buildBanner); else buildBanner();
+  window.addEventListener('cls-langchange', function (e) {
+    paint();
+    // beacon: some language switches navigate right after (transport survives the unload)
+    var to = e && e.detail && e.detail.lang;
+    if (to) event('lang_switch', { lang_to: String(to).slice(0, 5), site_lang: String(to).slice(0, 5), transport_type: 'beacon' });
+  });
+
+  // ---- detailed, PII-free events ----
+  function where(el) {
+    var s = el.closest && el.closest('[data-sa-section],section[id],.m-hero,.t-hero,.lc-contact,.credit,header,nav,footer');
+    if (!s) return 'page';
+    if (s.getAttribute('data-sa-section')) return s.getAttribute('data-sa-section');
+    if (s.id) return s.id.slice(0, 40);
+    var c = s.className || '';
+    if (/m-hero|t-hero/.test(c)) return 'hero';
+    if (/credit/.test(c)) return 'footer';
+    return s.tagName.toLowerCase() === 'header' ? 'nav' : s.tagName.toLowerCase();
+  }
+  function ctaId(el) {
+    var d = el.getAttribute('data-cta'); if (d) return d.slice(0, 40);
+    var h = el.getAttribute('href') || '';
+    var m = h.match(/[?&]tier=([a-z]+)/i); if (m) return 'pricing_' + m[1].toLowerCase();
+    if (/github\.com/i.test(h)) return 'github';
+    if (h.charAt(0) === '#') return (h.slice(1) || 'top').slice(0, 40);
+    if (h.charAt(0) === '/') return (h.split(/[?#]/)[0].replace(/^\/+|\/+$/g, '') || 'home').slice(0, 40);
+    if (/^https?:/i.test(h)) { try { return new URL(h).hostname.replace(/^www\./, '').slice(0, 40); } catch (e) {} }
+    return (el.id || el.getAttribute('data-i18n') || (el.textContent || '').trim() || el.tagName).slice(0, 40).toLowerCase();
+  }
+  document.addEventListener('click', function (e) {
+    var el = e.target && e.target.closest && e.target.closest('a[href],button,[data-cta]');
+    if (!el || stored() !== 'granted') return;
+    if (el.closest('#clsCookie') || el.id === 'clsCookieSettings' || el.closest('#cls-lang')) return;   // consent UI / language switcher
+    var href = el.getAttribute('href') || '';
+    var loc = where(el);
+    if (/^tel:/i.test(href)) return event('contact_click', { method: 'phone', cta_location: loc, transport_type: 'beacon' });
+    if (/^mailto:/i.test(href)) return event('contact_click', { method: 'email', cta_location: loc, transport_type: 'beacon' });
+    if (/wa\.me|api\.whatsapp|whatsapp\.com/i.test(href)) return event('contact_click', { method: 'whatsapp', cta_location: loc, transport_type: 'beacon' });
+    if (/(^|\/\/)t\.me\//i.test(href)) return event('contact_click', { method: 'telegram', cta_location: loc, transport_type: 'beacon' });
+    if (/m\.me\/|messenger\.com/i.test(href)) return event('contact_click', { method: 'messenger', cta_location: loc, transport_type: 'beacon' });
+    if (/linkedin\.com/i.test(href)) return event('contact_click', { method: 'linkedin', cta_location: loc, transport_type: 'beacon' });
+    if (/calendar\.app\.google|calendly\.com|cal\.com\//i.test(href)) return event('contact_click', { method: 'calendar', cta_location: loc, transport_type: 'beacon' });
+    if (/\.(pdf|zip|apk|exe|dmg|stl|3mf|step|ply|sog|hex|bin|mp3|wav)(\?|#|$)/i.test(href)) {
+      return event('file_download_click', { file_ext: href.split(/[?#]/)[0].split('.').pop().toLowerCase(), cta_location: loc, transport_type: 'beacon' });
+    }
+    // CTAs: on the marketing pages every link/primary button; on the consoles only links and [data-cta]
+    // (the console is a wall of control buttons — those have their own product events).
+    var isCta = el.hasAttribute('data-cta') || el.tagName === 'A' || (!isConsole() && /\b(m-btn|pr-cta|lc-btn)\b/.test(el.className || ''));
+    if (!isCta) return;
+    var cp = { cta_id: ctaId(el), cta_location: loc };
+    if (el.tagName === 'A') cp.transport_type = 'beacon';      // a navigation follows immediately
+    event('cta_click', cp);
+  }, true);
+
+  // form funnel: form_start is sent by GA4 Enhanced Measurement "form interactions" (ON in the stream,
+  // form_id = the form's id 'leadForm', verified in a captured hit) — a manual one here would double it.
+  // form_submit / form_error / generate_lead (only after the server's 200) come from /static/lead.js.
+
+  // section_view once per section when >=50% of it (or >=50% of the viewport) is visible
+  function observeSections() {
+    if (!('IntersectionObserver' in window)) return;
+    var seen = {};
+    var io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (en) {
+        if (!en.isIntersecting) return;
+        if (en.intersectionRatio < 0.5 && en.intersectionRect.height < window.innerHeight * 0.5) return;
+        var id = en.target.getAttribute('data-sa-section') || en.target.id;
+        if (!id || seen[id] || stored() !== 'granted' || !loaded) return;
+        seen[id] = 1;
+        event('section_view', { section_id: id.slice(0, 40) });
+      });
+    }, { threshold: [0, 0.25, 0.5, 0.75, 1] });
+    document.querySelectorAll('section[id],[data-sa-section]').forEach(function (s) { io.observe(s); });
+  }
+
+  // HTML5 <video>: user-started play / complete (muted autoplay loops are decoration, not engagement)
+  function observeVideos() {
+    document.querySelectorAll('video').forEach(function (v) {
+      if (v.autoplay && v.muted) return;
+      var id = (v.getAttribute('data-sa-video') || v.currentSrc || v.src || 'video').split('/').pop().split('?')[0].slice(0, 40);
+      v.addEventListener('play', function () { event('video_play', { video_id: id }); }, { once: true });
+      v.addEventListener('ended', function () { event('video_complete', { video_id: id }); }, { once: true });
+    });
+  }
+  // YouTube (youtube-nocookie, enablejsapi=1): video_play {video_id} via the embed's postMessage API.
+  // video_start / video_progress / video_complete for these embeds are sent by GA4 Enhanced Measurement
+  // ("video engagement", ON in the stream, verified in a captured hit) — a manual video_complete would
+  // double-count, so only video_play is ours.
+  function observeYouTube() {
+    var frames = [].slice.call(document.querySelectorAll('iframe[src*="youtube"]'));
+    if (!frames.length) return;
+    var played = {};
+    function vid(f) { var m = (f.getAttribute('src') || '').match(/embed\/([\w-]{6,})/); return m ? m[1] : 'youtube'; }
+    function hello(f, i) {
+      try {
+        f.contentWindow.postMessage(JSON.stringify({ event: 'listening', id: 'clsyt' + i, channel: 'widget' }), '*');
+        f.contentWindow.postMessage(JSON.stringify({ event: 'command', func: 'addEventListener', args: ['onStateChange'], id: 'clsyt' + i, channel: 'widget' }), '*');
+      } catch (e) {}
+    }
+    frames.forEach(function (f, i) {
+      // the embed answers only to the origin it was told (otherwise it posts to its own origin and the
+      // browser drops every state message); the lazy iframes have not started loading yet at this point
+      var src = f.getAttribute('src') || '';
+      if (/enablejsapi=1/.test(src) && !/[?&]origin=/.test(src)) f.setAttribute('src', src + '&origin=' + encodeURIComponent(location.origin));
+      f.addEventListener('load', function () { hello(f, i); });
+      hello(f, i);
+    });
+    window.addEventListener('message', function (e) {
+      if (!/^https:\/\/www\.youtube(-nocookie)?\.com$/.test(e.origin)) return;
+      var d = e.data; if (typeof d === 'string') { try { d = JSON.parse(d); } catch (x) { return; } }
+      if (!d || typeof d !== 'object') return;
+      var st = d.event === 'onStateChange' ? d.info : (d.event === 'infoDelivery' && d.info && typeof d.info.playerState === 'number' ? d.info.playerState : null);
+      if (st !== 1) return;
+      var f = null; for (var i = 0; i < frames.length; i++) if (frames[i].contentWindow === e.source) f = frames[i];
+      var id = f ? vid(f) : 'youtube';
+      if (st === 1 && !played[id]) { played[id] = 1; event('video_play', { video_id: id }); }
+    });
+  }
+
+  // exceptions of THIS site's own scripts (not extensions / third parties), once per message per load
+  function own(file) { return !file || file.indexOf(location.origin) === 0; }
+  window.addEventListener('error', function (e) {
+    if (!e || !own(e.filename)) return;
+    var d = String(e.message || 'error') + (e.filename ? ' @' + e.filename.replace(location.origin, '') + ':' + (e.lineno || 0) : '');
+    if (onceKeys[d]) return; onceKeys[d] = 1;
+    event('exception', { description: d.slice(0, 100), fatal: false });
+  });
+  window.addEventListener('unhandledrejection', function (e) {
+    var r = e && e.reason; var d = 'unhandledrejection: ' + String((r && (r.message || r.name)) || r || '');
+    if (onceKeys[d]) return; onceKeys[d] = 1;
+    event('exception', { description: d.slice(0, 100), fatal: false });
+  });
+
+  // stored consent: load right away (head), so early console events (studio_open) are queued in order
+  if (stored() === 'granted') load();
+  function ready() { buildBanner(false); observeSections(); observeVideos(); observeYouTube(); }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', ready); else ready();
 })();
 </script>

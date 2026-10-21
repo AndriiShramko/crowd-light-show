@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.19.0] - 2026-10-21
+
+### Fixed
+
+- **Google Analytics now loads only after the visitor clicks Accept (Consent Mode basic).** Round 10 shipped *advanced* mode: `gtag.js` and `config` ran on every page before any choice, cookieless G100 pings went to Google, and after Accept no page_view was sent — so the landing page (most first visits) was invisible in GA. Now nothing at all is requested from Google before consent; Accept loads `gtag.js` and `config` sends a **granted** page_view of the current page; a stored consent loads it on the next page with exactly one page_view. `window.clsGA` is a real no-op before consent, so the console's `studio_open` / `preset_changed` no longer leak out pre-consent. `cookie_domain` is the host (no shared `_ga` across `*.flyreelstudio.eu`); `anonymize_ip` (a UA leftover) is gone. `/join` still never loads GA.
+- **Withdraw works:** a "Cookie settings" link is on every GA page from the first visit; Reject after Accept sends `consent update denied`, sets `ga-disable-G-46C2GKVHPR`, deletes `_ga*` cookies (host + parent domain) and stores the choice — no further hits.
+- **Accept and Reject have equal visual weight;** PL reject label is "Odrzucam". Banner and privacy texts (EN/PL, banner also ES/FR) now say exactly what happens: GA4 by Google Ireland Ltd. only after consent, cookies `_ga` / `_ga_46C2GKVHPR`, 14 months, how to withdraw.
+
+### Added
+
+- PII-free events: `cta_click {cta_id, cta_location}`, `contact_click {method}` (phone/email/LinkedIn/calendar/WhatsApp/Telegram/Messenger), `lang_switch {lang_to}` (beacon), `section_view {section_id}` once per section, `video_play {video_id}` for the YouTube embeds (`enablejsapi=1`), `file_download_click`, `exception` for the site's own JS errors, lead funnel `form_submit` / `form_error` / `generate_lead` (only after the server's 200; replaces `lead_submitted`). `form_start` and YouTube progress/complete come from GA4 Enhanced Measurement. Console events dropped the random `room_id`, guest tracks collapse to `guest`, upload errors to a short enum.
+- `scripts/check-ga.mjs`: the Docker build fails if the measurement id is missing; `--live <url>` checks the served pages after a deploy. `test/ga_consent_basic.mjs`: Playwright contract (0 Google requests before consent, granted page_view, one page_view on reload, withdraw), negative control = the round-10 partial fails it.
+
 ## [0.18.2] - 2026-08-29
 
 ### Fixed

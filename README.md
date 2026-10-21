@@ -123,7 +123,7 @@ Flashing light can trigger seizures. A safety governor is the **last, unchangeab
 
 ## Privacy
 
-Anonymous and ephemeral: no accounts, no personal data, no tracking cookies (the hosted site uses consent-gated, IP-anonymised analytics only). Audience phones join a live show and leave.
+Anonymous and ephemeral: no accounts, no personal data, no tracking cookies (the hosted marketing site loads Google Analytics 4 only after the visitor clicks Accept — Consent Mode basic, nothing is sent to Google before that; the audience /join page never loads it). Audience phones join a live show and leave.
 
 The microphone source runs **only on the operator's own device**, and only while they turn it on: the sound is analysed locally and the sole thing sent is a single loudness value between 0 and 1, about 20 times a second. No audio is recorded, stored or uploaded, and audience phones are never asked for microphone access.
 

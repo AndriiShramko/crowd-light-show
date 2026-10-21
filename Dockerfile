@@ -20,6 +20,9 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY package.json ./
 COPY src ./src
 COPY public ./public
+# GA guard: the build FAILS if the GA4 measurement id is missing from the pages (vault ANALYTICS-HOWTO §3)
+COPY scripts/check-ga.mjs ./scripts/check-ga.mjs
+RUN node scripts/check-ga.mjs
 RUN mkdir -p /data && chown -R node:node /data
 USER node
 EXPOSE 3000

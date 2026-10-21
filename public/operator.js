@@ -68,9 +68,21 @@
   function esc(s) { return String(s).replace(/[<>&]/g, function (c) { return ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' })[c]; }); }
 
   // ---- GA4 events (round 10): answer the owner's "how many tests / how many people per session
-  // / how long is a session". window.clsGA is a no-op until the visitor accepts the cookie banner.
-  var gaRoom = ROOM || 'main', gaPeak = 0, gaT0 = null;
-  function ga(ev, p) { try { if (window.clsGA) window.clsGA(ev, Object.assign({ room_id: gaRoom, operator_mode: MODE }, p || {})); } catch (e) {} }
+  // / how long is a session". window.clsGA (partials/ga.html) is a real no-op until the visitor
+  // accepts the cookie banner — nothing is queued or sent before that (Consent Mode basic, 2026-10-21).
+  // Low cardinality only: no room id (public rooms are random hex), guest tracks collapse to 'guest',
+  // error reasons to a short enum.
+  var gaPeak = 0, gaT0 = null;
+  function gaReason(r) { r = String(r || '').toLowerCase(); return /too (big|large)|size|bytes/.test(r) ? 'too_big' : /long|duration/.test(r) ? 'too_long' : /format|decode|codec|type/.test(r) ? 'bad_format' : /budget|quota|limit|full/.test(r) ? 'budget' : 'other'; }
+  function ga(ev, p) {
+    try {
+      if (!window.clsGA) return;
+      p = Object.assign({ operator_mode: MODE }, p || {});
+      if (typeof p.track_id === 'string' && p.track_id.indexOf('g:') === 0) p.track_id = 'guest';
+      if (p.reason != null) p.reason = gaReason(p.reason);
+      window.clsGA(ev, p);
+    } catch (e) {}
+  }
   function gaPeakUpdate(n) { n = n | 0; if (n > gaPeak) gaPeak = n; }
   function gaShowStarted(trackId) { gaT0 = Date.now(); ga('show_started', { track_id: trackId == null ? '' : trackId, preset_type: activeType || '' }); }
   function gaShowStopped() { if (gaT0 == null) return; ga('show_stopped', { duration_sec: Math.round((Date.now() - gaT0) / 1000), peak_phones: gaPeak, track_id: armedId == null ? '' : armedId }); gaT0 = null; gaPeak = 0; }

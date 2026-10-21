@@ -9,6 +9,8 @@
   var btn = document.getElementById('lc-send');
   var thanks = document.getElementById('lc-thanks');
   function t(k, en) { try { return (window.CLSI18N && window.CLSI18N.t(k)) || en; } catch (e) { return en; } }
+  // GA seam (partials/ga.html): a real no-op before cookie consent and on /join (no GA there at all)
+  function ga(ev, p) { try { if (window.clsGA) window.clsGA(ev, p); } catch (e) {} }
 
   // attribution: which page + tier the lead came from (no PII)
   var qs = new URLSearchParams(location.search);
@@ -34,8 +36,9 @@
     msg.className = 'lc-msg'; msg.textContent = '';
     var name = form.name.value.trim();
     var email = form.email.value.trim();
-    if (!name || !email) { msg.className = 'lc-msg err'; msg.textContent = t('form.err_required', 'Please add your name and email so we can reach you.'); return; }
-    if (!emailOk(email)) { msg.className = 'lc-msg err'; msg.textContent = t('form.err_email', 'That email doesn’t look right — please check it.'); form.email.focus(); return; }
+    if (!name || !email) { msg.className = 'lc-msg err'; msg.textContent = t('form.err_required', 'Please add your name and email so we can reach you.'); ga('form_error', { form_id: 'leadForm', reason: 'validation' }); return; }
+    if (!emailOk(email)) { msg.className = 'lc-msg err'; msg.textContent = t('form.err_email', 'That email doesn’t look right — please check it.'); form.email.focus(); ga('form_error', { form_id: 'leadForm', reason: 'validation' }); return; }
+    ga('form_submit', { form_id: 'leadForm', lead_type: tier || 'general' });
 
     btn.disabled = true; var original = btn.textContent; btn.textContent = t('form.sending', 'Sending…');
     fetch('/api/apply', {
@@ -48,13 +51,15 @@
       })
     }).then(function (res) {
       if (!res.ok) throw new Error('bad status');
-      // GA (round 10): a lead was submitted. No PII in the event — only tier/event type/source.
-      if (window.clsGA) window.clsGA('lead_submitted', { tier: tier || '', event_type: form.eventType.value || '', source: (srcEl && srcEl.value) || src || '' });
+      // GA: generate_lead ONLY after the server confirmed (200 from /api/apply). No PII — only the
+      // tier, the event-type enum and the page it came from. (Was 'lead_submitted' until 2026-10-21.)
+      ga('generate_lead', { form_id: 'leadForm', lead_type: tier || 'general', event_type: form.eventType.value || '', source: (srcEl && srcEl.value) || src || '' });
       // NO echo of the submitted PII — swap the form out for a thank-you + share offer.
       form.style.display = 'none';
       if (thanks) thanks.className = 'lc-thanks show';
       else { msg.className = 'lc-msg'; msg.textContent = t('form.thanks_body', 'Thank you — we’ll be in touch.'); }
     }).catch(function () {
+      ga('form_error', { form_id: 'leadForm', reason: 'send' });
       msg.className = 'lc-msg err'; msg.textContent = t('form.err_send', 'Something went wrong sending that. Please try again, or email zmei116@gmail.com.');
       btn.disabled = false; btn.textContent = original;
     });

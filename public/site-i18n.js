@@ -50,7 +50,7 @@
       'ev.party': 'Party', 'ev.concert': 'Concert / Festival', 'ev.club': 'Club / DJ', 'ev.wedding': 'Wedding', 'ev.corp': 'Corporate / Conference', 'ev.sport': 'Sports / Arena', 'ev.church': 'Church / Worship', 'ev.other': 'Other',
       'foot.free': 'Made by Andrii Shramko. Free & open-source (Apache-2.0).', 'foot.custom': 'Need custom work or integration?', 'foot.getintouch': 'Get in touch.',
       'foot.privacy': 'Privacy', 'foot.imprint': 'Imprint',
-      'cookie.text': 'We use Google Analytics — only with your consent — to understand in aggregate how the app is used (IP-anonymized, no advertising). It does not run until you accept.',
+      'cookie.text': 'With your consent we use Google Analytics 4 (Google Ireland Ltd.) to see in aggregate how the app is used — no advertising. Nothing is loaded or sent to Google until you click Accept; it then sets the cookies _ga and _ga_46C2GKVHPR (kept up to 14 months). Withdraw anytime via “Cookie settings” at the bottom of the page.',
       'cookie.accept': 'Accept', 'cookie.reject': 'Reject', 'cookie.more': 'Privacy & cookies', 'cookie.settings': 'Cookie settings',
     },
     pl: {
@@ -85,8 +85,8 @@
       'ev.party': 'Impreza', 'ev.concert': 'Koncert / Festiwal', 'ev.club': 'Klub / DJ', 'ev.wedding': 'Wesele', 'ev.corp': 'Firmowe / Konferencja', 'ev.sport': 'Sport / Arena', 'ev.church': 'Kościół / Nabożeństwo', 'ev.other': 'Inne',
       'foot.free': 'Stworzone przez Andrii Shramko. Darmowe i open-source (Apache-2.0).', 'foot.custom': 'Potrzebujesz pracy na zamówienie lub integracji?', 'foot.getintouch': 'Napisz.',
       'foot.privacy': 'Prywatność', 'foot.imprint': 'Dane firmy',
-      'cookie.text': 'Używamy Google Analytics — wyłącznie za Twoją zgodą — aby zbiorczo rozumieć, jak korzysta się z aplikacji (IP anonimizowane, bez reklam). Nie działa, dopóki nie zaakceptujesz.',
-      'cookie.accept': 'Akceptuję', 'cookie.reject': 'Odrzuć', 'cookie.more': 'Prywatność i pliki cookie', 'cookie.settings': 'Ustawienia cookie',
+      'cookie.text': 'Za Twoją zgodą używamy Google Analytics 4 (Google Ireland Ltd.), aby zbiorczo widzieć, jak korzysta się z aplikacji — bez reklam. Do kliknięcia „Akceptuję” nic nie jest ładowane ani wysyłane do Google; potem zapisywane są pliki cookie _ga i _ga_46C2GKVHPR (przechowywane do 14 miesięcy). Zgodę możesz wycofać w każdej chwili przez „Ustawienia cookie” na dole strony.',
+      'cookie.accept': 'Akceptuję', 'cookie.reject': 'Odrzucam', 'cookie.more': 'Prywatność i pliki cookie', 'cookie.settings': 'Ustawienia cookie',
     },
     es: {
       'nav.try': 'Probar la demo', 'nav.how': 'Cómo funciona', 'nav.pricing': 'Precios', 'nav.about': 'Acerca de y seguridad', 'nav.source': 'Código fuente', 'nav.contact': 'Contacto',
@@ -120,7 +120,7 @@
       'ev.party': 'Fiesta', 'ev.concert': 'Concierto / Festival', 'ev.club': 'Discoteca / DJ', 'ev.wedding': 'Boda', 'ev.corp': 'Corporativo / Congreso', 'ev.sport': 'Deporte / Estadio', 'ev.church': 'Iglesia / Culto', 'ev.other': 'Otro',
       'foot.free': 'Hecho por Andrii Shramko. Gratis y de código abierto (Apache-2.0).', 'foot.custom': '¿Necesitas trabajo a medida o integración?', 'foot.getintouch': 'Contacta.',
       'foot.privacy': 'Privacidad', 'foot.imprint': 'Aviso legal',
-      'cookie.text': 'Usamos Google Analytics — solo con tu consentimiento — para entender de forma agregada cómo se usa la app (IP anonimizada, sin publicidad). No se activa hasta que aceptes.',
+      'cookie.text': 'Con tu consentimiento usamos Google Analytics 4 (Google Ireland Ltd.) para ver de forma agregada cómo se usa la app, sin publicidad. No se carga ni se envía nada a Google hasta que pulses «Aceptar»; después se guardan las cookies _ga y _ga_46C2GKVHPR (hasta 14 meses). Puedes retirar el consentimiento cuando quieras en «Configurar cookies», al final de la página.',
       'cookie.accept': 'Aceptar', 'cookie.reject': 'Rechazar', 'cookie.more': 'Privacidad y cookies', 'cookie.settings': 'Configurar cookies',
     },
     fr: {
@@ -155,7 +155,7 @@
       'ev.party': 'Fête', 'ev.concert': 'Concert / Festival', 'ev.club': 'Club / DJ', 'ev.wedding': 'Mariage', 'ev.corp': 'Entreprise / Conférence', 'ev.sport': 'Sport / Arène', 'ev.church': 'Église / Culte', 'ev.other': 'Autre',
       'foot.free': 'Réalisé par Andrii Shramko. Gratuit et open-source (Apache-2.0).', 'foot.custom': 'Besoin de sur-mesure ou d’intégration ?', 'foot.getintouch': 'Contactez-nous.',
       'foot.privacy': 'Confidentialité', 'foot.imprint': 'Mentions légales',
-      'cookie.text': 'Nous utilisons Google Analytics — uniquement avec votre consentement — pour comprendre de façon agrégée l’usage de l’app (IP anonymisée, sans publicité). Il ne s’active qu’après votre acceptation.',
+      'cookie.text': 'Avec votre consentement, nous utilisons Google Analytics 4 (Google Ireland Ltd.) pour voir de façon agrégée comment l’app est utilisée, sans publicité. Rien n’est chargé ni envoyé à Google tant que vous n’avez pas cliqué sur « Accepter » ; ensuite les cookies _ga et _ga_46C2GKVHPR sont déposés (conservés jusqu’à 14 mois). Vous pouvez retirer votre consentement à tout moment via « Paramètres cookies » en bas de page.',
       'cookie.accept': 'Accepter', 'cookie.reject': 'Refuser', 'cookie.more': 'Confidentialité et cookies', 'cookie.settings': 'Paramètres cookies',
     },
   };
