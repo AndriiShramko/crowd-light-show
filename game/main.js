@@ -19,6 +19,9 @@ window.__probe = { mode: 'loading', fps: null, frames: 0, splatCount: 0, worldBy
 window.addEventListener('error', (e) => window.__probe.errors.push(String(e.message || e.type)));
 
 const setMode = (m) => { document.body.dataset.mode = m; window.__probe.mode = m; };
+// GA (consent.js): window.ccGA is a no-op until the visitor clicks Accept. Enums/buckets only.
+const ga = (ev, p) => { try { window.ccGA && window.ccGA(ev, p || {}); } catch {} };
+const gaMsBucket = (ms) => (ms < 2000 ? '<2s' : ms < 5000 ? '2-5s' : ms < 10000 ? '5-10s' : '>10s');
 
 // -------- wake lock (телефон не должен гасить экран в толпе) --------
 let wakeLock = null;
@@ -50,6 +53,7 @@ async function fetchWorld(url) {
 
 // -------- 2D fallback: тёмный дот-филд (он же debug-вид Фазы A) --------
 function start2D(reason) {
+  ga('fallback_2d', { reason: /fps/.test(reason || '') ? 'fps' : /webgl/.test(reason || '') ? 'webgl' : 'forced' });
   stage.replaceChildren();
   const cv = document.createElement('canvas'); stage.appendChild(cv);
   const ctx = cv.getContext('2d');
@@ -144,7 +148,7 @@ async function start3D() {
   // FPS-probe: первые PROBE_SECONDS после первого кадра; провал → авто-2D.
   let frames = 0, probeStart = 0, probed = false, firstFrameAt = 0;
   function tick(tms) {
-    if (!firstFrameAt) { firstFrameAt = tms; probeStart = tms; loader.classList.add('hidden'); setMode('3d'); }
+    if (!firstFrameAt) { firstFrameAt = tms; probeStart = tms; loader.classList.add('hidden'); setMode('3d'); ga('world_loaded', { mode: 'preview', load_ms_bucket: gaMsBucket(performance.now()) }); }
     if (auto) theta += 0.0012;
     camera.position.set(
       target.x + dist * Math.sin(phi) * Math.cos(theta),
@@ -175,6 +179,7 @@ async function boot() {
     await start3D();
   } catch (e) {
     window.__probe.errors.push('boot: ' + (e && e.message || e));
+    ga('exception', { description: ('boot: ' + (e && e.message || e)).slice(0, 100), fatal: true });
     setMode('error');
     loader.classList.add('hidden');
     errBox.classList.add('show');

@@ -15,6 +15,11 @@ const stage = $('stage'), statusEl = $('status'), loader = $('loader'), errBox =
 window.__probe = { mode: 'loading', num: null, seat: -1, splatCount: 0, chatSeen: 0, purrSeen: 0, milestones: [], identify: null, errors: [] };
 window.addEventListener('error', (e) => window.__probe.errors.push(String(e.message || e.type)));
 const setMode = (m) => { document.body.dataset.mode = m; window.__probe.mode = m; };
+// GA (consent.js): window.ccGA is a no-op until the player clicks Accept. Enums/buckets only — never num/room/seat.
+const ga = (ev, p) => { try { window.ccGA && window.ccGA(ev, p || {}); } catch {} };
+const gaOnce = {};
+const gaMsBucket = (ms) => (ms < 2000 ? '<2s' : ms < 5000 ? '2-5s' : ms < 10000 ? '5-10s' : '>10s');
+const gaSource = /(^|\.)lightshow\.flyreelstudio\.eu$/.test((() => { try { return new URL(document.referrer).hostname; } catch { return ''; } })()) ? 'handoff' : 'direct';
 function toast(t) { const s = $('toastmsg'); s.textContent = t; s.classList.add('show'); setTimeout(() => s.classList.remove('show'), 1400); }
 
 // wake lock + no-scroll
@@ -36,6 +41,7 @@ async function connect() {
   ws.onclose = () => { if (window.__probe.mode !== 'error') setTimeout(reconnect, 1500); };
   ws.onerror = () => {};
   await new Promise((res, rej) => { ws.onopen = res; ws.addEventListener('error', rej, { once: true }); });
+  if (!gaOnce.join) { gaOnce.join = 1; ga('game_join', { source: gaSource }); }   // play start (first join, not reconnects)
   setInterval(() => { if (ws?.readyState === 1) ws.send(JSON.stringify({ t: 'ping', t0: performance.now() })); }, 4000);
 }
 async function reconnect() { try { await connect(); } catch { setTimeout(reconnect, 2000); } }
@@ -46,12 +52,12 @@ function onMsg(ev) {
   if (m.t === 'hello') { myNum = m.num; mySeat = m.seat; window.__probe.num = myNum; window.__probe.seat = mySeat; }
   else if (m.t === 'pong') rtt.last = performance.now() - m.t0;
   else if (m.t === 'tail') { tail = m.tail; tailColor = m.color; chainLen = m.len; }
-  else if (m.t === 'joined') { mySeat = m.seat; window.__probe.seat = mySeat; toast(m.head ? "you're the head! 🐈‍⬛" : 'latched on! 🎉'); if (navigator.vibrate) navigator.vibrate(30); }
+  else if (m.t === 'joined') { if (!gaOnce.attach) { gaOnce.attach = 1; ga('chain_attach', {}); } mySeat = m.seat; window.__probe.seat = mySeat; toast(m.head ? "you're the head! 🐈‍⬛" : 'latched on! 🎉'); if (navigator.vibrate) navigator.vibrate(30); }
   else if (m.t === 'detached') { mySeat = -1; window.__probe.seat = -1; }
   else if (m.t === 'you_are_head') { mySeat = 0; window.__probe.seat = 0; toast('you lead now! 🚂'); if (navigator.vibrate) navigator.vibrate([20, 40, 20]); }
   else if (m.t === 'chat') { window.__probe.chatSeen++; showBubble(m.num, CHAT[m.i] || '?'); }
   else if (m.t === 'purr') { window.__probe.purrSeen++; }
-  else if (m.t === 'milestone') { window.__probe.milestones.push(m.ms); toast('chain reached ' + m.ms + '! ✨'); if (navigator.vibrate) navigator.vibrate([30, 60, 30]); }
+  else if (m.t === 'milestone') { if ([50, 100, 500, 1000].includes(m.ms)) ga('milestone_seen', { milestone: m.ms }); window.__probe.milestones.push(m.ms); toast('chain reached ' + m.ms + '! ✨'); if (navigator.vibrate) navigator.vibrate([30, 60, 30]); }
   else if (m.t === 'identify') { showIdentify(m.num, m.colorId, m.ttl); }
   else if (m.t === 'hint') { window.__probe.hint = m.kind; toast('🐾'); if (navigator.vibrate) navigator.vibrate(40); } // телепорт к хвосту — бессловесно
   else if (m.t === 'err') { if (m.code === 'too_far') tail = m.tail; }
@@ -92,7 +98,7 @@ setInterval(() => { if (ws?.readyState === 1) ws.send(JSON.stringify({ t: 'inten
 $('bChat').onclick = () => $('chatbar').classList.toggle('show');
 CHAT.forEach((txt, i) => { const b = document.createElement('button'); b.textContent = txt; b.onclick = () => { audioUnlock(); ws?.send(JSON.stringify({ t: 'chat', i })); showBubble(myNum, txt); $('chatbar').classList.remove('show'); }; $('chatgrid').appendChild(b); });
 $('bPurr').onclick = () => { audioUnlock(); ws?.send(JSON.stringify({ t: 'purr' })); if (navigator.vibrate) navigator.vibrate(15); };
-$('bId').onclick = () => { audioUnlock(); ws?.send(JSON.stringify({ t: 'identify' })); };
+$('bId').onclick = () => { audioUnlock(); ws?.send(JSON.stringify({ t: 'identify' })); if (!gaOnce.id) { gaOnce.id = 1; ga('identify_used', {}); } };
 $('bMap').onpointerdown = () => ws?.send(JSON.stringify({ t: 'map', on: true }));
 $('bMap').onpointerup = () => ws?.send(JSON.stringify({ t: 'map', on: false }));
 
@@ -147,8 +153,10 @@ async function boot() {
     loader.classList.add('hidden');
     setMode('play');
     beacon('world_loaded');
+    ga('world_loaded', { mode: '3d', load_ms_bucket: gaMsBucket(performance.now()) });
   } catch (e) {
     window.__probe.errors.push('boot: ' + (e && e.message || e));
+    ga('exception', { description: ('boot: ' + (e && e.message || e)).slice(0, 100), fatal: true });
     setMode('error'); loader.classList.add('hidden'); errBox.classList.add('show');
   }
 }
@@ -168,7 +176,7 @@ async function start3D() {
     const splats = new SplatMesh({ fileBytes: bytes, fileName: WORLD.split('/').pop() });
     await splats.initialized; splats.rotation.x = Math.PI; scene.add(splats);
     window.__probe.splatCount = splats.numSplats ?? 0;
-  } catch (e) { window.__probe.errors.push('world: ' + e.message); }
+  } catch (e) { window.__probe.errors.push('world: ' + e.message); ga('exception', { description: ('world: ' + e.message).slice(0, 100), fatal: false }); }
   const cats = new CatLayer(scene, CATS_MAX);
   // стрелка-компас на хвост
   const arrow = new THREE.Mesh(new THREE.ConeGeometry(0.25, 0.7, 4), new THREE.MeshBasicMaterial({ color: 0xffc93c }));
@@ -233,6 +241,7 @@ async function start3D() {
 
 function start2D() {
   beacon('fallback_2d');
+  ga('fallback_2d', { reason: 'webgl' });
   // облегчённый режим — топ-даун точки (fallback)
   stage.replaceChildren(); const cv = document.createElement('canvas'); stage.appendChild(cv);
   const ctx = cv.getContext('2d');
