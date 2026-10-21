@@ -90,7 +90,9 @@ const evs = (log, from = 0) => log.hits.slice(from).map((h) => h.en);
   check('contact_click_email', !!find('contact_click', 'method', 'email'));
   check('lang_switch_en', !!find('lang_switch', 'lang_to', 'en'));
   mark = log.hits.length;
-  await page.locator('#lc-name').focus();
+  // GA4 Enhanced Measurement sends form_start on the first CHANGE of a form field (typing + leaving it);
+  // focus alone, or typing and clearing again, does not count
+  await page.locator('#lc-name').pressSequentially('T');
   await page.locator('#lc-email').focus();
   if (FORM) {
     await page.fill('#lc-name', 'Test');
@@ -98,7 +100,7 @@ const evs = (log, from = 0) => log.hits.slice(from).map((h) => h.en);
     await page.click('#lc-send');
   }
   await page.addScriptTag({ content: 'setTimeout(function(){ null.clsTestBoom(); }, 10);' });
-  await until(() => log.hits.slice(mark).some((h) => h.en === 'exception') && (!FORM || log.hits.slice(mark).some((h) => h.en === 'generate_lead')));
+  await until(() => log.hits.slice(mark).some((h) => h.en === 'exception') && log.hits.slice(mark).some((h) => h.en === 'form_start') && (!FORM || log.hits.slice(mark).some((h) => h.en === 'generate_lead')));
   const ev3 = log.hits.slice(mark);
   // form_start comes from GA Enhanced Measurement (form interactions) — exactly one, no manual duplicate
   check('form_start_once', log.hits.filter((h) => h.en === 'form_start').length === 1 && !!ev3.find((h) => h.en === 'form_start' && h['ep.form_id'] === 'leadForm'), ev3.map((h) => h.en).join(','));
