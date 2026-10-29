@@ -49,7 +49,7 @@ async function main() {
   // ---- 6. RODO privacy + imprint ----
   const priv = await get('/privacy');
   const imprint = priv.includes('7543116302') && /Andrii Shramko/.test(priv);
-  const notice = /controller/i.test(priv) && /6\(1\)\(b\)/.test(priv) && /12 months/i.test(priv) && /UODO/.test(priv) && /not sent over Telegram/i.test(priv);
+  const notice = /controller/i.test(priv) && /6\(1\)\(b\)/.test(priv) && /without a fixed time limit/i.test(priv) && !/12 months from our last contact/i.test(priv) && /UODO/.test(priv) && /not sent over Telegram/i.test(priv);
   check('6_privacy_imprint', imprint && notice, `imprint(NIP+name)=${imprint} notice(controller/basis/retention/UODO/tg-min)=${notice}`);
   // DB must never be web-served
   const dbProbe = await Promise.all(['/static/app.db', '/app.db', '/data/app.db'].map((u) => fetch(BASE + u).then((r) => r.status)));

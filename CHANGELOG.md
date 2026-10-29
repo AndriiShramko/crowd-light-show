@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.20.1] - 2026-10-29
+
+### Changed
+
+- **Contact-form leads are kept without a fixed time limit.** The privacy notice (EN + PL) no longer says "up to 12 months from our last contact, then deleted": enquiries are kept until the person asks for deletion (zmei116@gmail.com), so the owner can get back to them later — even years from now; legal basis for keeping them is legitimate interest (Art. 6(1)(f)) with the right to object. The purpose line and the short note under the form (EN/PL/ES/FR) say "reply and stay in touch" instead of "only to reply". Nothing in the app deletes leads by age (only the operator's manual delete in the console). GA4 statements (14 months) unchanged. `test/site_8c.mjs` checks the new wording.
+
 ## [0.20.0] - 2026-10-21
 
 ### Fixed
